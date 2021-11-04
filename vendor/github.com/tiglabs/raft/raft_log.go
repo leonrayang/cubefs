@@ -49,6 +49,7 @@ func newRaftLog(storage storage.Storage) (*raftLog, error) {
 
 	log.unstable.offset = lastIndex + 1
 	log.unstable.entries = make([]*proto.Entry, 0, 256)
+	logger.Info("log storage firstindex %v applied %v", firstIndex - 1, firstIndex - 1)
 	log.committed = firstIndex - 1
 	log.applied = firstIndex - 1
 	return log, nil

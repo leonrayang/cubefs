@@ -148,6 +148,7 @@ const (
 	opSyncDeleteVolUser        uint32 = 0x1D
 	opSyncUpdateVolUser        uint32 = 0x1E
 	opSyncNodeSetGrp           uint32 = 0x1F
+	opSyncDataPartitionsView   uint32 = 0x20
 	opSyncExclueDomain         uint32 = 0x23
 )
 
@@ -178,7 +179,9 @@ const (
 	akAcronym             = "ak"
 	userAcronym           = "user"
 	volUserAcronym        = "voluser"
+	volNameAcronym        = "volname"
 	akPrefix              = keySeparator + akAcronym + keySeparator
 	userPrefix            = keySeparator + userAcronym + keySeparator
 	volUserPrefix         = keySeparator + volUserAcronym + keySeparator
+	volCachePrefix        = keySeparator + volNameAcronym + keySeparator
 )
