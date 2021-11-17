@@ -20,11 +20,12 @@ import (
 	"time"
 
 	"fmt"
+	"net"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
-	"net"
 )
 
 //const
@@ -195,7 +196,7 @@ func (sender *AdminTaskManager) sendAdminTask(task *proto.AdminTask, conn net.Co
 }
 
 func (sender *AdminTaskManager) syncSendAdminTask(task *proto.AdminTask) (packet *proto.Packet, err error) {
-	log.LogInfof("action[syncSendAdminTask],task[%v]", task)
+	log.LogInfof("action[syncSendAdminTask],task[%s]", task.ToString())
 	packet, err = sender.buildPacket(task)
 	if err != nil {
 		return nil, errors.Trace(err, "action[syncSendAdminTask build packet failed,task:%v]", task.ID)
