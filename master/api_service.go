@@ -469,14 +469,11 @@ func (m *Server) deleteMetaReplica(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validate := true
 	var value string
 	if value = r.FormValue(forceKey); value != "" {
-		if force, err = strconv.ParseBool(value); err == nil && force {
-			// validate = false  // ignore force param which too dangerous without check
-		}
+		force, _ = strconv.ParseBool(value)
 	}
-	if err = m.cluster.deleteMetaReplica(mp, addr, validate); err != nil {
+	if err = m.cluster.deleteMetaReplica(mp, addr, true, force); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
 		return
 	}
@@ -2638,6 +2635,20 @@ func (m *Server) getDataPartitions(w http.ResponseWriter, r *http.Request) {
 	)
 	if name, err = parseAndExtractName(r); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
+		return
+	}
+	log.LogInfof("action[getDataPartitions] tmp is leader[%v]", m.cluster.partition.IsRaftLeader())
+	if !m.cluster.partition.IsRaftLeader() {
+		var ok bool
+		m.cluster.followerReadManager.rwMutex.Lock()
+		defer m.cluster.followerReadManager.rwMutex.Unlock()
+
+		if body, ok = m.cluster.followerReadManager.volDataPartitionsView[name]; !ok {
+			log.LogErrorf("action[getDataPartitions] volume [%v] not get partitions info", name)
+			sendErrReply(w, r, newErrHTTPReply(fmt.Errorf("follower volume info not found")))
+			return
+		}
+		send(w, r, body)
 		return
 	}
 	if vol, err = m.cluster.getVol(name); err != nil {
