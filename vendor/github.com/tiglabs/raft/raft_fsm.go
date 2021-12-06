@@ -17,13 +17,15 @@ package raft
 
 import (
 	"fmt"
-	"github.com/chubaofs/chubaofs/util/log"
 	"math/rand"
 	"strings"
 
+	"github.com/chubaofs/chubaofs/util/log"
+
+	"time"
+
 	"github.com/tiglabs/raft/logger"
 	"github.com/tiglabs/raft/proto"
-	"time"
 )
 
 // NoLeader is a placeholder nodeID used when there is no leader.
@@ -76,7 +78,7 @@ func newRaftFsm(config *Config, raftConfig *RaftConfig) (*raftFsm, error) {
 		return nil, err
 	}
 	hs, err := raftConfig.Storage.InitialState()
-	log.LogInfof("newRaftFsm hs commit %v", hs.Commit)
+	log.LogInfo("newRaftFsm hs commit %v", hs.Commit)
 	if err != nil {
 		return nil, err
 	}
