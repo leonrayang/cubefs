@@ -16,16 +16,17 @@ package raftstore
 
 import (
 	"fmt"
-	"github.com/tiglabs/raft"
-	"github.com/tiglabs/raft/logger"
-	"github.com/tiglabs/raft/proto"
-	"github.com/tiglabs/raft/storage/wal"
-	raftlog "github.com/tiglabs/raft/util/log"
 	syslog "log"
 	"os"
 	"path"
 	"strconv"
 	"time"
+
+	"github.com/tiglabs/raft"
+	"github.com/tiglabs/raft/logger"
+	"github.com/tiglabs/raft/proto"
+	"github.com/tiglabs/raft/storage/wal"
+	raftlog "github.com/tiglabs/raft/util/log"
 )
 
 // RaftStore defines the interface for the raft store.
@@ -170,7 +171,7 @@ func (s *raftStore) CreatePartition(cfg *PartitionConfig) (p Partition, err erro
 			peerAddress.ReplicaPort,
 		)
 	}
-	logger.Info("action[raftstore:CreatePartition] raft config applied [%v]", cfg.Applied)
+	logger.Info("action[raftstore:CreatePartition] raft config applied [%v] id:%d", cfg.Applied, cfg.ID)
 	rc := &raft.RaftConfig{
 		ID:           cfg.ID,
 		Peers:        peers,

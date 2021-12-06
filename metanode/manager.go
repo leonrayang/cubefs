@@ -84,7 +84,7 @@ func (m *metadataManager) getPacketLabels(p *Packet) (labels map[string]string) 
 
 	mp, err := m.getPartition(p.PartitionID)
 	if err != nil {
-		log.LogInfof("[metaManager] getPacketLabels metric packet: %v, partitions: %v", p, len(m.partitions))
+		log.LogInfof("[metaManager] getPacketLabels metric packet: %v", p)
 		return
 	}
 
@@ -98,6 +98,8 @@ func (m *metadataManager) getPacketLabels(p *Packet) (labels map[string]string) 
 
 // HandleMetadataOperation handles the metadata operations.
 func (m *metadataManager) HandleMetadataOperation(conn net.Conn, p *Packet, remoteAddr string) (err error) {
+	log.LogInfof("HandleMetadataOperation input info op (%s), remote %s", p.String(), remoteAddr)
+
 	metric := exporter.NewTPCnt(p.GetOpMsg())
 	labels := m.getPacketLabels(p)
 	defer func() {
@@ -359,12 +361,14 @@ func (m *metadataManager) loadPartitions() (err error) {
 					}
 					errload = nil
 				}
+
 				partition := NewMetaPartition(partitionConfig, m)
 				errload = m.attachPartition(id, partition)
 				if errload != nil {
 					log.LogErrorf("load partition id=%d failed: %s.",
 						id, errload.Error())
 				}
+
 			}(fileInfo.Name())
 		}
 	}
@@ -402,6 +406,8 @@ func (m *metadataManager) createPartition(request *proto.CreateMetaPartitionRequ
 	defer m.mu.Unlock()
 
 	partitionId := fmt.Sprintf("%d", request.PartitionID)
+
+	log.LogInfof("start create meta Partition, partition %d", partitionId)
 
 	mpc := &MetaPartitionConfig{
 		PartitionId: request.PartitionID,

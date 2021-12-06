@@ -153,6 +153,8 @@ const (
 	cfgTotalMem          = "totalMem"
 	cfgZoneName          = "zoneName"
 	cfgTickInterval      = "tickInterval"
+	cfgStartInterval     = "maxStartInterval" // max start interval
+
 	cfgSmuxPortShift     = "smuxPortShift"     //int
 	cfgSmuxMaxConn       = "smuxMaxConn"       //int
 	cfgSmuxStreamPerConn = "smuxStreamPerConn" //int
@@ -165,6 +167,8 @@ const (
 	// interval of persisting in-memory data
 	intervalToPersistData = time.Minute * 5
 	intervalToSyncCursor  = time.Minute * 1
+
+	defaultStartInterval = 5
 )
 
 const (

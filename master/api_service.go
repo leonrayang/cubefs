@@ -898,26 +898,28 @@ func (m *Server) getDataNode(w http.ResponseWriter, r *http.Request) {
 // Decommission a data node. This will decommission all the data partition on that node.
 func (m *Server) decommissionDataNode(w http.ResponseWriter, r *http.Request) {
 	var (
-		node        *DataNode
 		rstMsg      string
 		offLineAddr string
+		limit       int
 		err         error
 	)
 
-	if offLineAddr, err = parseAndExtractNodeAddr(r); err != nil {
+	if offLineAddr, limit, err = parseDecomNodeReq(r); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
 		return
 	}
 
-	if node, err = m.cluster.dataNode(offLineAddr); err != nil {
+	if _, err = m.cluster.dataNode(offLineAddr); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(proto.ErrDataNodeNotExists))
 		return
 	}
-	if err = m.cluster.decommissionDataNode(node); err != nil {
+
+	if err = m.cluster.migrateDataNode(offLineAddr, "", limit); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
 		return
 	}
-	rstMsg = fmt.Sprintf("decommission data node [%v] successfully", offLineAddr)
+
+	rstMsg = fmt.Sprintf("decommission data node [%v] limit %d successfully", offLineAddr, limit)
 	sendOkReply(w, r, newSuccessHTTPReply(rstMsg))
 }
 
@@ -1473,6 +1475,7 @@ func (m *Server) getNodeSetGrpInfoHandler(w http.ResponseWriter, r *http.Request
 	var err error
 	if err = r.ParseForm(); err != nil {
 		sendOkReply(w, r, newErrHTTPReply(err))
+		return
 	}
 	var value string
 	var id uint64
@@ -1571,11 +1574,12 @@ func (m *Server) decommissionDisk(w http.ResponseWriter, r *http.Request) {
 		rstMsg                string
 		offLineAddr, diskPath string
 		err                   error
+		limit                 int
 		badPartitionIds       []uint64
 		badPartitions         []*DataPartition
 	)
 
-	if offLineAddr, diskPath, err = parseRequestToDecommissionNode(r); err != nil {
+	if offLineAddr, diskPath, limit, err = parseReqToDecoDisk(r); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
 		return
 	}
@@ -1594,8 +1598,14 @@ func (m *Server) decommissionDisk(w http.ResponseWriter, r *http.Request) {
 	for _, bdp := range badPartitions {
 		badPartitionIds = append(badPartitionIds, bdp.PartitionID)
 	}
-	rstMsg = fmt.Sprintf("receive decommissionDisk node[%v] disk[%v], badPartitionIds[%v] has offline successfully",
-		node.Addr, diskPath, badPartitionIds)
+
+	if limit > 0 && limit < len(badPartitionIds) {
+		badPartitionIds = badPartitionIds[:limit]
+		badPartitions = badPartitions[:limit]
+	}
+
+	rstMsg = fmt.Sprintf("receive decommissionDisk node[%v] disk[%v] limit [%d], badPartitionIds[%v] has offline successfully",
+		node.Addr, diskPath, limit, badPartitionIds)
 	if err = m.cluster.decommissionDisk(node, diskPath, badPartitions); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
 		return
@@ -1612,7 +1622,7 @@ func (m *Server) handleDataNodeTaskResponse(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	sendOkReply(w, r, newSuccessHTTPReply(fmt.Sprintf("%v", http.StatusOK)))
-	m.cluster.handleDataNodeTaskResponse(tr.OperatorAddr, tr)
+	go m.cluster.handleDataNodeTaskResponse(tr.OperatorAddr, tr)
 }
 
 func (m *Server) addMetaNode(w http.ResponseWriter, r *http.Request) {
@@ -1866,26 +1876,26 @@ func (m *Server) migrateMetaNodeHandler(w http.ResponseWriter, r *http.Request) 
 
 func (m *Server) decommissionMetaNode(w http.ResponseWriter, r *http.Request) {
 	var (
-		metaNode    *MetaNode
 		rstMsg      string
 		offLineAddr string
+		limit       int
 		err         error
 	)
 
-	if offLineAddr, err = parseAndExtractNodeAddr(r); err != nil {
+	if offLineAddr, limit, err = parseDecomNodeReq(r); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
 		return
 	}
 
-	if metaNode, err = m.cluster.metaNode(offLineAddr); err != nil {
+	if _, err = m.cluster.metaNode(offLineAddr); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(proto.ErrMetaNodeNotExists))
 		return
 	}
-	if err = m.cluster.decommissionMetaNode(metaNode); err != nil {
+	if err = m.cluster.migrateMetaNode(offLineAddr, "", limit); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
 		return
 	}
-	rstMsg = fmt.Sprintf("decommissionMetaNode metaNode [%v] has offline successfully", offLineAddr)
+	rstMsg = fmt.Sprintf("decommissionMetaNode metaNode [%v] limit %d has offline successfully", offLineAddr, limit)
 	sendOkReply(w, r, newSuccessHTTPReply(rstMsg))
 }
 
@@ -1895,8 +1905,9 @@ func (m *Server) handleMetaNodeTaskResponse(w http.ResponseWriter, r *http.Reque
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
 		return
 	}
+
 	sendOkReply(w, r, newSuccessHTTPReply(fmt.Sprintf("%v", http.StatusOK)))
-	m.cluster.handleMetaNodeTaskResponse(tr.OperatorAddr, tr)
+	go m.cluster.handleMetaNodeTaskResponse(tr.OperatorAddr, tr)
 }
 
 // Dynamically add a raft node (replica) for the master.
@@ -1986,6 +1997,20 @@ func parseRequestForAddNode(r *http.Request) (nodeAddr, zoneName string, err err
 	return
 }
 
+func parseDecomNodeReq(r *http.Request) (nodeAddr string, limit int, err error) {
+	nodeAddr, err = parseAndExtractNodeAddr(r)
+	if err != nil {
+		return
+	}
+
+	limit, err = parseUintParam(r, countKey)
+	if err != nil {
+		return
+	}
+
+	return
+}
+
 func parseAndExtractNodeAddr(r *http.Request) (nodeAddr string, err error) {
 	if err = r.ParseForm(); err != nil {
 		return
@@ -1993,7 +2018,7 @@ func parseAndExtractNodeAddr(r *http.Request) (nodeAddr string, err error) {
 	return extractNodeAddr(r)
 }
 
-func parseRequestToDecommissionNode(r *http.Request) (nodeAddr, diskPath string, err error) {
+func parseReqToDecoDisk(r *http.Request) (nodeAddr, diskPath string, limit int, err error) {
 	if err = r.ParseForm(); err != nil {
 		return
 	}
@@ -2002,6 +2027,11 @@ func parseRequestToDecommissionNode(r *http.Request) (nodeAddr, diskPath string,
 		return
 	}
 	diskPath, err = extractDiskPath(r)
+	if err != nil {
+		return
+	}
+
+	limit, err = parseUintParam(r, countKey)
 	return
 }
 

@@ -1192,11 +1192,13 @@ func (c *Cluster) migrateDataNode(srcAddr, targetAddr string, limit int) (err er
 		return fmt.Errorf("migrateDataNode no partition can migrate from [%s] to [%s]", srcAddr, targetAddr)
 	}
 
-	if limit <= 0 {
+	if limit <= 0 && targetAddr == "" {
+		limit = len(toBeOffLinePartitions)
+	} else if limit <= 0 {
 		limit = defaultMigrateDpCnt
 	}
 
-	if targetAddr == "" || limit > len(toBeOffLinePartitions) {
+	if limit > len(toBeOffLinePartitions) {
 		limit = len(toBeOffLinePartitions)
 	}
 
@@ -1389,7 +1391,7 @@ func (c *Cluster) validateDecommissionDataPartition(dp *DataPartition, offlineAd
 		return
 	}
 
-	if err = dp.hasMissingOneReplica(int(vol.dpReplicaNum)); err != nil {
+	if err = dp.hasMissingOneReplica(offlineAddr, int(vol.dpReplicaNum)); err != nil {
 		return
 	}
 
@@ -1398,7 +1400,7 @@ func (c *Cluster) validateDecommissionDataPartition(dp *DataPartition, offlineAd
 		return
 	}
 
-	if dp.isRecover {
+	if dp.isRecover && !dp.activeUsedSimilar() {
 		err = fmt.Errorf("vol[%v],data partition[%v] is recovering,[%v] can't be decommissioned", vol.Name, dp.PartitionID, offlineAddr)
 		return
 	}
@@ -1521,20 +1523,23 @@ func (c *Cluster) removeDataReplica(dp *DataPartition, addr string, validate boo
 			log.LogErrorf("action[removeDataReplica],vol[%v],data partition[%v],err[%v]", dp.VolName, dp.PartitionID, err)
 		}
 	}()
-	if validate == true {
+	if validate {
 		if err = c.validateDecommissionDataPartition(dp, addr); err != nil {
 			return
 		}
 	}
+
 	ok := c.isRecovering(dp, addr)
-	if ok {
+	if ok && !dp.activeUsedSimilar() {
 		err = fmt.Errorf("vol[%v],data partition[%v] can't decommision until it has recovered", dp.VolName, dp.PartitionID)
 		return
 	}
+
 	dataNode, err := c.dataNode(addr)
 	if err != nil {
 		return
 	}
+
 	removePeer := proto.Peer{ID: dataNode.ID, Addr: addr}
 	if err = c.removeDataPartitionRaftMember(dp, removePeer); err != nil {
 		return
@@ -1565,6 +1570,10 @@ func (c *Cluster) isRecovering(dp *DataPartition, addr string) (isRecover bool) 
 	} else {
 		key = fmt.Sprintf("%s:%s", addr, "")
 	}
+
+	c.badPartitionMutex.RLock()
+	defer c.badPartitionMutex.RUnlock()
+
 	var badPartitionIDs []uint64
 	badPartitions, ok := c.BadDataPartitionIds.Load(key)
 	if ok {
@@ -1661,8 +1670,8 @@ func (c *Cluster) putBadMetaPartitions(addr string, partitionID uint64) {
 }
 
 func (c *Cluster) getBadMetaPartitionsView() (bmpvs []badPartitionView) {
-	c.badPartitionMutex.Lock()
-	defer c.badPartitionMutex.Unlock()
+	c.badPartitionMutex.RLock()
+	defer c.badPartitionMutex.RUnlock()
 
 	bmpvs = make([]badPartitionView, 0)
 	c.BadMetaPartitionIds.Range(func(key, value interface{}) bool {
@@ -1735,11 +1744,13 @@ func (c *Cluster) migrateMetaNode(srcAddr, targetAddr string, limit int) (err er
 		return fmt.Errorf("migrateMataNode no partition can migrate from [%s] to [%s]", srcAddr, targetAddr)
 	}
 
-	if limit <= 0 {
+	if limit <= 0 && targetAddr == "" { // default all mps
+		limit = len(toBeOfflineMps)
+	} else if limit <= 0 {
 		limit = defaultMigrateMpCnt
 	}
 
-	if targetAddr == "" || limit > len(toBeOfflineMps) {
+	if limit > len(toBeOfflineMps) {
 		limit = len(toBeOfflineMps)
 	}
 
@@ -1821,8 +1832,8 @@ func (c *Cluster) updateVol(name, authKey string, newArgs *VolVarargs) (err erro
 		err = proto.ErrVolNotExists
 		goto errHandler
 	}
-	vol.Lock()
-	defer vol.Unlock()
+	vol.volLock.Lock()
+	defer vol.volLock.Unlock()
 	serverAuthKey = vol.Owner
 	if !matchKey(serverAuthKey, authKey) {
 		return proto.ErrVolAuthKeyNotMatch
