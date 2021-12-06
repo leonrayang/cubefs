@@ -359,12 +359,14 @@ func (m *metadataManager) loadPartitions() (err error) {
 					}
 					errload = nil
 				}
+
 				partition := NewMetaPartition(partitionConfig, m)
 				errload = m.attachPartition(id, partition)
 				if errload != nil {
 					log.LogErrorf("load partition id=%d failed: %s.",
 						id, errload.Error())
 				}
+
 			}(fileInfo.Name())
 		}
 	}

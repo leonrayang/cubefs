@@ -64,6 +64,7 @@ type MetaNode struct {
 	smuxStopC         chan uint8
 	metrics           *MetaNodeMetrics
 	tickInterval      int
+	startInterval     uint64
 
 	control common.Control
 }
@@ -124,9 +125,13 @@ func doStart(s common.Server, cfg *config.Config) (err error) {
 	if err = m.startRaftServer(); err != nil {
 		return
 	}
-	if err = m.startMetaManager(); err != nil {
+
+	err = m.startMetaManager()
+	if err != nil {
+		log.LogErrorf("doStart startMetaManager failed, err (%s)", err.Error())
 		return
 	}
+
 	if err = m.registerAPIHandler(); err != nil {
 		return
 	}
@@ -135,13 +140,6 @@ func doStart(s common.Server, cfg *config.Config) (err error) {
 
 	exporter.Init(cfg.GetString("role"), cfg)
 	m.startStat()
-
-	// check local partition compare with master ,if lack,then not start
-	if err = m.checkLocalPartitionMatchWithMaster(); err != nil {
-		syslog.Println(err)
-		exporter.Warning(err.Error())
-		return
-	}
 
 	if err = m.startServer(); err != nil {
 		return
@@ -218,6 +216,17 @@ func (m *MetaNode) parseConfig(cfg *config.Config) (err error) {
 	}
 	if m.raftReplicatePort == "" {
 		return fmt.Errorf("bad cfgRaftReplicaPort config")
+	}
+
+	if cfg.GetString(cfgStartInterval) != "" {
+		m.startInterval, err = strconv.ParseUint(cfg.GetString(cfgStartInterval), 10, 64)
+		if err != nil {
+			return fmt.Errorf("bad cfgStartInterval config, %s", cfg.GetString(cfgStartInterval))
+		}
+	}
+
+	if m.startInterval < defaultStartInterval { // default 3 minutes
+		m.startInterval = defaultStartInterval
 	}
 
 	constCfg := config.ConstConfig{
@@ -326,9 +335,46 @@ func (m *MetaNode) startMetaManager() (err error) {
 		ZoneName:  m.zoneName,
 	}
 	m.metadataManager = NewMetadataManager(conf, m)
-	if err = m.metadataManager.Start(); err == nil {
-		log.LogInfof("[startMetaManager] manager start finish.")
-	}
+
+	go func() {
+		var err1 error
+		defer func() {
+			if err1 != nil {
+				m.Shutdown()
+				exporter.Warning(err1.Error())
+				log.LogFatalf("startMetaManager failed, err %s", err1.Error())
+			}
+		}()
+
+		errChan := make(chan error)
+		go func() {
+			if err1 = m.metadataManager.Start(); err1 == nil {
+				syslog.Println("[startMetaManager] manager start finish.")
+			}
+			errChan <- err1
+		}()
+
+		startTimer := time.NewTicker(time.Duration(m.startInterval) * time.Minute)
+		select {
+		case <-startTimer.C:
+			err1 = fmt.Errorf("startMetaManager after (%d) minutes, mp is still not load all, panic", m.startInterval)
+			return
+		case err1 = <-errChan:
+			if err1 != nil {
+				err1 = fmt.Errorf("startMetaManager load meta fail, err %s", err1.Error())
+				return
+			}
+		}
+
+		// check local partition compare with master ,if lack,then not start
+		if err1 = m.checkLocalPartitionMatchWithMaster(); err1 != nil {
+			syslog.Println(err1)
+			exporter.Warning(err1.Error())
+			err1 = fmt.Errorf("startMetaManager checkLocalPartitionMatchWithMaster %s", err1.Error())
+			return
+		}
+	}()
+
 	return
 }
 
