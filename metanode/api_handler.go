@@ -233,7 +233,7 @@ func (m *MetaNode) getRaftStatusHandler(w http.ResponseWriter, r *http.Request) 
 		paramRaftID = "id"
 	)
 
-	resp := NewAPIResponse(http.StatusBadRequest, "")
+	resp := NewAPIResponse(http.StatusOK, http.StatusText(http.StatusOK))
 	defer func() {
 		data, _ := resp.Marshal()
 		if _, err := w.Write(data); err != nil {
@@ -245,12 +245,11 @@ func (m *MetaNode) getRaftStatusHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		err = fmt.Errorf("parse param %v fail: %v", paramRaftID, err)
 		resp.Msg = err.Error()
+		resp.Code = http.StatusBadRequest
 		return
 	}
 
 	raftStatus := m.raftStore.RaftStatus(raftID)
-
-	resp.Code = http.StatusSeeOther
 	resp.Data = raftStatus
 }
 
