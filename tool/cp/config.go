@@ -3,6 +3,7 @@ package cp
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -13,10 +14,17 @@ import (
 	clog "github.com/chubaofs/chubaofs/util/log"
 )
 
-var WorkerCnt int
-var WalkCnt int
-var QueueSize int
-var CfgPath string
+var (
+	WorkerCnt = *flag.Int("workerCnt", 0, "thread count to copy or sync files")
+	WalkCnt   = *flag.Int("walkCnt", 0, "thread count to walk dirs")
+	QueueSize = *flag.Int("queueSize", 0, "use to store files, waiting to consume")
+	CfgPath   = *flag.String("cfgPath", "", "config file path")
+)
+
+// var WorkerCnt int
+// var WalkCnt int
+// var QueueSize int
+// var CfgPath string
 
 type clusterCfg struct {
 	Volname string `json:"volname"`
@@ -99,7 +107,7 @@ func parseCfsDir(path string) (cluster, vol, dir string) {
 		log.Fatalf("cfs dir is not legal, path %s", path)
 	}
 
-	dir = path[idx+3:]
+	dir = path[idx+2:]
 
 	path = path[:idx]
 	arr := strings.Split(path, ":")

@@ -69,6 +69,8 @@ func (w *Walker) Execute() {
 	srcCfg := w.Conf.SrcDir
 	destCfg := w.Conf.DestDir
 
+	clog.LogDebugf("start excute task, src %s dest %s", srcCfg.dir, destCfg.dir)
+
 	srcInode, err := w.srcApi.getInoByPath(srcCfg.dir)
 	if err != nil {
 		log.Fatalf("get src inode by path failed, src %s, err %s", srcCfg.dir, err.Error())
