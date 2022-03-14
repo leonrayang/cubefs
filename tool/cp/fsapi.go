@@ -14,6 +14,7 @@ import (
 	cfs "github.com/chubaofs/chubaofs/client/fs"
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/sdk/meta"
+	clog "github.com/chubaofs/chubaofs/util/log"
 )
 
 type FsApi interface {
@@ -90,11 +91,21 @@ type OsFs struct {
 
 func (f *OsFs) getInoByPath(filePath string) (ino uint64, err error) {
 	stat, err := f.statFile(filePath, 0)
+	if err == nil {
+		return stat.Ino, err
+	}
+
+	if err != os.ErrNotExist {
+		return
+	}
+
+	// create dir first
+	err = os.MkdirAll(filePath, 0777)
 	if err != nil {
 		return
 	}
 
-	return stat.Ino, err
+	return
 }
 
 func (f *OsFs) readlink(name string, parentIno uint64) (string, error) {
@@ -228,6 +239,7 @@ func fileMode(unixMode uint32) os.FileMode {
 }
 
 func (f *CubeFs) updateStat(dir string, srcStat *syscall.Stat_t, parentIno uint64) error {
+	clog.LogDebugf("start cfs.updateStat, dir %s", dir)
 	if isRootDIr(dir) {
 		return nil
 	}
@@ -252,13 +264,15 @@ func isRootDIr(dir string) bool {
 }
 
 func (f *CubeFs) mkdir(dir string, parentIno uint64) (err error) {
+	clog.LogDebugf("start cubefs.mkdir, dir %s", dir)
 	if isRootDIr(dir) {
 		return
 	}
 
 	stat, err := f.statFile(dir, parentIno)
 	if err == nil {
-		if proto.IsDir(stat.Mode) {
+		newMode := fileMode(stat.Mode)
+		if newMode.IsDir() {
 			return
 		}
 
@@ -282,7 +296,7 @@ func (f *CubeFs) symlink(oldname, newname string, parentIno uint64) error {
 
 	_, filename := path.Split(newname)
 	dirf := cfs.NewDir(f.super, &proto.InodeInfo{Inode: parentIno}).(*cfs.Dir)
-	_, err := dirf.Symlink(ctx, &fuse.SymlinkRequest{NewName: filename, Target: filename})
+	_, err := dirf.Symlink(ctx, &fuse.SymlinkRequest{NewName: filename, Target: oldname})
 	return err
 }
 
@@ -298,9 +312,9 @@ func getModeTyp(typ uint32) fs.FileMode {
 	return 0
 }
 
-func (f *CubeFs) readDir(dir string, parentIno uint64) (dirItmes []DirItem, err error) {
-
-	entrys, err := f.mw.ReadDir_ll(parentIno)
+func (f *CubeFs) readDir(dir string, ino uint64) (dirItmes []DirItem, err error) {
+	clog.LogDebugf("start cubefs.readDir,dir %s, ino %d", dir, ino)
+	entrys, err := f.mw.ReadDir_ll(ino)
 	if err != nil {
 		return
 	}
@@ -358,6 +372,7 @@ func buildStatFromInode(inode *proto.InodeInfo) (stat *syscall.Stat_t) {
 }
 
 func (f *CubeFs) statFile(filePath string, parentIno uint64) (stat *syscall.Stat_t, err error) {
+	clog.LogDebugf("start cubefs.statFile, path %s", filePath)
 	defer func() {
 		if err != nil {
 			err = cfs.ParseError(err)
@@ -383,6 +398,8 @@ func (f *CubeFs) statFile(filePath string, parentIno uint64) (stat *syscall.Stat
 }
 
 func (f *CubeFs) getIno(filePath string, parentIno uint64) (ino uint64, err error) {
+	clog.LogDebugf("start cubefs.getIno, path %s", filePath)
+
 	if isRootDIr(filePath) {
 		return proto.RootIno, nil
 	}
@@ -397,14 +414,37 @@ func (f *CubeFs) getIno(filePath string, parentIno uint64) (ino uint64, err erro
 }
 
 func (f *CubeFs) getInoByPath(filePath string) (ino uint64, err error) {
-	if isRootDIr(filePath) {
+	clog.LogDebugf("start cubefs.getInoByPath, path %s", filePath)
+	dir, _ := path.Split(filePath)
+	if isRootDIr(dir) {
 		return proto.RootIno, nil
 	}
 
-	return f.mw.LookupPath(filePath)
+	ino = proto.RootIno
+	dirs := strings.Split(dir, "/")
+	for _, dir := range dirs {
+		if dir == "/" || dir == "" {
+			continue
+		}
+
+		err = f.mkdir(dir, ino)
+		if err != nil {
+			return
+		}
+
+		newIno, err := f.getIno(dir, ino)
+		if err != nil {
+			return 0, err
+		}
+
+		ino = newIno
+	}
+
+	return ino, nil
 }
 
 func (f *CubeFs) openFile(filePath string, create bool, parentIno uint64) (fd FdApi, err error) {
+	clog.LogDebugf("start cubefs.openFile, path %s", filePath)
 	_, fileName := path.Split(filePath)
 	if !create {
 		inode, _, err := f.mw.Lookup_ll(parentIno, fileName)
@@ -419,17 +459,31 @@ func (f *CubeFs) openFile(filePath string, create bool, parentIno uint64) (fd Fd
 	}
 
 	dirf := cfs.NewDir(f.super, &proto.InodeInfo{Inode: parentIno}).(*cfs.Dir)
-	child, _, err := dirf.Create(ctx, &fuse.CreateRequest{Name: fileName, Mode: 0777}, &fuse.CreateResponse{})
+	child, _, err := dirf.Create(ctx, &fuse.CreateRequest{Name: fileName, Mode: 0777},
+		&fuse.CreateResponse{})
 	if err != nil && err != fuse.EEXIST {
 		return
 	}
 
-	if err == fuse.EEXIST {
-		return f.openFile(filePath, false, parentIno)
+	if err == nil {
+		file := child.(*cfs.File)
+		return &CubeFd{fd: file}, err
 	}
 
-	file := child.(*cfs.File)
-	return &CubeFd{fd: file}, err
+	// err == fuse.EEXIST
+	// truncate exist file firse
+	ino, err := f.getIno(filePath, parentIno)
+	if err != nil {
+		return
+	}
+
+	err = f.mw.Truncate(ino, 0)
+	if err != nil {
+		return
+	}
+
+	return f.openFile(filePath, false, parentIno)
+
 }
 
 type FdApi interface {
@@ -443,18 +497,20 @@ type CubeFd struct {
 }
 
 func (fd *CubeFd) Close() (err error) {
+	clog.LogDebugf("start cubefs.Close")
 	req := &fuse.ReleaseRequest{}
 	return fd.fd.Release(ctx, req)
 }
 
 func (fd *CubeFd) ReadAt(b []byte, offset int64) (n int, err error) {
+	clog.LogDebugf("start cubefs.ReadAt, offset %d", offset)
 	req := &fuse.ReadRequest{
 		Offset: offset,
 		Size:   len(b),
 	}
 
 	resp := &fuse.ReadResponse{
-		Data: b,
+		Data: make([]byte, len(b)+fuse.OutHeaderSize),
 	}
 
 	err = fd.fd.Read(ctx, req, resp)
@@ -464,10 +520,11 @@ func (fd *CubeFd) ReadAt(b []byte, offset int64) (n int, err error) {
 
 	copy(b, resp.Data[fuse.OutHeaderSize:])
 
-	return len(b), err
+	return len(resp.Data) - fuse.OutHeaderSize, err
 }
 
 func (fd *CubeFd) WriteAt(b []byte, offset int64) (n int, err error) {
+	clog.LogDebugf("start cubefs.WriteAt")
 	req := fuse.WriteRequest{
 		Data:   b,
 		Offset: offset,

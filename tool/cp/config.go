@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"path"
 	"strings"
 
 	"github.com/chubaofs/chubaofs/proto"
+	clog "github.com/chubaofs/chubaofs/util/log"
 )
 
 var WorkerCnt int
@@ -56,7 +58,7 @@ func (cfg *config) buildPathCfg(dir string) *pathCfg {
 	if !strings.HasPrefix(dir, "cfs") || !strings.Contains(dir, "://") {
 		return &pathCfg{
 			tp:  OsTyp,
-			dir: dir,
+			dir: path.Clean(dir),
 		}
 	}
 
@@ -83,7 +85,7 @@ func (cfg *config) buildPathCfg(dir string) *pathCfg {
 
 	pCfg := &pathCfg{
 		tp:     CubeFsTyp,
-		dir:    newDir,
+		dir:    path.Clean(newDir),
 		option: opt,
 	}
 
@@ -135,6 +137,29 @@ func (cfg *config) setDefault() {
 	}
 }
 
+func parseLogLevel(loglvl string) clog.Level {
+	switch strings.ToLower(loglvl) {
+	case "debug":
+		return clog.DebugLevel
+	case "info":
+		return clog.InfoLevel
+	case "warn":
+		return clog.WarnLevel
+	case "error":
+		return clog.ErrorLevel
+	default:
+		return clog.ErrorLevel
+	}
+}
+
+func (cfg *config) initLogger() {
+	level := parseLogLevel(cfg.LogLevel)
+	_, err := clog.InitLog(cfg.LogDir, "client", level, nil)
+	if err != nil {
+		log.Fatalf("init log dir failed, logdir %s, err %s", cfg.LogDir, err.Error())
+	}
+}
+
 var defaultCfgPath = "/home/cfs/cfs.json"
 
 func ParseConfig(srcDir, destDir string, op opType) Conf {
@@ -151,6 +176,7 @@ func ParseConfig(srcDir, destDir string, op opType) Conf {
 	}
 
 	cfg.setDefault()
+	cfg.initLogger()
 
 	c.Op = op
 	c.SrcDir = cfg.buildPathCfg(srcDir)

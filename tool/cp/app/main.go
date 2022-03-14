@@ -15,7 +15,7 @@ func main() {
 	}
 
 	if os.Args[1] != "cp" && os.Args[1] != "sync" {
-		log.Fatal("")
+		log.Fatal("only support cp & sync op")
 	}
 
 	op := cp.CopyOp

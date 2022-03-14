@@ -4,11 +4,15 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	syslog "log"
+	"time"
+
+	// syslog "log"
 	"os"
 	"path"
 	"strings"
 	"sync"
+
+	clog "github.com/chubaofs/chubaofs/util/log"
 )
 
 type opType int
@@ -51,7 +55,7 @@ func InitWalker(cfg Conf) *Walker {
 	w.destApi = initFs(cfg.DestDir)
 	w.wg = sync.WaitGroup{}
 	if cfg.Op == CopyOp {
-		w.processTask = w.copyFile
+		w.processTask = w.copyTask
 	} else if cfg.Op == SyncOp {
 		w.processTask = w.syncTask
 	}
@@ -60,6 +64,8 @@ func InitWalker(cfg Conf) *Walker {
 }
 
 func (w *Walker) Execute() {
+	defer clog.LogFlush()
+
 	srcCfg := w.Conf.SrcDir
 	destCfg := w.Conf.DestDir
 
@@ -73,8 +79,8 @@ func (w *Walker) Execute() {
 		log.Fatalf("get dest inode by path failed, src %s, err %s", destCfg.dir, err.Error())
 	}
 
-	w.wg.Add(1)
 	for idx := 0; idx < w.workerCnt; idx++ {
+		w.wg.Add(1)
 		go w.consumeTask()
 	}
 
@@ -82,8 +88,9 @@ func (w *Walker) Execute() {
 
 	close(w.taskCh)
 	w.wg.Wait()
+	time.Sleep(time.Second)
 
-	syslog.Println("success")
+	log.Println("success")
 }
 
 func (w *Walker) getDestPath(src string) string {
@@ -92,20 +99,23 @@ func (w *Walker) getDestPath(src string) string {
 }
 
 func (w *Walker) createDir(src, dest string, srcParentIno, destParentIno uint64) {
+	// if w.DestDir.dir == dest {
+	// 	clog.LogDebugf("[createDir] dest dir %s is baseDestDir, no need create again", dest)
+	// }
 
 	err := w.destApi.mkdir(dest, destParentIno)
 	if err != nil {
-		log.Fatalf("mkdir %s failed %s", dest, err.Error())
+		clog.LogFatalf("mkdir %s failed %s", dest, err.Error())
 	}
 
 	srcStat, err := w.srcApi.statFile(src, srcParentIno)
 	if err != nil {
-		log.Fatalf("stat src %s failed %s", src, err.Error())
+		clog.LogFatalf("stat src %s failed %s", src, err.Error())
 	}
 
 	err = w.destApi.updateStat(dest, srcStat, destParentIno)
 	if err != nil {
-		log.Fatalf("update dest stat failed, dest %s err %s", dest, err.Error())
+		clog.LogFatalf("update dest stat failed, dest %s err %s", dest, err.Error())
 	}
 }
 
@@ -139,7 +149,7 @@ func (w *Walker) traverseDir(src string, srcParentIno, destParentIno uint64, op 
 		log.Fatalf("get dest inode failed, dest %s err %s", dest, err.Error())
 	}
 
-	ents, err := w.srcApi.readDir(src, srcParentIno)
+	ents, err := w.srcApi.readDir(src, newSrcParentIno)
 	if err != nil {
 		log.Fatalf("read src dir failed, src %s, err %s", src, err.Error())
 	}
@@ -269,5 +279,5 @@ func (w *Walker) syncTask(task opTask) {
 }
 
 func (w *Walker) checkTask(task opTask) {
-
+	// TODO
 }
