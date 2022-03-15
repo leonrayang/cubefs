@@ -189,12 +189,27 @@ func ParseConfig(srcDir, destDir string, op opType) Conf {
 	c.Op = op
 	c.SrcDir = cfg.buildPathCfg(srcDir)
 	c.DestDir = cfg.buildPathCfg(destDir)
+
+	// fileName := getLastDir(c.SrcDir.dir)
+	_, fileName := path.Split(c.SrcDir.dir)
+	clog.LogDebugf("get fileName %s destDir %s", fileName, c.DestDir.dir)
+	c.DestDir.dir = path.Join(c.DestDir.dir, fileName)
+
 	c.TraverseJobCnt = cfg.WalkerCnt
 	c.workerCnt = cfg.WorkerCnt
 	c.TaskCnt = cfg.QueueSize
 	c.BlkSize = cfg.BlkSize
 
 	return c
+}
+
+func getLastDir(dir string) string {
+	arr := strings.Split(dir, "/")
+	if len(arr) == 0 {
+		return "/"
+	}
+
+	return arr[len(arr)-1]
 }
 
 func loadConfig(conf interface{}, configPath string) error {

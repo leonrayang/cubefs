@@ -81,17 +81,35 @@ func (w *Walker) Execute() {
 		log.Fatalf("get dest inode by path failed, src %s, err %s", destCfg.dir, err.Error())
 	}
 
-	for idx := 0; idx < w.workerCnt; idx++ {
-		w.wg.Add(1)
-		go w.consumeTask()
+	srcStat, err := w.srcApi.statFile(srcCfg.dir, srcInode)
+	if err != nil {
+		clog.LogFatalf("stat src dir failed, srcDir %s, err %s", srcCfg.dir, err.Error())
 	}
 
-	w.traverseDir(srcCfg.dir, srcInode, destIno, w.Op)
+	mode := fileMode(srcStat.Mode)
+	if !mode.IsDir() {
+		task := opTask{
+			op:            w.Op,
+			src:           srcCfg.dir,
+			dest:          destCfg.dir,
+			srcParentIno:  srcInode,
+			destParentIno: destIno,
+		}
 
-	close(w.taskCh)
-	w.wg.Wait()
+		w.processTask(task)
+	} else {
+		for idx := 0; idx < w.workerCnt; idx++ {
+			w.wg.Add(1)
+			go w.consumeTask()
+		}
+
+		w.traverseDir(srcCfg.dir, srcInode, destIno, w.Op)
+
+		close(w.taskCh)
+		w.wg.Wait()
+	}
+
 	time.Sleep(time.Second)
-
 	log.Println("success")
 }
 

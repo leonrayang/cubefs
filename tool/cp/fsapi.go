@@ -90,7 +90,12 @@ type OsFs struct {
 }
 
 func (f *OsFs) getInoByPath(filePath string) (ino uint64, err error) {
-	stat, err := f.statFile(filePath, 0)
+	dir, _ := path.Split(filePath)
+	if dir == "" || dir == "/" {
+		return
+	}
+
+	stat, err := f.statFile(dir, 0)
 	if err == nil {
 		return stat.Ino, err
 	}
@@ -100,7 +105,7 @@ func (f *OsFs) getInoByPath(filePath string) (ino uint64, err error) {
 	}
 
 	// create dir first
-	err = os.MkdirAll(filePath, 0777)
+	err = os.MkdirAll(dir, 0777)
 	if err != nil {
 		return
 	}
