@@ -10,6 +10,7 @@ func TestLoadConfig(t *testing.T) {
 	data := []byte(`
 	{
 		"clusterCfg":[
+			# different cfg
 			{
 				"volname":"ltptest",
 				"addr":"localhost",
@@ -17,6 +18,7 @@ func TestLoadConfig(t *testing.T) {
 				"ak":"ak",
 				"sk":"sk",
 				"cluster":"marina",
+				"desc": "bjht marina volume1",
 				"clusterId":"c1"
 			}
 		],
@@ -49,7 +51,7 @@ func TestLoadConfig(t *testing.T) {
 	assertTrue(t, cfg.QueueSize == 4096 && cfg.LogLevel == "warn" && cfg.LogDir == "/home/service")
 	clusterCfg := cfg.ClusterCfg[0]
 	assertTrue(t, clusterCfg.Volname == "ltptest" && clusterCfg.Addr == "localhost")
-	assertTrue(t, clusterCfg.Owner == "owner" && clusterCfg.Ak == "ak")
+	assertTrue(t, clusterCfg.Owner == "owner" && clusterCfg.Ak == "ak" && clusterCfg.Desc == "bjht marina volume1")
 	assertTrue(t, clusterCfg.Sk == "sk" && clusterCfg.Cluster == "marina" && clusterCfg.ClusterId == "c1")
 }
 

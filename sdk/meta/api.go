@@ -16,7 +16,6 @@ package meta
 
 import (
 	"fmt"
-	syslog "log"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,7 +61,7 @@ func (mw *MetaWrapper) GetRootIno(subdir string) (uint64, error) {
 	if !proto.IsDir(info.Mode) {
 		return 0, fmt.Errorf("GetRootIno: not directory, subdir(%v) mode(%v) err(%v)", subdir, info.Mode, err)
 	}
-	syslog.Printf("GetRootIno: %v\n", rootIno)
+	// syslog.Printf("GetRootIno: %v\n", rootIno)
 	return rootIno, nil
 }
 
