@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"path"
 	"strings"
 
@@ -27,12 +28,13 @@ var (
 // var CfgPath string
 
 type clusterCfg struct {
-	Volname string `json:"volname"`
-	Addr    string `json:"addr"`
-	Owner   string `json:"owner"`
-	Ak      string `json:"ak"`
-	Sk      string `json:"sk"`
-	Cluster string `json:"cluster"`
+	Volname   string `json:"volname"`
+	Addr      string `json:"addr"`
+	Owner     string `json:"owner"`
+	Ak        string `json:"ak"`
+	Sk        string `json:"sk"`
+	Cluster   string `json:"cluster"`
+	ClusterId string `json:"clusterId"`
 }
 
 type config struct {
@@ -61,9 +63,9 @@ type Conf struct {
 	Op             opType
 }
 
-// cubefs: cfs:m1:ltptest://data1
+// cubefs: c1://data1
 func (cfg *config) buildPathCfg(dir string) *pathCfg {
-	if !strings.HasPrefix(dir, "cfs") || !strings.Contains(dir, "://") {
+	if !strings.Contains(dir, "://") {
 		return &pathCfg{
 			tp:  OsTyp,
 			dir: path.Clean(dir),
@@ -71,9 +73,9 @@ func (cfg *config) buildPathCfg(dir string) *pathCfg {
 	}
 
 	var clusterCfg *clusterCfg
-	cluster, vol, newDir := parseCfsDir(dir)
+	clusterId, newDir := parseCfsDir(dir)
 	for _, cCfg := range cfg.ClusterCfg {
-		if cCfg.Cluster == cluster && cCfg.Volname == vol {
+		if cCfg.ClusterId == clusterId {
 			clusterCfg = &cCfg
 			break
 		}
@@ -97,11 +99,12 @@ func (cfg *config) buildPathCfg(dir string) *pathCfg {
 		option: opt,
 	}
 
+	// fmt.Printf("dir: %s, clusterId %s", newDir, clusterId)
 	return pCfg
 }
 
-// cubefs: cfs:m1:ltptest://data1
-func parseCfsDir(path string) (cluster, vol, dir string) {
+// cubefs: c1://data1
+func parseCfsDir(path string) (clusterId, dir string) {
 	idx := strings.Index(path, "://")
 	if idx <= 0 {
 		log.Fatalf("cfs dir is not legal, path %s", path)
@@ -109,13 +112,9 @@ func parseCfsDir(path string) (cluster, vol, dir string) {
 
 	dir = path[idx+2:]
 
-	path = path[:idx]
-	arr := strings.Split(path, ":")
-	if len(arr) != 3 {
-		log.Fatalf("cfs dir is not legal, path %s", path)
-	}
+	clusterId = path[:idx]
 
-	return arr[1], arr[2], dir
+	return clusterId, dir
 }
 
 func (cfg *config) setDefault() {
@@ -168,21 +167,49 @@ func (cfg *config) initLogger() {
 	}
 }
 
-var defaultCfgPath = "/home/cfs/cfs.json"
+func getCfgPath() string {
+	pathName, err := os.Executable()
+	if err != nil {
+		log.Fatal("get cfg path failed")
+	}
+
+	dir := path.Dir(path.Dir(pathName))
+	return fmt.Sprintf("%s/conf/cfs-tool.json", dir)
+}
+
+func (cfg *config) check() {
+	clusterCfgList := cfg.ClusterCfg
+	if len(clusterCfgList) == 0 {
+		return
+	}
+
+	for i := range clusterCfgList {
+		for j := range clusterCfgList {
+			if i == j {
+				continue
+			}
+			if clusterCfgList[i].ClusterId == clusterCfgList[j].ClusterId {
+				log.Fatalf("cluster Id can't be same, id %s", clusterCfgList[i].ClusterId)
+			}
+		}
+	}
+}
 
 func ParseConfig(srcDir, destDir string, op opType) Conf {
 	c := Conf{}
 
 	cfg := &config{}
 	if CfgPath == "" {
-		CfgPath = defaultCfgPath
+		CfgPath = getCfgPath()
 	}
+	log.Println("cfg path, ", CfgPath)
 
 	err := loadConfig(cfg, CfgPath)
 	if err != nil {
 		log.Fatalf("load cfg from %s failed, err %s", CfgPath, err.Error())
 	}
 
+	cfg.check()
 	cfg.setDefault()
 	cfg.initLogger()
 
@@ -201,15 +228,6 @@ func ParseConfig(srcDir, destDir string, op opType) Conf {
 	c.BlkSize = cfg.BlkSize
 
 	return c
-}
-
-func getLastDir(dir string) string {
-	arr := strings.Split(dir, "/")
-	if len(arr) == 0 {
-		return "/"
-	}
-
-	return arr[len(arr)-1]
 }
 
 func loadConfig(conf interface{}, configPath string) error {

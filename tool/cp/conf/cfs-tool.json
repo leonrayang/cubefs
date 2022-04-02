@@ -1,0 +1,19 @@
+{
+    "clusterCfg":[
+        {
+            "volname":"hot_s3",
+            "addr":"10.177.69.105:17010,10.177.69.106:17010,10.177.117.108:17010",
+            "owner":"console_vol",
+            "ak":"9rAXjgo9Nlyk7rOO",
+            "sk":"N6F7huAf6L6jH4jxtZ3jDVKldb4ZBXt1",
+            "cluster":"m1",
+	    "clusterId":"c1"
+        }
+    ],
+    "logLevel":"warn",
+    "logDir":"/home/cfs/logs",
+    "walkerCnt":10,
+    "workerCnt":6,
+    "blkSize":4096,
+    "queueSize":4096
+}

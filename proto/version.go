@@ -20,7 +20,7 @@ func DumpVersion(role string) string {
 		"Build   : %s %s %s %s\n",
 		role,
 		Version,
-		BranchName,
+		"",
 		CommitID,
 		runtime.Version(), runtime.GOOS, runtime.GOARCH, BuildTime)
 }

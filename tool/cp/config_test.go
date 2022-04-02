@@ -1,6 +1,7 @@
 package cp
 
 import (
+	"fmt"
 	"os"
 	"testing"
 )
@@ -15,7 +16,8 @@ func TestLoadConfig(t *testing.T) {
 				"owner":"owner",
 				"ak":"ak",
 				"sk":"sk",
-				"cluster":"m1"
+				"cluster":"marina",
+				"clusterId":"c1"
 			}
 		],
 		"logLevel":"warn",
@@ -48,7 +50,7 @@ func TestLoadConfig(t *testing.T) {
 	clusterCfg := cfg.ClusterCfg[0]
 	assertTrue(t, clusterCfg.Volname == "ltptest" && clusterCfg.Addr == "localhost")
 	assertTrue(t, clusterCfg.Owner == "owner" && clusterCfg.Ak == "ak")
-	assertTrue(t, clusterCfg.Sk == "sk" && clusterCfg.Cluster == "m1")
+	assertTrue(t, clusterCfg.Sk == "sk" && clusterCfg.Cluster == "marina" && clusterCfg.ClusterId == "c1")
 }
 
 func TestParseCfg(t *testing.T) {
@@ -61,7 +63,8 @@ func TestParseCfg(t *testing.T) {
 				"owner":"owner",
 				"ak":"ak",
 				"sk":"sk",
-				"cluster":"m1"
+				"cluster":"m1",
+				"clusterId":"c1"
 			},
 			{
 				"volname":"ltptest",
@@ -69,7 +72,8 @@ func TestParseCfg(t *testing.T) {
 				"owner":"owner",
 				"ak":"ak",
 				"sk":"sk",
-				"cluster":"m2"
+				"cluster":"m2",
+				"clusterId":"c2"
 			}
 		],
 		"logLevel":"warn",
@@ -94,10 +98,15 @@ func TestParseCfg(t *testing.T) {
 	assertTrue(t, cfg.SrcDir.tp == OsTyp)
 	assertTrue(t, cfg.DestDir.tp == OsTyp)
 
-	cfgCubefs := ParseConfig("cfs:m1:ltptest://d1", "cfs:m1:ltptest://d2", CopyOp)
-	assertTrue(t, cfgCubefs.SrcDir.tp == CubeFsTyp)
-	assertTrue(t, cfgCubefs.DestDir.tp == CubeFsTyp)
+	cfgCubefs := ParseConfig("c1://d1", "c2://d2", CopyOp)
+	fmt.Printf("src tp %d, dest tp %d \n", cfgCubefs.SrcDir.tp, cfgCubefs.DestDir.tp)
+	if cfgCubefs.SrcDir.tp != CubeFsTyp {
+		t.Fail()
+	}
 
+	if cfgCubefs.DestDir.tp != CubeFsTyp {
+		t.Fail()
+	}
 }
 
 func assertTrue(t *testing.T, con bool) {
