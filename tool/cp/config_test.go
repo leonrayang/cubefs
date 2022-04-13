@@ -19,6 +19,7 @@ func TestLoadConfig(t *testing.T) {
 				"sk":"sk",
 				"cluster":"marina",
 				"desc": "bjht marina volume1",
+				"idc":"bjht",
 				"clusterId":"c1"
 			}
 		],
@@ -47,12 +48,19 @@ func TestLoadConfig(t *testing.T) {
 
 	assertTrue(t, len(cfg.ClusterCfg) == 1)
 
-	assertTrue(t, cfg.WorkerCnt == 10 && cfg.WalkerCnt == 10 && cfg.BlkSize == 4096)
+	if !(cfg.WorkerCnt == 10 && cfg.WalkerCnt == 10 && cfg.BlkSize == 4096) {
+		t.Fail()
+	}
+
 	assertTrue(t, cfg.QueueSize == 4096 && cfg.LogLevel == "warn" && cfg.LogDir == "/home/service")
 	clusterCfg := cfg.ClusterCfg[0]
 	assertTrue(t, clusterCfg.Volname == "ltptest" && clusterCfg.Addr == "localhost")
 	assertTrue(t, clusterCfg.Owner == "owner" && clusterCfg.Ak == "ak" && clusterCfg.Desc == "bjht marina volume1")
 	assertTrue(t, clusterCfg.Sk == "sk" && clusterCfg.Cluster == "marina" && clusterCfg.ClusterId == "c1")
+	t.Log("cfg", clusterCfg)
+	if clusterCfg.Idc != "bjht" {
+		t.Fail()
+	}
 }
 
 func TestParseCfg(t *testing.T) {
@@ -86,7 +94,7 @@ func TestParseCfg(t *testing.T) {
 		"queueSize":4096
 	}`)
 
-	CfgPath = "/root/cfs/cfs.json"
+	CfgPath = "/root/cfs.json"
 	cfgPath := CfgPath
 	fd, err := os.Create(cfgPath)
 	defer os.Remove(cfgPath)

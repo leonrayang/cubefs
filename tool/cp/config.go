@@ -36,6 +36,7 @@ type clusterCfg struct {
 	Cluster   string `json:"cluster"`
 	ClusterId string `json:"clusterId"`
 	Desc      string `json:"desc"`
+	Idc       string `json:"idc"`
 }
 
 type config struct {
