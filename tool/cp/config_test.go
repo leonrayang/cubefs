@@ -20,7 +20,7 @@ func TestLoadConfig(t *testing.T) {
 				"cluster":"marina",
 				"desc": "bjht marina volume1",
 				"idc":"bjht",
-				"clusterId":"c1"
+				"cid":"c1"
 			}
 		],
 		"logLevel":"warn",
@@ -74,7 +74,7 @@ func TestParseCfg(t *testing.T) {
 				"ak":"ak",
 				"sk":"sk",
 				"cluster":"m1",
-				"clusterId":"c1"
+				"cid":"c1"
 			},
 			{
 				"volname":"ltptest",
@@ -83,7 +83,7 @@ func TestParseCfg(t *testing.T) {
 				"ak":"ak",
 				"sk":"sk",
 				"cluster":"m2",
-				"clusterId":"c2"
+				"cid":"c2"
 			}
 		],
 		"logLevel":"warn",

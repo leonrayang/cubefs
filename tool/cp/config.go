@@ -22,11 +22,6 @@ var (
 	CfgPath   = *flag.String("cfgPath", "", "config file path")
 )
 
-// var WorkerCnt int
-// var WalkCnt int
-// var QueueSize int
-// var CfgPath string
-
 type clusterCfg struct {
 	Volname   string `json:"volname"`
 	Addr      string `json:"addr"`
@@ -34,7 +29,7 @@ type clusterCfg struct {
 	Ak        string `json:"ak"`
 	Sk        string `json:"sk"`
 	Cluster   string `json:"cluster"`
-	ClusterId string `json:"clusterId"`
+	ClusterId string `json:"cid"`
 	Desc      string `json:"desc"`
 	Idc       string `json:"idc"`
 }
