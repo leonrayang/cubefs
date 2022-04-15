@@ -8,6 +8,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -150,14 +151,28 @@ func (w *Walker) lsCmd() {
 	}
 
 	parIno := stat.Ino
-	for _, item := range items {
-		subPath := path.Join(filepath, item.Name)
-		st, err := w.srcApi.statFile(subPath, parIno)
-		if err != nil {
-			log.Fatalf("stat path %s err %s", subPath, err.Error())
-		}
+	dirCh := make(chan DirItem, len(items))
+	wg := sync.WaitGroup{}
 
-		printFile(st, item.Name)
+	for idx := 0; idx < w.workerCnt; idx++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for item := range dirCh {
+				subPath := path.Join(filepath, item.Name)
+				st, err := w.srcApi.statFile(subPath, parIno)
+				if err != nil {
+					log.Fatalf("stat path %s err %s", subPath, err.Error())
+				}
+				printFile(st, item.Name)
+			}
+		}()
 	}
 
+	for idx := range items {
+		dirCh <- items[idx]
+	}
+
+	close(dirCh)
+	wg.Wait()
 }
