@@ -61,6 +61,7 @@ func TestLoadConfig(t *testing.T) {
 	if clusterCfg.Idc != "bjht" {
 		t.Fail()
 	}
+
 }
 
 func TestParseCfg(t *testing.T) {

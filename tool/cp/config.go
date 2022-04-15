@@ -96,7 +96,7 @@ func (cfg *config) buildPathCfg(dir string) *pathCfg {
 		option: opt,
 	}
 
-	// fmt.Printf("dir: %s, clusterId %s", newDir, clusterId)
+	// fmt.Printf("dir: %s, clusterId %s\n", newDir, clusterId)
 	return pCfg
 }
 
@@ -199,7 +199,7 @@ func ParseConfig(srcDir, destDir string, op opType) Conf {
 	if CfgPath == "" {
 		CfgPath = getCfgPath()
 	}
-	log.Println("cfg path, ", CfgPath)
+	// log.Println("cfg path, ", CfgPath)
 
 	err := loadConfig(cfg, CfgPath)
 	if err != nil {

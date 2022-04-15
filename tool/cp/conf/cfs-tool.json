@@ -6,8 +6,32 @@
             "owner":"console_vol",
             "ak":"9rAXjgo9Nlyk7rOO",
             "sk":"N6F7huAf6L6jH4jxtZ3jDVKldb4ZBXt1",
-            "cluster":"m1",
-	    "clusterId":"c1"
+            "idc": "bjht",
+            "cluster":"m1-xxxx-ttt",
+            "desc":"bjht hot_s3 N6F7huAf6L6jH4jxtZ3jDVKldb4ZBXt1",
+	    "cid":"c1"
+        },
+        // ht_marinal_vol2_cfg
+        {
+            "addr": "10.177.69.105:17010,10.177.69.106:17010,10.177.117.108:17010",
+            "ak": "accessSk",
+            "cluster": "ht_marinal",
+            "cid": "ht_vol1",
+            "owner": "owner1",
+            "sk": "secertKey",
+			"desc":"bjht marinal vol1 cfg",
+            "volname": "vol1"
+        },
+		// ht_marinal_vol2_cfg
+        {
+            "addr": "10.177.69.105:17010,10.177.69.106:17010,10.177.117.108:17010",
+            "ak": "accessSk",
+            "cluster": "ht_marinal",
+            "cid": "ht_vol2",
+            "owner": "owner2",
+            "sk": "secertKey",
+			"desc":"bjht marinal vol2 cfg",
+            "volname": "vol2"
         }
     ],
     "logLevel":"warn",

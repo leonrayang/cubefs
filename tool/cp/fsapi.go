@@ -387,10 +387,13 @@ func (f *CubeFs) statFile(filePath string, parentIno uint64) (stat *syscall.Stat
 		}
 	}()
 
-	_, filename := path.Split(filePath)
-	inode, _, err := f.mw.Lookup_ll(parentIno, filename)
-	if err != nil {
-		return
+	inode := parentIno
+	if !isRootDIr(filePath) {
+		_, filename := path.Split(filePath)
+		inode, _, err = f.mw.Lookup_ll(parentIno, filename)
+		if err != nil {
+			return
+		}
 	}
 
 	info, err := f.mw.InodeGet_ll(inode)
