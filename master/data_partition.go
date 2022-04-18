@@ -56,6 +56,7 @@ type DataPartition struct {
 	SingleDecommissionStatus uint8
 	singleDecommissionChan   chan bool
 	SingleDecommissionAddr   string
+	VerSeq                   uint64
 }
 
 type DataPartitionPreLoad struct {
@@ -188,7 +189,7 @@ func (partition *DataPartition) createTaskToCreateDataPartition(addr string, dat
 	peers []proto.Peer, hosts []string, createType int, partitionType int) (task *proto.AdminTask) {
 
 	task = proto.NewAdminTask(proto.OpCreateDataPartition, addr, newCreateDataPartitionRequest(
-		partition.VolName, partition.PartitionID, peers, int(dataPartitionSize), hosts, createType, partitionType))
+		partition.VolName, partition.PartitionID, peers, int(dataPartitionSize), hosts, createType, partitionType, partition.VerSeq))
 	partition.resetTaskID(task)
 	return
 }

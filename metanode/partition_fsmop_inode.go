@@ -61,19 +61,34 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 	return
 }
 
+func (mp *metaPartition) getInodeByVer(ino *Inode) (i *Inode) {
+	item := mp.inodeTree.Get(ino)
+	if item == nil {
+		return
+	}
+	if ino.verSeq > 0 && ino.verSeq < item.(*Inode).verSeq {
+		for _, iTmp := range item.(*Inode).multiVersions {
+			if ino.verSeq >= iTmp.verSeq {
+				i = iTmp
+				break
+			}
+		}
+	} else {
+		i = item.(*Inode)
+	}
+	return
+}
+
 func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
 	resp = NewInodeResponse()
 	resp.Status = proto.OpOk
-	item := mp.inodeTree.Get(ino)
-	if item == nil {
+
+	i := mp.getInodeByVer(ino)
+	if i == nil || i.ShouldDelete() {
 		resp.Status = proto.OpNotExistErr
 		return
 	}
-	i := item.(*Inode)
-	if i.ShouldDelete() {
-		resp.Status = proto.OpNotExistErr
-		return
-	}
+
 	ctime := Now.GetCurrentTime().Unix()
 	/*
 	 * FIXME: not protected by lock yet, since nothing is depending on atime.
@@ -90,12 +105,10 @@ func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
 func (mp *metaPartition) hasInode(ino *Inode) (ok bool) {
 	item := mp.inodeTree.Get(ino)
 	if item == nil {
-		ok = false
 		return
 	}
-	i := item.(*Inode)
-	if i.ShouldDelete() {
-		ok = false
+	i := mp.getInodeByVer(ino)
+	if i == nil || i.ShouldDelete() {
 		return
 	}
 	ok = true
@@ -246,13 +259,15 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode) (status uint8) {
 	if len(eks) > 1 {
 		discardExtentKey = eks[1:]
 	}
-	delExtents, status := ino2.AppendExtentWithCheck(eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
+	delExtents, status := ino2.AppendExtentWithCheck(ino.verSeq, eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
 	if status == proto.OpOk {
+		log.LogInfof("action[fsmAppendExtentWithCheck] delExtents [%v]", delExtents)
 		mp.extDelCh <- delExtents
 	}
 
 	// confict need delete eks[0], to clear garbage data
 	if status == proto.OpConflictExtentsErr {
+		log.LogInfof("action[fsmAppendExtentWithCheck] OpConflictExtentsErr [%v]", eks[:1])
 		mp.extDelCh <- eks[:1]
 	}
 
@@ -447,7 +462,8 @@ func (mp *metaPartition) fsmClearInodeCache(ino *Inode) (status uint8) {
 // attion: unmarshal error will disard extent
 func (mp *metaPartition) fsmSendToChan(val []byte) (status uint8) {
 	sortExtents := NewSortedExtents()
-	err := sortExtents.UnmarshalBinary(val)
+	// ek for del don't need version info
+	err := sortExtents.UnmarshalBinary(val, false)
 	if err != nil {
 		panic(fmt.Errorf("[fsmDelExtents] unmarshal sortExtents error, mp(%d), err(%s)", mp.config.PartitionId, err.Error()))
 	}

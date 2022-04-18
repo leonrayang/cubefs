@@ -22,9 +22,15 @@ import (
 	"github.com/cubefs/cubefs/util/btree"
 )
 
+type ExtentVal struct {
+	dataMap map[string][]byte
+	verSeq  uint64
+}
 type Extend struct {
 	inode   uint64
 	dataMap map[string][]byte
+	verSeq  uint64
+	multiVers []*ExtentVal
 	mu      sync.RWMutex
 }
 
@@ -65,8 +71,13 @@ func NewExtendFromBytes(raw []byte) (*Extend, error) {
 		if v, err = readBytes(); err != nil {
 			return nil, err
 		}
-		ext.Put(k, v)
+		ext.Put(k, v, 0)
 	}
+	var verSeq uint64
+	if verSeq, err = binary.ReadUvarint(buffer); err != nil {
+		return nil, nil
+	}
+	ext.verSeq = verSeq
 	return ext, nil
 }
 
@@ -75,10 +86,11 @@ func (e *Extend) Less(than btree.Item) bool {
 	return is && e.inode < ext.inode
 }
 
-func (e *Extend) Put(key, value []byte) {
+func (e *Extend) Put(key, value []byte, verSeq uint64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.dataMap[string(key)] = value
+	e.verSeq = verSeq
 }
 
 func (e *Extend) Get(key []byte) (value []byte, exist bool) {
@@ -162,6 +174,13 @@ func (e *Extend) Bytes() ([]byte, error) {
 		}
 		// value
 		if err = writeBytes(v); err != nil {
+			return nil, err
+		}
+	}
+
+	if e.verSeq > 0 {
+		n = binary.PutUvarint(tmp, e.verSeq)
+		if _, err = buffer.Write(tmp[:n]); err != nil {
 			return nil, err
 		}
 	}

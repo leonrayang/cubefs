@@ -133,6 +133,8 @@ type DataPartition struct {
 	DataPartitionCreateType       int
 	isLoadingDataPartition        bool
 	persistMetaMutex              sync.RWMutex
+
+	verSeq   uint64
 }
 
 func CreateDataPartition(dpCfg *dataPartitionCfg, disk *Disk, request *proto.CreateDataPartitionRequest) (dp *DataPartition, err error) {
@@ -280,6 +282,7 @@ func newDataPartition(dpCfg *dataPartitionCfg, disk *Disk) (dp *DataPartition, e
 		partitionStatus: proto.ReadWrite,
 		config:          dpCfg,
 		raftStatus:      RaftStatusStopped,
+		verSeq:          dpCfg.VerSeq,
 	}
 	partition.replicasInit()
 	partition.extentStore, err = storage.NewExtentStore(partition.path, dpCfg.PartitionID, dpCfg.PartitionSize, partition.partitionType)

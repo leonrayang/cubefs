@@ -19,7 +19,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/cubefs/cubefs/util/log"
 	"io"
+	"runtime/debug"
+	"sort"
 	"sync"
 	"time"
 
@@ -32,7 +35,8 @@ const (
 
 var (
 	// InodeV1Flag uint64 = 0x01
-	InodeV2Flag uint64 = 0x02
+	V2EnableColdInodeFlag uint64 = 0x02
+	V3EnableSnapInodeFlag uint64 = 0x04
 )
 
 // Inode wraps necessary properties of `Inode` information in the file system.
@@ -72,6 +76,10 @@ type Inode struct {
 	//Extents    *ExtentsTree
 	Extents    *SortedExtents
 	ObjExtents *SortedObjExtents
+
+	// for snapshot
+	verSeq        uint64
+	multiVersions InodeBatch
 }
 
 type InodeBatch []*Inode
@@ -150,6 +158,7 @@ func (i *Inode) Copy() BtreeItem {
 	newIno.Reserved = i.Reserved
 	newIno.Extents = i.Extents.Clone()
 	newIno.ObjExtents = i.ObjExtents.Clone()
+	newIno.verSeq = i.verSeq
 	i.RUnlock()
 	return newIno
 }
@@ -276,11 +285,8 @@ func (i *Inode) UnmarshalKey(k []byte) (err error) {
 }
 
 // MarshalValue marshals the value to bytes.
-func (i *Inode) MarshalValue() (val []byte) {
+func (i *Inode) MarshalInodeValue(buff *bytes.Buffer) {
 	var err error
-	buff := bytes.NewBuffer(make([]byte, 0, 128))
-	buff.Grow(64)
-	i.RLock()
 	if err = binary.Write(buff, binary.BigEndian, &i.Type); err != nil {
 		panic(err)
 	}
@@ -321,13 +327,16 @@ func (i *Inode) MarshalValue() (val []byte) {
 		panic(err)
 	}
 	if i.ObjExtents != nil && len(i.ObjExtents.eks) > 0 {
-		i.Reserved = InodeV2Flag
+		i.Reserved |= V2EnableColdInodeFlag
 	}
+	i.Reserved |= V3EnableSnapInodeFlag
+
+	log.LogInfof("action[MarshalInodeValue] inode %v Reserved %v", i.Inode, i.Reserved)
 	if err = binary.Write(buff, binary.BigEndian, &i.Reserved); err != nil {
 		panic(err)
 	}
 
-	if i.Reserved == InodeV2Flag {
+	if (i.Reserved & V2EnableColdInodeFlag > 0) ||  (i.Reserved & V3EnableSnapInodeFlag > 0) {
 		// marshal ExtentsKey
 		extData, err := i.Extents.MarshalBinary()
 		if err != nil {
@@ -339,6 +348,9 @@ func (i *Inode) MarshalValue() (val []byte) {
 		if _, err = buff.Write(extData); err != nil {
 			panic(err)
 		}
+	}
+
+	if i.Reserved & V2EnableColdInodeFlag > 0 {
 		// marshal ObjExtentsKey
 		objExtData, err := i.ObjExtents.MarshalBinary()
 		if err != nil {
@@ -350,15 +362,31 @@ func (i *Inode) MarshalValue() (val []byte) {
 		if _, err = buff.Write(objExtData); err != nil {
 			panic(err)
 		}
-	} else {
-		// marshal ExtentsKey
-		extData, err := i.Extents.MarshalBinary()
-		if err != nil {
-			panic(err)
-		}
-		if _, err = buff.Write(extData); err != nil {
-			panic(err)
-		}
+	}
+
+	if err = binary.Write(buff, binary.BigEndian,i.verSeq); err != nil {
+		panic(err)
+	}
+
+	return
+}
+
+// MarshalValue marshals the value to bytes.
+func (i *Inode) MarshalValue() (val []byte) {
+	var err error
+	buff := bytes.NewBuffer(make([]byte, 0, 128))
+	buff.Grow(64)
+	i.RLock()
+
+	log.LogInfof("action[MarshalValue] inode %v current verseq %v, stack (%v)", i.Inode, i.verSeq, string(debug.Stack()))
+	i.MarshalInodeValue(buff)
+	if err = binary.Write(buff, binary.BigEndian,int32(len(i.multiVersions))); err != nil {
+		panic(err)
+	}
+
+	for _, ino := range i.multiVersions {
+		log.LogInfof("action[MarshalValue] inode %v current verseq %v", ino.Inode, ino.verSeq)
+		ino.MarshalInodeValue(buff)
 	}
 
 	val = buff.Bytes()
@@ -367,8 +395,7 @@ func (i *Inode) MarshalValue() (val []byte) {
 }
 
 // UnmarshalValue unmarshals the value from bytes.
-func (i *Inode) UnmarshalValue(val []byte) (err error) {
-	buff := bytes.NewBuffer(val)
+func (i *Inode) UnmarshalInodeValue(buff *bytes.Buffer) (err error) {
 
 	if err = binary.Read(buff, binary.BigEndian, &i.Type); err != nil {
 		return
@@ -415,15 +442,16 @@ func (i *Inode) UnmarshalValue(val []byte) (err error) {
 	if err = binary.Read(buff, binary.BigEndian, &i.Reserved); err != nil {
 		return
 	}
-	if buff.Len() == 0 {
-		return
-	}
+	//if buff.Len() == 0 {
+	//	return
+	//}
 	// unmarshal ExtentsKey
 	if i.Extents == nil {
 		i.Extents = NewSortedExtents()
 	}
-
-	if i.Reserved == InodeV2Flag {
+	log.LogInfof("action[UnmarshalInodeValue] inode %v Reserved %v", i.Inode, i.Reserved)
+	v3 := i.Reserved & V3EnableSnapInodeFlag > 0
+	if (i.Reserved & V2EnableColdInodeFlag > 0) ||  v3 {
 		extSize := uint32(0)
 		if err = binary.Read(buff, binary.BigEndian, &extSize); err != nil {
 			return
@@ -433,10 +461,13 @@ func (i *Inode) UnmarshalValue(val []byte) (err error) {
 			if _, err = io.ReadFull(buff, extBytes); err != nil {
 				return
 			}
-			if err = i.Extents.UnmarshalBinary(extBytes); err != nil {
+			if err = i.Extents.UnmarshalBinary(extBytes, v3); err != nil {
 				return
 			}
 		}
+	}
+
+	if i.Reserved & V2EnableColdInodeFlag > 0 {
 		// unmarshal ObjExtentsKey
 		if i.ObjExtents == nil {
 			i.ObjExtents = NewSortedObjExtents()
@@ -454,12 +485,37 @@ func (i *Inode) UnmarshalValue(val []byte) (err error) {
 				return
 			}
 		}
-	} else {
-		if err = i.Extents.UnmarshalBinary(buff.Bytes()); err != nil {
-			return
-		}
 	}
 
+	if i.Reserved & V3EnableSnapInodeFlag > 0 {
+		if err = binary.Read(buff, binary.BigEndian, &i.verSeq); err != nil {
+			return
+		}
+		log.LogInfof("action[UnmarshalInodeValue] verseq %v", i.verSeq)
+	}
+
+	return
+}
+
+// UnmarshalValue unmarshals the value from bytes.
+func (i *Inode) UnmarshalValue(val []byte) (err error) {
+	buff := bytes.NewBuffer(val)
+	i.UnmarshalInodeValue(buff)
+	if i.Reserved & V3EnableSnapInodeFlag > 0 {
+		var verCnt int32
+		if err = binary.Read(buff, binary.BigEndian, &verCnt); err != nil {
+			log.LogInfof("action[UnmarshalValue] err get ver cnt inode %v new seq %v", i.Inode, i.verSeq)
+			return
+		}
+		log.LogInfof("action[UnmarshalValue] inode %v new seq %v verCnt %v", i.Inode, i.verSeq, verCnt)
+		for verCnt > 0 {
+			ino := &Inode{}
+			ino.UnmarshalInodeValue(buff)
+			log.LogInfof("action[UnmarshalValue] inode %v old seq %v", ino.Inode, ino.verSeq)
+			i.multiVersions = append(i.multiVersions, ino)
+			verCnt--
+		}
+	}
 	return
 }
 
@@ -504,14 +560,85 @@ func (i *Inode) AppendObjExtents(eks []proto.ObjExtentKey, ct int64) (err error)
 	return
 }
 
-func (i *Inode) AppendExtentWithCheck(ek proto.ExtentKey, ct int64, discardExtents []proto.ExtentKey, volType int) (delExtents []proto.ExtentKey, status uint8) {
-	i.Lock()
-	defer i.Unlock()
-	delExtents, status = i.Extents.AppendWithCheck(ek, discardExtents)
-	if status != proto.OpOk {
+// restore ext info to older version or deleted if no right version
+func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExtents []proto.ExtentKey, err error){
+	log.LogInfof("action[RestoreMultiSnapExts] delExtents size [%v]", len(delExtents))
+	// no version left.all old versions be deleted
+	if len(i.multiVersions) == 0 {
+		log.LogWarnf("action[RestoreMultiSnapExts] restore have no old version left")
+		return delExtentsOrigin, nil
+	}
+	restSeq := i.multiVersions[0].verSeq
+	specSnapExtent := make([]proto.ExtentKey, 0)
+
+	for _, ext := range delExtentsOrigin {
+		if ext.VerSeq < restSeq {
+			delExtents = append(delExtents, ext)
+		} else {
+			log.LogInfof("action[RestoreMultiSnapExts] move to level 1 ext [%v] specSnapExtent size [%v]", ext, len(specSnapExtent))
+			specSnapExtent = append(specSnapExtent, ext)
+		}
+	}
+	if len(specSnapExtent) == 0 {
+		log.LogInfof("action[RestoreMultiSnapExts] no need to move to level 1")
+		return
+	}
+	if len(specSnapExtent) > 0 && len(i.multiVersions) == 0 {
+		err = fmt.Errorf("inode %v error not found prev snapshot index", i.Inode)
+		log.LogErrorf("action[RestoreMultiSnapExts] %v", err)
 		return
 	}
 
+	i.multiVersions[0].Extents.eks = append(i.multiVersions[0].Extents.eks, specSnapExtent...)
+
+	sort.SliceStable(
+		i.multiVersions[0].Extents.eks, func(w, z int) bool {
+			return i.multiVersions[0].Extents.eks[w].FileOffset < i.multiVersions[0].Extents.eks[z].FileOffset
+		})
+
+	return
+}
+
+func (i *Inode) CreateVer(ver uint64) {
+	log.LogInfof("action[CreateVer] inode %v create new version [%v] and store old one [%v]",i.Inode, ver, i.verSeq)
+	//inode copy not include multi ver array
+	ino := i.Copy().(*Inode)
+	ino.Extents = NewSortedExtents()
+	ino.ObjExtents = NewSortedObjExtents()
+
+	i.Lock()
+	defer i.Unlock()
+
+	i.multiVersions = append(i.multiVersions, ino)
+	i.verSeq = ver
+}
+
+func (i *Inode) AppendExtentWithCheck(ver uint64, ek proto.ExtentKey, ct int64, discardExtents []proto.ExtentKey, volType int) (delExtents []proto.ExtentKey, status uint8) {
+	ek.VerSeq = ver
+	log.LogInfof("action[AppendExtentWithCheck] inode %v,ver %v,ek %v", i.Inode, ver, ek.String())
+	if ver != i.verSeq {
+		log.LogInfof("action[AppendExtentWithCheck]")
+		i.CreateVer(ver)
+		log.LogInfof("action[AppendExtentWithCheck]")
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	delExtents, status = i.Extents.AppendWithCheck(ek, discardExtents)
+	if status != proto.OpOk {
+		log.LogInfof("action[AppendExtentWithCheck] status %v", status)
+		return
+	}
+	for _, ek = range i.Extents.eks {
+		log.LogInfof("action[AppendExtentWithCheck] inode %v extent %v", i.Inode, ek.String())
+	}
+	log.LogInfof("action[AppendExtentWithCheck]")
+	// multi version take effect
+	if i.verSeq > 0 {
+		delExtents, _ = i.RestoreMultiSnapExts(delExtents)
+	}
+	log.LogInfof("action[AppendExtentWithCheck]")
 	if proto.IsHot(volType) {
 		size := i.Extents.Size()
 		if i.Size < size {
@@ -520,7 +647,7 @@ func (i *Inode) AppendExtentWithCheck(ek proto.ExtentKey, ct int64, discardExten
 		i.Generation++
 		i.ModifyTime = ct
 	}
-
+	log.LogInfof("action[AppendExtentWithCheck]")
 	return
 }
 

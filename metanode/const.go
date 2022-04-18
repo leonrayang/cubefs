@@ -133,6 +133,8 @@ const (
 
 	opFSMClearInodeCache
 	opFSMSentToChan
+	opFSMSentToChanV1
+	opFSMVersionOp
 )
 
 var (

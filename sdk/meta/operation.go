@@ -389,6 +389,7 @@ func (mw *MetaWrapper) lookup(mp *MetaPartition, parentID uint64, name string) (
 		PartitionID: mp.PartitionID,
 		ParentID:    parentID,
 		Name:        name,
+		VerSeq:      mw.VerReadSeq,
 	}
 	packet := proto.NewPacketReqID()
 	packet.Opcode = proto.OpMetaLookup
@@ -449,6 +450,7 @@ func (mw *MetaWrapper) iget(mp *MetaPartition, inode uint64) (status int, info *
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		Inode:       inode,
+		VerSeq:      mw.VerReadSeq,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -502,6 +504,7 @@ func (mw *MetaWrapper) batchIget(wg *sync.WaitGroup, mp *MetaPartition, inodes [
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		Inodes:      inodes,
+		VerSeq:      mw.VerReadSeq,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -557,6 +560,7 @@ func (mw *MetaWrapper) readdir(mp *MetaPartition, parentID uint64) (status int, 
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		ParentID:    parentID,
+		VerSeq:      mw.VerReadSeq,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -605,6 +609,7 @@ func (mw *MetaWrapper) readdirlimit(mp *MetaPartition, parentID uint64, from str
 		ParentID:    parentID,
 		Marker:      from,
 		Limit:       limit,
+		VerSeq:      mw.VerReadSeq,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -696,6 +701,7 @@ func (mw *MetaWrapper) getExtents(mp *MetaPartition, inode uint64) (status int, 
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		Inode:       inode,
+		VerSeq:      mw.VerReadSeq,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -745,6 +751,7 @@ func (mw *MetaWrapper) getObjExtents(mp *MetaPartition, inode uint64) (status in
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		Inode:       inode,
+		VerSeq:      mw.VerReadSeq,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -1359,6 +1366,7 @@ func (mw *MetaWrapper) getXAttr(mp *MetaPartition, inode uint64, name string) (v
 		PartitionId: mp.PartitionID,
 		Inode:       inode,
 		Key:         name,
+		VerSeq:      mw.VerReadSeq,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -1453,6 +1461,7 @@ func (mw *MetaWrapper) listXAttr(mp *MetaPartition, inode uint64) (keys []string
 		VolName:     mw.volname,
 		PartitionId: mp.PartitionID,
 		Inode:       inode,
+		VerSeq:      mw.VerReadSeq,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -1562,6 +1571,7 @@ func (mw *MetaWrapper) batchGetXAttr(mp *MetaPartition, inodes []uint64, keys []
 		PartitionId: mp.PartitionID,
 		Inodes:      inodes,
 		Keys:        keys,
+		VerSeq:      mw.VerReadSeq,
 	}
 	packet := proto.NewPacketReqID()
 	packet.Opcode = proto.OpMetaBatchGetXAttr
@@ -1609,6 +1619,7 @@ func (mw *MetaWrapper) readdironly(mp *MetaPartition, parentID uint64) (status i
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		ParentID:    parentID,
+		VerSeq:      mw.VerReadSeq,
 	}
 
 	packet := proto.NewPacketReqID()

@@ -165,6 +165,9 @@ const (
 	OpMetaExtentsEmpty       uint8 = 0xDF
 	OpMetaBatchObjExtentsAdd uint8 = 0xD0
 	OpMetaClearInodeCache    uint8 = 0xD1
+
+	// multiVersion to dp/mp
+	OpVersionOperation       uint8 = 0xD5
 )
 
 const (
@@ -176,6 +179,27 @@ const (
 	GetAllWatermarksDeadLineTime              = 60
 	DefaultClusterLoadFactor          float64 = 10
 )
+
+// multi version operation
+const (
+	CreateVersion = 1
+	DeleteVersion = 2
+)
+
+// stage of version building
+const (
+	VersionBuilding 		= 1
+	VersionBuildingTimeOut 	= 2
+	VersionBuildingAbnoraml = 3
+	VersionBuildingFinished = 4
+)
+
+// status of version
+const (
+	VersionNormal = 1
+	VersionDeleted = 2
+)
+
 
 const (
 	TinyExtentType   = 0

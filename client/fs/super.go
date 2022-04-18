@@ -74,6 +74,7 @@ type Super struct {
 	CacheThreshold int
 	EbsBlockSize   int
 	enableBcache   bool
+	enableVerRead  bool
 	readThreads    int
 	writeThreads   int
 	bc             *bcache.BcacheClient
@@ -101,6 +102,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 		TicketMess:    opt.TicketMess,
 		ValidateOwner: opt.Authenticate || opt.AccessKey == "",
 		EnableSummary: opt.EnableSummary && opt.EnableXattr, // enable both summary and xattr
+		VerReadSeq:    opt.VerReadSeq,
 	}
 	s.mw, err = meta.NewMetaWrapper(metaConfig)
 	if err != nil {
@@ -141,6 +143,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 	s.CacheThreshold = opt.CacheThreshold
 	s.EbsBlockSize = opt.EbsBlockSize
 	s.enableBcache = opt.EnableBcache
+
 	s.readThreads = int(opt.ReadThreads)
 	s.writeThreads = int(opt.WriteThreads)
 	if s.enableBcache {
@@ -156,6 +159,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 		WriteRate:         opt.WriteRate,
 		VolumeType:        opt.VolType,
 		BcacheEnable:      opt.EnableBcache,
+		VerReadSeq:        opt.VerReadSeq,
 		OnAppendExtentKey: s.mw.AppendExtentKey,
 		OnGetExtents:      s.mw.GetExtents,
 		OnTruncate:        s.mw.Truncate,

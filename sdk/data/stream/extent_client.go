@@ -92,6 +92,7 @@ type ExtentConfig struct {
 	ReadRate          int64
 	WriteRate         int64
 	BcacheEnable      bool
+	VerReadSeq        uint64
 	OnAppendExtentKey AppendExtentKeyFunc
 	OnGetExtents      GetExtentsFunc
 	OnTruncate        TruncateFunc
@@ -99,6 +100,11 @@ type ExtentConfig struct {
 	OnLoadBcache      LoadBcacheFunc
 	OnCacheBcache     CacheBcacheFunc
 	OnEvictBcache     EvictBacheFunc
+}
+
+type MultiVerMgr struct {
+	verReadSeq   uint64   // verSeq in config used as snapshot read
+	latestVerSeq uint64   // newest verSeq from master for datanode write to check
 }
 
 // ExtentClient defines the struct of the extent client.
@@ -123,6 +129,8 @@ type ExtentClient struct {
 	cacheBcache     CacheBcacheFunc
 	evictBcache     EvictBacheFunc
 	inflightL1cache sync.Map
+
+	multiVerMgr     *MultiVerMgr
 }
 
 // NewExtentClient returns a new extent client.
@@ -131,7 +139,7 @@ func NewExtentClient(config *ExtentConfig) (client *ExtentClient, err error) {
 
 	limit := MaxMountRetryLimit
 retry:
-	client.dataWrapper, err = wrapper.NewDataPartitionWrapper(config.Volume, config.Masters, config.Preload)
+	client.dataWrapper, err = wrapper.NewDataPartitionWrapper(client, config.Volume, config.Masters, config.Preload, config.VerReadSeq)
 	if err != nil {
 		if limit <= 0 {
 			return nil, errors.Trace(err, "Init data wrapper failed!")
@@ -143,6 +151,8 @@ retry:
 	}
 
 	client.streamers = make(map[uint64]*Streamer)
+	client.multiVerMgr = &MultiVerMgr{}
+
 	client.appendExtentKey = config.OnAppendExtentKey
 	client.getExtents = config.OnGetExtents
 	client.truncate = config.OnTruncate
@@ -155,8 +165,10 @@ retry:
 	client.volumeType = config.VolumeType
 	client.volumeName = config.Volume
 	client.bcacheEnable = config.BcacheEnable
+	client.multiVerMgr.verReadSeq = config.VerReadSeq
 	client.BcacheHealth = true
 	client.preload = config.Preload
+
 
 	var readLimit, writeLimit rate.Limit
 	if config.ReadRate <= 0 {
@@ -174,6 +186,36 @@ retry:
 	client.writeLimiter = rate.NewLimiter(writeLimit, defaultWriteLimitBurst)
 
 	return
+}
+
+func (client *ExtentClient) UpdateLatestVer(verSeq uint64) (err error) {
+	if verSeq == 0 || verSeq == client.multiVerMgr.latestVerSeq {
+		return
+	}
+	log.LogDebugf("action[UpdateLatestVer] try update verseq [%v]", verSeq)
+	if verSeq != client.multiVerMgr.latestVerSeq {
+		if verSeq < client.multiVerMgr.latestVerSeq {
+			err = fmt.Errorf("%v less than client seq %v", verSeq, client.multiVerMgr.latestVerSeq)
+			log.LogErrorf("action[UpdateLatestVer] %v", err.Error())
+			return
+		}
+		log.LogInfof("action[UpdateLatestVer] update verseq [%v] to [%v]", client.multiVerMgr.latestVerSeq, verSeq)
+		client.multiVerMgr.latestVerSeq = verSeq
+	}
+	for _, streamer := range client.streamers {
+		if streamer.verSeq != verSeq {
+			log.LogDebugf("action[ExtentClient.UpdateLatestVer] stream inode %v ver %v try update to %v", streamer.inode, streamer.verSeq, verSeq)
+			//request := &VerUpdateRequest {
+			//	verSeq: verSeq,
+			//	done: make(chan struct{}, 1),
+			//}
+			//streamer.request<-request
+			//<-request.done
+			streamer.verSeq = verSeq
+			log.LogDebugf("action[ExtentClient.UpdateLatestVer] finhsed stream inode %v ver update to %v", streamer.inode, verSeq)
+		}
+	}
+	return nil
 }
 
 // Open request shall grab the lock until request is sent to the request channel

@@ -61,6 +61,9 @@ const (
 	MetaSendTimeout
 	BuffersTotalLimit
 
+	//snapshot
+	SnapshotReadVerSeq
+
 	MaxMountOption
 )
 
@@ -139,6 +142,7 @@ func InitMountOptions(opts []MountOption) {
 	opts[EnableSummary] = MountOption{"enableSummary", "enable content summary", "", false}
 	opts[MetaSendTimeout] = MountOption{"metaSendTimeout", "Meta send timeout", "", int64(600)}
 	opts[BuffersTotalLimit] = MountOption{"buffersTotalLimit", "Send/Receive packets memory limit", "", int64(32768)} //default 4G
+	opts[SnapshotReadVerSeq] = MountOption{"snapshotReadSeq", "Snapshot read seq", "", int64(0)}                    //default false
 
 	for i := 0; i < MaxMountOption; i++ {
 		flag.StringVar(&opts[i].cmdlineValue, opts[i].keyword, "", opts[i].description)
@@ -275,6 +279,7 @@ type MountOptions struct {
 	CacheThreshold       int
 	EbsBlockSize         int
 	EnableBcache         bool
+	VerReadSeq           uint64
 	ReadThreads          int64
 	WriteThreads         int64
 	EnableSummary        bool

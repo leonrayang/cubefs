@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/cubefs/cubefs/util/log"
 	"time"
 
 	"github.com/cubefs/cubefs/proto"
@@ -56,7 +57,9 @@ func (mp *metaPartition) CreateInode(req *CreateInoReq, p *Packet) (err error) {
 	ino := NewInode(inoID, req.Mode)
 	ino.Uid = req.Uid
 	ino.Gid = req.Gid
+	ino.verSeq = mp.verSeq
 	ino.LinkTarget = req.Target
+	log.LogInfof("action[CreateInode] with seq %v", mp.verSeq)
 	val, err := ino.Marshal()
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))

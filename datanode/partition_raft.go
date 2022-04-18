@@ -46,6 +46,7 @@ type dataPartitionCfg struct {
 	Hosts         []string            `json:"hosts"`
 	NodeID        uint64              `json:"-"`
 	RaftStore     raftstore.RaftStore `json:"-"`
+	VerSeq        uint64              `json:"ver_seq"`
 }
 
 func (dp *DataPartition) raftPort() (heartbeat, replica int, err error) {

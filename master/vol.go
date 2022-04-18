@@ -26,6 +26,140 @@ import (
 	"github.com/cubefs/cubefs/util/log"
 )
 
+
+type VolVersionManager struct {
+	// ALL snapshots not include deleted one,deleted one should write in error log
+	multiVersionList   []*proto.VolVersionInfo
+	vol 	*Vol
+	sync.Mutex
+}
+
+func newVersionMgr(vol *Vol) *VolVersionManager {
+	return &VolVersionManager{
+		vol:vol,
+	}
+}
+
+func (verMgr *VolVersionManager) GenerateVer() (ver *proto.VolVersionInfo){
+	verMgr.Lock()
+	defer verMgr.Unlock()
+	tm := time.Now()
+	ver =  &proto.VolVersionInfo{
+		Ver:	uint64(tm.Unix()),
+		Ctime:	tm,
+		Status:	proto.VersionBuilding,
+	}
+	size := len(verMgr.multiVersionList)
+	if size > 0 && ver.Ctime.Before(verMgr.multiVersionList[size-1].Ctime) {
+		ver.Ctime = verMgr.multiVersionList[size-1].Ctime.Add(1)
+		ver.Ver = uint64(verMgr.multiVersionList[size-1].Ctime.Unix() + 1)
+	}
+	verMgr.multiVersionList = append(verMgr.multiVersionList, ver)
+	// todo(leon): persistent and recovery
+	return
+}
+
+func (verMgr *VolVersionManager) DelVer(verDel uint64) (err error){
+	verMgr.Lock()
+	defer verMgr.Unlock()
+
+	for i, ver := range verMgr.multiVersionList {
+		if ver.Ver == verDel {
+			verMgr.multiVersionList = append(verMgr.multiVersionList[:i], verMgr.multiVersionList[i+1:]...)
+			break
+		}
+	}
+	return
+}
+
+func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op uint8) (ver *proto.VolVersionInfo, err error) {
+	var (
+		dpHost sync.Map
+		mpHost sync.Map
+		ok bool
+	)
+
+	for _, dp := range verMgr.vol.dataPartitions.clonePartitions() {
+		for _, host := range dp.Hosts{
+			dpHost.Store(host, nil)
+		}
+		dp.VerSeq = verSeq
+	}
+
+	tasks := make([]*proto.AdminTask, 0)
+	cluster.dataNodes.Range(func(addr, dataNode interface{}) bool {
+		if _, ok = dpHost.Load(addr); !ok {
+			return true
+		}
+		node := dataNode.(*DataNode)
+		node.checkLiveness()
+		task := node.createVersionTask(verMgr.vol.Name, verSeq, op)
+		tasks = append(tasks, task)
+		return true
+	})
+	log.LogInfof("action[verManager.createTask] verSeq %v, datanode task cnt %v", verSeq, len(tasks))
+	cluster.addDataNodeTasks(tasks)
+
+	verMgr.vol.mpsLock.RLock()
+	log.LogInfof("action[verManager.createTask] vol %v verSeq %v, dp cnt %v", verMgr.vol.Name, verSeq, len(verMgr.vol.MetaPartitions))
+	for _, mp := range verMgr.vol.MetaPartitions {
+		for _, host := range mp.Hosts {
+			mpHost.Store(host, nil)
+		}
+		mp.VerSeq = verSeq
+	}
+	verMgr.vol.mpsLock.RUnlock()
+
+	tasks = make([]*proto.AdminTask, 0)
+	cluster.metaNodes.Range(func(addr, metaNode interface{}) bool {
+		if _, ok = mpHost.Load(addr); !ok {
+			return true
+		}
+		node := metaNode.(*MetaNode)
+		task := node.createVersionTask(verMgr.vol.Name, verSeq, op)
+		tasks = append(tasks, task)
+		return true
+	})
+	log.LogInfof("action[verManager.createTask] verSeq %v, metaNodes task cnt %v", verSeq, len(tasks))
+	cluster.addMetaNodeTasks(tasks)
+
+	if op == proto.CreateVersion {
+		verMgr.GenerateVer()
+	} else if op == proto.DeleteVersion {
+		verMgr.DelVer(verSeq)
+	}
+	return
+}
+
+func (verMgr *VolVersionManager) getVersionInfo(verGet uint64) (verInfo *proto.VolVersionInfo, err error) {
+	for _, ver := range verMgr.multiVersionList {
+		if ver.Ctime.Unix() == int64(verGet) {
+			return ver, nil
+		}
+
+		if ver.Ctime.Unix() > int64(verGet) {
+			break
+		}
+	}
+	msg := fmt.Sprintf("ver [%v] not found", verGet)
+	log.LogInfof("action[getVersionInfo] %v", msg)
+	return nil, fmt.Errorf("%v", msg)
+}
+
+func (verMgr *VolVersionManager) getLatestVer() (ver uint64) {
+	size := len(verMgr.multiVersionList)
+	if size == 0 {
+		return 0
+	}
+	return verMgr.multiVersionList[size-1].Ver
+}
+
+func (verMgr *VolVersionManager) getVersionList() *proto.VolVersionInfoList {
+	return &proto.VolVersionInfoList {
+		VerList : verMgr.multiVersionList,
+	}
+}
+
 type VolVarargs struct {
 	zoneName       string
 	description    string
@@ -84,6 +218,8 @@ type Vol struct {
 	dpSelectorParm     string
 	domainId           uint64
 
+	VersionMgr         *VolVersionManager
+
 	volLock sync.RWMutex
 }
 
@@ -96,6 +232,7 @@ func newVol(vv volValue) (vol *Vol) {
 	}
 
 	vol.dataPartitions = newDataPartitionMap(vv.Name)
+	vol.VersionMgr = newVersionMgr(vol)
 	vol.dpReplicaNum = vv.DpReplicaNum
 	vol.mpReplicaNum = vv.ReplicaNum
 	vol.Owner = vv.Owner
@@ -972,7 +1109,7 @@ func (vol *Vol) doCreateMetaPartition(c *Cluster, start, end uint64) (mp *MetaPa
 		return nil, errors.NewError(err)
 	}
 
-	mp = newMetaPartition(partitionID, start, end, vol.mpReplicaNum, vol.Name, vol.ID)
+	mp = newMetaPartition(partitionID, start, end, vol.mpReplicaNum, vol.Name, vol.ID, vol.VersionMgr.getLatestVer())
 	mp.setHosts(hosts)
 	mp.setPeers(peers)
 

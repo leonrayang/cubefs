@@ -1496,7 +1496,7 @@ func (m *metadataManager) opAppendMultipart(conn net.Conn, p *Packet, remote str
 	return
 }
 
-func (m *metadataManager) opListMultipart(conn net.Conn, p *Packet, remote string) (err error) {
+func (m *metadataManager) opListMultipart(conn net.Conn, p *Packet, remoteAddr string) (err error) {
 	req := &proto.ListMultipartRequest{}
 	if err = json.Unmarshal(p.Data, req); err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
@@ -1516,5 +1516,58 @@ func (m *metadataManager) opListMultipart(conn net.Conn, p *Packet, remote strin
 	}
 	err = mp.ListMultipart(req, p)
 	_ = m.respondToClient(conn, p)
+	return
+}
+
+func (m *metadataManager) opMultiVersionOp(conn net.Conn, p *Packet,
+	remoteAddr string) (err error) {
+	// For ack to master
+	data := p.Data
+	m.responseAckOKToMaster(conn, p)
+
+	var (
+		req       = &proto.MultiVersionOpRequest{}
+		resp      = &proto.MultiVersionOpResponse{}
+		adminTask = &proto.AdminTask{
+			Request: req,
+		}
+	)
+
+	go func() {
+		start := time.Now()
+		decode := json.NewDecoder(bytes.NewBuffer(data))
+		decode.UseNumber()
+		if err = decode.Decode(adminTask); err != nil {
+			resp.Status = proto.TaskFailed
+			resp.Result = err.Error()
+			log.LogErrorf("action[opMultiVersionOp] %v mp  err %v do Decoder", req.VolumeID, err.Error())
+			goto end
+		}
+
+		resp.Status = proto.TaskSucceeds
+		resp.VolumeID = req.VolumeID
+		log.LogWarnf("action[opMultiVersionOp] volume %v seq %v", req.VolumeID, req.VerSeq)
+		m.Range(func(id uint64, partition MetaPartition) bool {
+			if partition.GetVolName() == req.VolumeID {
+				if _, ok := partition.IsLeader(); !ok {
+					return true
+				}
+				log.LogInfof("action[opMultiVersionOp] volume %v mp  %v do MultiVersionOp", req.VolumeID, req.VerSeq)
+				partition.MultiVersionOp(req.Op, req.VerSeq)
+				return true
+			}
+			return true
+		})
+
+
+	end:
+		adminTask.Request = nil
+		adminTask.Response = resp
+		m.respondToMaster(adminTask)
+		data, _ := json.Marshal(resp)
+		log.LogInfof("action[opMultiVersionOp] %s pkt %s, resp success req:%v; respAdminTask: %v, resp: %v, cost %s",
+			remoteAddr, p.String(), req, adminTask, string(data), time.Since(start).String())
+	}()
+
 	return
 }

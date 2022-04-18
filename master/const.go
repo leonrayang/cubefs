@@ -75,6 +75,7 @@ const (
 	srcAddrKey              = "srcAddr"
 	targetAddrKey           = "targetAddr"
 	forceKey                = "force"
+	verSeqKey               = "verSeq"
 )
 
 const (

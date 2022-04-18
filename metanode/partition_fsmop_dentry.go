@@ -38,7 +38,7 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 	forceUpdate bool) (status uint8) {
 	status = proto.OpOk
 	item := mp.inodeTree.CopyGet(NewInode(dentry.ParentId, 0))
-	log.LogInfof("action[fsmCreateDentry] ParentId [%v] get nil, dentry name [%v], inode [%v]", dentry.ParentId, dentry.Name, dentry.Inode)
+	log.LogInfof("action[fsmCreateDentry] ParentId [%v] get nil, dentry name [%v], inode [%v], verseq [%v]", dentry.ParentId, dentry.Name, dentry.Inode, dentry.VerSeq)
 	var parIno *Inode
 	if !forceUpdate {
 		if item == nil {
@@ -89,8 +89,15 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 		status = proto.OpNotExistErr
 		return nil, status
 	}
-	dentry = item.(*Dentry)
-	return dentry, status
+	if dentry.VerSeq == 0 || item.(*Dentry).VerSeq <= dentry.VerSeq {
+		return item.(*Dentry), status
+	}
+	for _, d := range item.(*Dentry).dentryList {
+		if d.VerSeq <= dentry.VerSeq {
+			return item.(*Dentry), status
+		}
+	}
+	return nil, proto.OpNotExistErr
 }
 
 // Delete dentry from the dentry tree.
@@ -163,6 +170,23 @@ func (mp *metaPartition) getDentryTree() *BTree {
 	return mp.dentryTree.GetTree()
 }
 
+func (mp *metaPartition) getDentryByVerSeq(dy *Dentry, verSeq uint64) (d *Dentry){
+	log.LogInfof("action[getDentryByVerSeq] verseq %v, tmp dentry %v, inode id %v, name %v", verSeq, dy.VerSeq, dy.Inode, dy.Name)
+	// VerSeq zero means read newest entries
+	if verSeq != 0 && verSeq < dy.VerSeq { //If it fails, need to find older dentry and continue
+		for _, den := range dy.dentryList {
+			if verSeq >= den.VerSeq {
+				d = den
+				return
+			}
+		}
+	} else {
+		d = dy
+		return
+	}
+	return
+}
+
 func (mp *metaPartition) readDirOnly(req *ReadDirOnlyReq) (resp *ReadDirOnlyResp) {
 	resp = &ReadDirOnlyResp{}
 	begDentry := &Dentry{
@@ -172,8 +196,11 @@ func (mp *metaPartition) readDirOnly(req *ReadDirOnlyReq) (resp *ReadDirOnlyResp
 		ParentId: req.ParentID + 1,
 	}
 	mp.dentryTree.AscendRange(begDentry, endDentry, func(i BtreeItem) bool {
-		d := i.(*Dentry)
-		if proto.IsDir(d.Type) {
+		if proto.IsDir(i.(*Dentry).Type) {
+			d := mp.getDentryByVerSeq(i.(*Dentry), req.VerSeq)
+			if d == nil {
+				return true
+			}
 			resp.Children = append(resp.Children, proto.Dentry{
 				Inode: d.Inode,
 				Type:  d.Type,
@@ -194,7 +221,10 @@ func (mp *metaPartition) readDir(req *ReadDirReq) (resp *ReadDirResp) {
 		ParentId: req.ParentID + 1,
 	}
 	mp.dentryTree.AscendRange(begDentry, endDentry, func(i BtreeItem) bool {
-		d := i.(*Dentry)
+		d := mp.getDentryByVerSeq(i.(*Dentry), req.VerSeq)
+		if d == nil {
+			return true
+		}
 		resp.Children = append(resp.Children, proto.Dentry{
 			Inode: d.Inode,
 			Type:  d.Type,
@@ -223,7 +253,10 @@ func (mp *metaPartition) readDirLimit(req *ReadDirLimitReq) (resp *ReadDirLimitR
 		ParentId: req.ParentID + 1,
 	}
 	mp.dentryTree.AscendRange(startDentry, endDentry, func(i BtreeItem) bool {
-		d := i.(*Dentry)
+		d := mp.getDentryByVerSeq(i.(*Dentry), req.VerSeq)
+		if d == nil {
+			return true
+		}
 		resp.Children = append(resp.Children, proto.Dentry{
 			Inode: d.Inode,
 			Type:  d.Type,

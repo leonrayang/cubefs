@@ -50,6 +50,8 @@ type Streamer struct {
 	request chan interface{} // request channel, write/flush/close
 	done    chan struct{}    // stream writer is being closed
 
+	verSeq      uint64
+
 	writeLock       sync.Mutex
 	inflightL1cache sync.Map
 }
@@ -64,6 +66,7 @@ func NewStreamer(client *ExtentClient, inode uint64) *Streamer {
 	s.request = make(chan interface{}, 64)
 	s.done = make(chan struct{})
 	s.dirtylist = NewDirtyExtentList()
+	s.verSeq = client.multiVerMgr.latestVerSeq
 	go s.server()
 	return s
 }

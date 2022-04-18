@@ -17,6 +17,7 @@ package metanode
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/cubefs/cubefs/util/log"
 
 	"github.com/cubefs/cubefs/proto"
 )
@@ -34,7 +35,9 @@ func (mp *metaPartition) CreateDentry(req *CreateDentryReq, p *Packet) (err erro
 		Name:     req.Name,
 		Inode:    req.Inode,
 		Type:     req.Mode,
+		VerSeq:   mp.verSeq,
 	}
+	log.LogInfof("action[CreateDentry] with seq %v,dentry [%v]", mp.verSeq, dentry)
 	val, err := dentry.Marshal()
 	if err != nil {
 		return
@@ -154,6 +157,7 @@ func (mp *metaPartition) UpdateDentry(req *UpdateDentryReq, p *Packet) (err erro
 		ParentId: req.ParentID,
 		Name:     req.Name,
 		Inode:    req.Inode,
+		VerSeq:   mp.verSeq,
 	}
 	val, err := dentry.Marshal()
 	if err != nil {
@@ -202,6 +206,7 @@ func (mp *metaPartition) ReadDir(req *ReadDirReq, p *Packet) (err error) {
 }
 
 func (mp *metaPartition) ReadDirLimit(req *ReadDirLimitReq, p *Packet) (err error) {
+	log.LogInfof("action[ReadDirLimit] read seq %v, request[%v]", req.VerSeq, req)
 	resp := mp.readDirLimit(req)
 	reply, err := json.Marshal(resp)
 	if err != nil {
@@ -217,6 +222,7 @@ func (mp *metaPartition) Lookup(req *LookupReq, p *Packet) (err error) {
 	dentry := &Dentry{
 		ParentId: req.ParentID,
 		Name:     req.Name,
+		VerSeq:   req.VerSeq,
 	}
 	dentry, status := mp.getDentry(dentry)
 	var reply []byte

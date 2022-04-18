@@ -106,6 +106,9 @@ type ExtentHandler struct {
 
 	// Signaled in receiver ONLY to exit *sender*.
 	doneSender chan struct{}
+
+	// ver update need alloc new extent
+	verUpdate chan uint64
 }
 
 // NewExtentHandler returns a new extent handler.
@@ -122,6 +125,7 @@ func NewExtentHandler(stream *Streamer, offset int, storeMode int, size int) *Ex
 		reply:        make(chan *Packet, 1024),
 		doneSender:   make(chan struct{}),
 		doneReceiver: make(chan struct{}),
+		verUpdate:    make(chan uint64),
 	}
 
 	go eh.receiver()
@@ -204,6 +208,10 @@ func (eh *ExtentHandler) sender() {
 
 	for {
 		select {
+		case <- eh.verUpdate:
+			eh.dp = nil
+			eh.key = nil
+			log.LogInfof("action[ExtentHandler] ver update in sender process and set dp and key as nil")
 		//		case <-t.C:
 		//			log.LogDebugf("sender alive: eh(%v) inflight(%v)", eh, atomic.LoadInt32(&eh.inflight))
 		case packet := <-eh.request:
@@ -359,6 +367,7 @@ func (eh *ExtentHandler) processReply(packet *Packet) {
 			ExtentId:     extID,
 			ExtentOffset: extOffset,
 			Size:         packet.Size,
+			VerSeq:       eh.stream.verSeq,
 		}
 	} else {
 		eh.key.Size += packet.Size
@@ -507,7 +516,7 @@ func (eh *ExtentHandler) allocateExtent() (err error) {
 		extID int
 	)
 
-	//log.LogDebugf("ExtentHandler allocateExtent enter: eh(%v)", eh)
+	log.LogDebugf("ExtentHandler allocateExtent enter: eh(%v)", eh)
 
 	exclude := make(map[string]struct{})
 

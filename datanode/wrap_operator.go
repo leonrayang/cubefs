@@ -169,6 +169,8 @@ func (s *DataNode) OperatePacket(p *repl.Packet, c net.Conn) (err error) {
 		s.handlePacketToReadTinyDeleteRecordFile(p, c)
 	case proto.OpBroadcastMinAppliedID:
 		s.handleBroadcastMinAppliedID(p)
+	case proto.OpVersionOperation:
+		s.handleUpdateVerPacket(p)
 	default:
 		p.PackErrorBody(repl.ErrorUnknownOp.Error(), repl.ErrorUnknownOp.Error()+strconv.Itoa(int(p.Opcode)))
 	}
@@ -240,6 +242,50 @@ func (s *DataNode) handlePacketToCreateDataPartition(p *repl.Packet) {
 	p.PacketOkWithBody([]byte(dp.Disk().Path))
 
 	return
+}
+
+// Handle OpHeartbeat packet.
+func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
+	var err error
+	task := &proto.AdminTask{}
+	err = json.Unmarshal(p.Data, task)
+	defer func() {
+		if err != nil {
+			p.PackErrorBody(ActionUpdateVersion, err.Error())
+		} else {
+			p.PacketOkReply()
+		}
+	}()
+	if err != nil {
+		return
+	}
+
+	go func() {
+		request := &proto.MultiVersionOpRequest{}
+		response := &proto.MultiVersionOpResponse{}
+
+		response.Status = proto.TaskSucceeds
+
+		if task.OpCode == proto.OpVersionOperation {
+			marshaled, _ := json.Marshal(task.Request)
+			if err = json.Unmarshal(marshaled, request); err != nil {
+				log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
+				response.Status = proto.TaskFailed
+			}
+			log.LogInfof("action[handleUpdateVerPacket] handle master version reqeust %v", request)
+		} else {
+			response.Status = proto.TaskFailed
+			err = fmt.Errorf("illegal opcode")
+			response.Result = err.Error()
+		}
+		task.Response = response
+		if err = MasterClient.NodeAPI().ResponseDataNodeTask(task); err != nil {
+			err = errors.Trace(err, "heartbeat to master failed.")
+			log.LogErrorf(err.Error())
+			return
+		}
+	}()
+
 }
 
 // Handle OpHeartbeat packet.

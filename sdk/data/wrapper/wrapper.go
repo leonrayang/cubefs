@@ -37,6 +37,10 @@ type DataPartitionView struct {
 	DataPartitions []*DataPartition
 }
 
+type SimpleClientInfo interface {
+	UpdateLatestVer(id uint64) error
+}
+
 // Wrapper TODO rename. This name does not reflect what it is doing.
 type Wrapper struct {
 	sync.RWMutex
@@ -59,10 +63,13 @@ type Wrapper struct {
 
 	HostsStatus map[string]bool
 	preload     bool
+
+	client      *SimpleClientInfo
 }
 
 // NewDataPartitionWrapper returns a new data partition wrapper.
-func NewDataPartitionWrapper(volName string, masters []string, preload bool) (w *Wrapper, err error) {
+func NewDataPartitionWrapper(client SimpleClientInfo, volName string, masters []string, preload bool, verReadSeq uint64) (w *Wrapper, err error) {
+	log.LogInfof("action[NewDataPartitionWrapper] verReadSeq %v", verReadSeq)
 	w = new(Wrapper)
 	w.stopC = make(chan struct{})
 	w.masters = masters
@@ -71,6 +78,7 @@ func NewDataPartitionWrapper(volName string, masters []string, preload bool) (w 
 	w.partitions = make(map[uint64]*DataPartition)
 	w.HostsStatus = make(map[string]bool)
 	w.preload = preload
+
 	if err = w.updateClusterInfo(); err != nil {
 		err = errors.Trace(err, "NewDataPartitionWrapper:")
 		return
@@ -89,7 +97,14 @@ func NewDataPartitionWrapper(volName string, masters []string, preload bool) (w 
 	if err = w.updateDataNodeStatus(); err != nil {
 		log.LogErrorf("NewDataPartitionWrapper: init DataNodeStatus failed, [%v]", err)
 	}
-	go w.update()
+
+	if verReadSeq > 0 {
+		if err = w.updateCheckVerList(volName, verReadSeq); err != nil {
+			log.LogErrorf("NewDataPartitionWrapper: init Read with ver [%v] error [%v]", verReadSeq, err)
+			return
+		}
+	}
+	go w.update(client)
 	return
 }
 
@@ -127,6 +142,7 @@ func (w *Wrapper) getSimpleVolView() (err error) {
 		log.LogWarnf("getSimpleVolView: get volume simple info fail: volume(%v) err(%v)", w.volName, err)
 		return
 	}
+
 	w.followerRead = view.FollowerRead
 	w.dpSelectorName = view.DpSelectorName
 	w.dpSelectorParm = view.DpSelectorParm
@@ -139,12 +155,12 @@ func (w *Wrapper) getSimpleVolView() (err error) {
 	return nil
 }
 
-func (w *Wrapper) update() {
+func (w *Wrapper) update(client SimpleClientInfo) {
 	ticker := time.NewTicker(5 * time.Second)
 	for {
 		select {
 		case <-ticker.C:
-			w.updateSimpleVolView()
+			w.updateSimpleVolView(client)
 			w.updateDataPartition(false)
 			w.updateDataNodeStatus()
 		case <-w.stopC:
@@ -153,11 +169,15 @@ func (w *Wrapper) update() {
 	}
 }
 
-func (w *Wrapper) updateSimpleVolView() (err error) {
+func (w *Wrapper) updateSimpleVolView(client SimpleClientInfo) (err error) {
 	var view *proto.SimpleVolView
 	if view, err = w.mc.AdminAPI().GetVolumeSimpleInfo(w.volName); err != nil {
 		log.LogWarnf("updateSimpleVolView: get volume simple info fail: volume(%v) err(%v)", w.volName, err)
 		return
+	}
+
+	if err = client.UpdateLatestVer(view.LatestVer); err != nil {
+		log.LogWarnf("updateSimpleVolView: UpdateLatestVer ver %v faile err %v", view.LatestVer, err)
 	}
 
 	if w.followerRead != view.FollowerRead && !w.followerReadClientCfg {
@@ -353,6 +373,43 @@ func (w *Wrapper) GetDataPartition(partitionID uint64) (*DataPartition, error) {
 	}
 	return dp, nil
 }
+
+func (w *Wrapper) updateCheckVerList(volName string, verReadSeq uint64) error {
+	w.RLock()
+	defer w.RUnlock()
+	verList, err := w.mc.AdminAPI().GetVerList(volName)
+	if err != nil {
+		log.LogErrorf("updateDataNodeStatus: get cluster fail: err(%v)", err)
+		return err
+	}
+
+	if verList == nil {
+		msg := fmt.Sprintf("get verList nil, vol [%v] reqd seq [%v]", volName, verReadSeq)
+		log.LogErrorf("action[updateCheckVerList] %v", msg)
+		return fmt.Errorf("%v", msg)
+	}
+
+	log.LogInfof("action[updateCheckVerList] vol [%v] req seq [%v]", volName, verReadSeq)
+
+	if verReadSeq > 0 && len(verList.VerList) == 0 {
+		msg := fmt.Sprintf("get verSeq [%v] failed,master not eable snapshot", verReadSeq)
+		log.LogErrorf("action[updateCheckVerList] %v", msg)
+		return fmt.Errorf("%v", msg)
+	}
+	if verReadSeq > 0 {
+		for _, ver := range verList.VerList {
+			log.LogInfof("action[updateCheckVerList] ver %v,%v,%v", ver.Ver, ver.Status, ver.Ctime)
+			if ver.Ver == verReadSeq {
+				log.LogInfof("action[updateCheckVerList] get ver %v,%v,%v", ver.Ver, ver.Status, ver.Ctime)
+				return nil
+			}
+		}
+		return fmt.Errorf("not found read ver %v", verReadSeq)
+	}
+	return nil
+
+}
+
 
 // WarningMsg returns the warning message that contains the cluster name.
 func (w *Wrapper) WarningMsg() string {

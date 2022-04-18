@@ -65,6 +65,13 @@ func (sp sortedPeers) Swap(i, j int) {
 	sp[i], sp[j] = sp[j], sp[i]
 }
 
+// MetaMultiSnapshotInfo
+type MetaMultiSnapshotInfo struct {
+	VerSeq uint64
+	Status int8
+	Ctime  time.Time
+}
+
 // MetaPartitionConfig is used to create a meta partition.
 type MetaPartitionConfig struct {
 	// Identity for raftStore group. RaftStore nodes in the same raftStore group must have the same groupID.
@@ -77,6 +84,7 @@ type MetaPartitionConfig struct {
 	Cursor        uint64              `json:"-"`     // Cursor ID of the inode that have been assigned
 	NodeId        uint64              `json:"-"`
 	RootDir       string              `json:"-"`
+	VerSeq        uint64               `json:"ver_seq"`
 	BeforeStart   func()              `json:"-"`
 	AfterStart    func()              `json:"-"`
 	BeforeStop    func()              `json:"-"`
@@ -171,6 +179,15 @@ type OpMultipart interface {
 	ListMultipart(req *proto.ListMultipartRequest, p *Packet) (err error)
 }
 
+// MultiVersion operation from master or client
+type OpMultiVersion interface {
+	MultiVersionOp(op uint8, verSeq uint64) (err error)
+	fsmVersionOp(reqData []byte) (err error)
+	GetAllVersionInfo(req *proto.MultiVersionOpRequest, p *Packet) (err error)
+	GetSpecVersionInfo(req *proto.MultiVersionOpRequest, p *Packet) (err error)
+	GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest, rsp *proto.GetExtentsResponse)
+}
+
 // OpMeta defines the interface for the metadata operations.
 type OpMeta interface {
 	OpInode
@@ -179,10 +196,12 @@ type OpMeta interface {
 	OpPartition
 	OpExtend
 	OpMultipart
+	OpMultiVersion
 }
 
 // OpPartition defines the interface for the partition operations.
 type OpPartition interface {
+	GetVolName() (volName string)
 	IsLeader() (leaderAddr string, isLeader bool)
 	GetCursor() uint64
 	GetBaseConfig() MetaPartitionConfig
@@ -208,6 +227,7 @@ type MetaPartition interface {
 	ForceSetMetaPartitionToLoadding()
 	ForceSetMetaPartitionToFininshLoad()
 }
+
 
 // metaPartition manages the range of the inode IDs.
 // When a new inode is requested, it allocates a new inode id for this inode if possible.
@@ -238,6 +258,10 @@ type metaPartition struct {
 	ebsClient              *blobstore.BlobStoreClient
 	volType                int
 	xattrLock              sync.Mutex
+	//snapshot
+	verSeq                  uint64
+	multiVersionList 		[]*MetaMultiSnapshotInfo
+	versionLock             sync.Mutex
 }
 
 func (mp *metaPartition) updateSize() {
@@ -487,8 +511,13 @@ func NewMetaPartition(conf *MetaPartitionConfig, manager *metadataManager) MetaP
 		extReset:      make(chan struct{}),
 		vol:           NewVol(),
 		manager:       manager,
+		verSeq:        conf.VerSeq,
 	}
 	return mp
+}
+
+func (mp *metaPartition)  GetVolName() (volName string) {
+	return mp.config.VolName
 }
 
 // IsLeader returns the raft leader address and if the current meta partition is the leader.
