@@ -13,6 +13,16 @@ import (
 	"time"
 )
 
+func getUser() *user.User {
+
+	user, err := user.Current()
+	if err != nil {
+		log.Fatalf("get current user failed, err %s", err.Error())
+	}
+
+	return user
+}
+
 func PrintUsage() {
 	fmt.Printf("use-age: %s cp localpath cid://path\n", os.Args[0])
 	fmt.Printf("use-age: %s cp cid://path localpath\n", os.Args[0])
@@ -122,9 +132,9 @@ func (w *Walker) lsCmd() {
 
 		// fmt.Printf("user name %s uid %s, uname %s\n", userInfo.Name, userInfo.Uid, userInfo.Username)
 
-		group, err := user.LookupGroupId(fmt.Sprintf("%d", st.Uid))
+		group, err := user.LookupGroupId(fmt.Sprintf("%d", st.Gid))
 		if err != nil {
-			fmt.Printf("can't find target gid %d, err %s\n", st.Uid, err.Error())
+			fmt.Printf("can't find target gid %d, err %s\n", st.Gid, err.Error())
 			group = &user.Group{Name: "unknown"}
 		}
 
