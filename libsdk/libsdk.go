@@ -1213,6 +1213,7 @@ func (c *client) start() (err error) {
 		Masters:           masters,
 		FollowerRead:      c.followerRead,
 		OnAppendExtentKey: mw.AppendExtentKey,
+		OnSplitExtentKey:  mw.SplitExtentKey,
 		OnGetExtents:      mw.GetExtents,
 		OnTruncate:        mw.Truncate,
 		BcacheEnable:      c.enableBcache,

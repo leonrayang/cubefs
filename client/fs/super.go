@@ -73,6 +73,7 @@ type Super struct {
 	suspendCh chan interface{}
 
 	//data lake
+
 	volType             int
 	ebsEndpoint         string
 	CacheAction         int
@@ -90,8 +91,9 @@ type Super struct {
 	ebsc         *blobstore.BlobStoreClient
 	sc           *SummaryCache
 
-	taskPool []common.TaskPool
-	closeC   chan struct{}
+	taskPool      []common.TaskPool
+	closeC        chan struct{}
+	enableVerRead bool
 }
 
 // Functions that Super needs to implement
@@ -118,6 +120,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 		EnableSummary:   opt.EnableSummary && opt.EnableXattr,
 		MetaSendTimeout: opt.MetaSendTimeout,
 		//EnableTransaction: opt.EnableTransaction,
+		VerReadSeq: opt.VerReadSeq,
 	}
 	s.mw, err = meta.NewMetaWrapper(metaConfig)
 	if err != nil {
@@ -204,6 +207,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 	s.CacheThreshold = opt.CacheThreshold
 	s.EbsBlockSize = opt.EbsBlockSize
 	s.enableBcache = opt.EnableBcache
+
 	s.readThreads = int(opt.ReadThreads)
 	s.writeThreads = int(opt.WriteThreads)
 
@@ -222,7 +226,9 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 		BcacheEnable:      opt.EnableBcache,
 		BcacheDir:         opt.BcacheDir,
 		MaxStreamerLimit:  opt.MaxStreamerLimit,
+		VerReadSeq:        opt.VerReadSeq,
 		OnAppendExtentKey: s.mw.AppendExtentKey,
+		OnSplitExtentKey:  s.mw.SplitExtentKey,
 		OnGetExtents:      s.mw.GetExtents,
 		OnTruncate:        s.mw.Truncate,
 		OnEvictIcache:     s.ic.Delete,
@@ -252,6 +258,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 			return nil, errors.Trace(err, "NewEbsClient failed!")
 		}
 	}
+	s.mw.Client = s.ec
 
 	if !opt.EnablePosixACL {
 		opt.EnablePosixACL = s.ec.GetEnablePosixAcl()

@@ -138,6 +138,7 @@ func (writer *asyncWriter) Write(p []byte) (n int, err error) {
 	writer.mu.Lock()
 	writer.buffer.Write(p)
 	writer.mu.Unlock()
+	writer.flushToFile()
 	if writer.buffer.Len() > WriterBufferLenLimit {
 		select {
 		case writer.flushC <- true:
@@ -484,6 +485,7 @@ func LogWarn(v ...interface{}) {
 	}
 	s := fmt.Sprintln(v...)
 	s = gLog.SetPrefix(s, levelPrefixes[2])
+	gLog.debugLogger.Output(2, s)
 	gLog.warnLogger.Output(2, s)
 	gLog.infoLogger.Output(2, s)
 }
@@ -498,6 +500,7 @@ func LogWarnf(format string, v ...interface{}) {
 	}
 	s := fmt.Sprintf(format, v...)
 	s = gLog.SetPrefix(s, levelPrefixes[2])
+	gLog.debugLogger.Output(2, s)
 	gLog.warnLogger.Output(2, s)
 	gLog.infoLogger.Output(2, s)
 }
@@ -512,6 +515,7 @@ func LogInfo(v ...interface{}) {
 	}
 	s := fmt.Sprintln(v...)
 	s = gLog.SetPrefix(s, levelPrefixes[1])
+	gLog.debugLogger.Output(2, s)
 	gLog.infoLogger.Output(2, s)
 }
 
@@ -525,6 +529,7 @@ func LogInfof(format string, v ...interface{}) {
 	}
 	s := fmt.Sprintf(format, v...)
 	s = gLog.SetPrefix(s, levelPrefixes[1])
+	gLog.debugLogger.Output(2, s)
 	gLog.infoLogger.Output(2, s)
 }
 
@@ -542,6 +547,7 @@ func LogError(v ...interface{}) {
 	}
 	s := fmt.Sprintln(v...)
 	s = gLog.SetPrefix(s, levelPrefixes[3])
+	gLog.debugLogger.Output(2, s)
 	gLog.infoLogger.Output(2, s)
 	gLog.errorLogger.Output(2, s)
 }
@@ -556,6 +562,7 @@ func LogErrorf(format string, v ...interface{}) {
 	}
 	s := fmt.Sprintf(format, v...)
 	s = gLog.SetPrefix(s, levelPrefixes[3])
+	gLog.debugLogger.Output(2, s)
 	gLog.errorLogger.Print(s)
 	gLog.infoLogger.Output(2, s)
 }

@@ -112,7 +112,9 @@ func (mp *metaPartition) CreateInode(req *CreateInoReq, p *Packet) (err error) {
 	ino := NewInode(inoID, req.Mode)
 	ino.Uid = req.Uid
 	ino.Gid = req.Gid
+	ino.verSeq = mp.verSeq
 	ino.LinkTarget = req.Target
+
 	if defaultQuotaSwitch {
 		for _, quotaId := range req.QuotaIds {
 			status = mp.mqMgr.IsOverQuota(false, true, quotaId)
@@ -138,6 +140,7 @@ func (mp *metaPartition) CreateInode(req *CreateInoReq, p *Packet) (err error) {
 			return err
 		}
 	} else {
+		log.LogDebugf("action[CreateInode] mp[%v] %v with seq %v", mp.config.PartitionId, inoID, mp.verSeq)
 		val, err := ino.Marshal()
 		if err != nil {
 			p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
@@ -236,31 +239,54 @@ func (mp *metaPartition) TxUnlinkInode(req *proto.TxUnlinkInodeRequest, p *Packe
 
 // DeleteInode deletes an inode.
 func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
+	var (
+		msg   *InodeResponse
+		reply []byte
+	)
+
+	makeRspFunc := func() {
+		status := msg.Status
+		if status == proto.OpOk {
+			resp := &UnlinkInoResp{
+				Info: &proto.InodeInfo{},
+			}
+			replyInfo(resp.Info, msg.Msg, make([]uint32, 0))
+			if reply, err = json.Marshal(resp); err != nil {
+				status = proto.OpErr
+				reply = []byte(err.Error())
+			}
+		}
+		p.PacketErrorWithBody(status, reply)
+	}
+
 	ino := NewInode(req.Inode, 0)
+	ino.verSeq = req.VerSeq
+	log.LogDebugf("action[UnlinkInode] verseq %v ino %v", ino.verSeq, ino)
+	item := mp.inodeTree.Get(ino)
+	if item == nil {
+		err = fmt.Errorf("inode %v reqeust cann't found", ino)
+		log.LogErrorf("action[UnlinkInode] %v", err)
+		p.PacketErrorWithBody(proto.OpNotExistErr, []byte(err.Error()))
+		return
+	}
+	log.LogDebugf("action[UnlinkInode] ino %v submit", ino)
+
 	val, err := ino.Marshal()
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
 		return
 	}
+	log.LogDebugf("action[UnlinkInode] ino %v submit", ino)
 	r, err := mp.submit(opFSMUnlinkInode, val)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))
 		return
 	}
-	msg := r.(*InodeResponse)
-	status := msg.Status
-	var reply []byte
-	if status == proto.OpOk {
-		resp := &UnlinkInoResp{
-			Info: &proto.InodeInfo{},
-		}
-		replyInfo(resp.Info, msg.Msg, make([]uint32, 0))
-		if reply, err = json.Marshal(resp); err != nil {
-			status = proto.OpErr
-			reply = []byte(err.Error())
-		}
-	}
-	p.PacketErrorWithBody(status, reply)
+
+	log.LogDebugf("action[UnlinkInode] %v get resp", ino)
+	msg = r.(*InodeResponse)
+	makeRspFunc()
+
 	return
 }
 
@@ -317,6 +343,13 @@ func (mp *metaPartition) UnlinkInodeBatch(req *BatchUnlinkInoReq, p *Packet) (er
 
 // InodeGet executes the inodeGet command from the client.
 func (mp *metaPartition) InodeGet(req *InodeGetReq, p *Packet) (err error) {
+
+	ino := NewInode(req.Inode, 0)
+	ino.verSeq = req.VerSeq
+	log.LogDebugf("action[Inode] %v seq %v", ino.Inode, req.VerSeq)
+	retMsg := mp.getInode(ino)
+	ino = retMsg.Msg
+
 	var (
 		reply  []byte
 		status = proto.OpNotExistErr
@@ -328,8 +361,7 @@ func (mp *metaPartition) InodeGet(req *InodeGetReq, p *Packet) (err error) {
 		p.PacketErrorWithBody(status, reply)
 		return
 	}
-	ino := NewInode(req.Inode, 0)
-	retMsg := mp.getInode(ino)
+
 	ino = retMsg.Msg
 	if retMsg.Status == proto.OpOk {
 		resp := &proto.InodeGetResponse{
@@ -355,6 +387,7 @@ func (mp *metaPartition) InodeGetBatch(req *InodeGetReqBatch, p *Packet) (err er
 	ino := NewInode(0, 0)
 	for _, inoId := range req.Inodes {
 		ino.Inode = inoId
+		ino.verSeq = req.VerSeq
 		retMsg := mp.getInode(ino)
 		quotaIds, err = mp.getInodeQuotaIds(inoId)
 		if err != nil {
@@ -450,6 +483,7 @@ func (mp *metaPartition) TxCreateInodeLink(req *proto.TxLinkInodeRequest, p *Pac
 // CreateInodeLink creates an inode link (e.g., soft link).
 func (mp *metaPartition) CreateInodeLink(req *LinkInodeReq, p *Packet) (err error) {
 	ino := NewInode(req.Inode, 0)
+
 	val, err := ino.Marshal()
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
@@ -535,12 +569,21 @@ func (mp *metaPartition) EvictInodeBatch(req *BatchEvictInodeReq, p *Packet) (er
 }
 
 // SetAttr set the inode attributes.
-func (mp *metaPartition) SetAttr(reqData []byte, p *Packet) (err error) {
+func (mp *metaPartition) SetAttr(req *SetattrRequest, reqData []byte, p *Packet) (err error) {
+	if mp.verSeq != 0 {
+		req.VerSeq = mp.verSeq
+		reqData, err = json.Marshal(req)
+		if err != nil {
+			log.LogErrorf("setattr: marshal err(%v)", err)
+			return
+		}
+	}
 	_, err = mp.submit(opFSMSetAttr, reqData)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))
 		return
 	}
+	log.LogDebugf("action[SetAttr] inode %v ver %v exit", req.Inode, req.VerSeq)
 	p.PacketOkReply()
 	return
 }

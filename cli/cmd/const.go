@@ -109,6 +109,11 @@ const (
 	ResourceMetaNodeShortHand      = "mn"
 	ResourceDataPartitionShortHand = "dp"
 	ResourceMetaPartitionShortHand = "mp"
+
+	//version op
+	CliFlagVersionCreate = "verCreate"
+	CliFlagVersionList   = "verList"
+	CliFlagVersionDel    = "verDel"
 )
 
 type MasterOp int

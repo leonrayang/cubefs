@@ -228,6 +228,7 @@ type LinkInodeRequest struct {
 	VolName     string `json:"vol"`
 	PartitionID uint64 `json:"pid"`
 	Inode       uint64 `json:"ino"`
+	IsRename    bool   `json:"rename"`
 }
 
 // LinkInodeResponse defines the response to the request of linking an inode.
@@ -275,6 +276,7 @@ type UnlinkInodeRequest struct {
 	VolName     string `json:"vol"`
 	PartitionID uint64 `json:"pid"`
 	Inode       uint64 `json:"ino"`
+	VerSeq      uint64 `json:"ver"`
 }
 
 // UnlinkInodeRequest defines the request to unlink an inode.
@@ -320,6 +322,7 @@ type CreateDentryRequest struct {
 	Name        string   `json:"name"`
 	Mode        uint32   `json:"mode"`
 	QuotaIds    []uint32 `json:"qids"`
+	VerSeq      uint64   `json:"seq"`
 }
 
 // TxCreateDentryRequest defines the request to create a dentry.
@@ -385,6 +388,7 @@ type DeleteDentryRequest struct {
 	PartitionID uint64 `json:"pid"`
 	ParentID    uint64 `json:"pino"`
 	Name        string `json:"name"`
+	Verseq      uint64 `json:"ver"`
 }
 
 type BatchDeleteDentryRequest struct {
@@ -413,6 +417,7 @@ type LookupRequest struct {
 	PartitionID uint64 `json:"pid"`
 	ParentID    uint64 `json:"pino"`
 	Name        string `json:"name"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 // LookupResponse defines the response for the loopup request.
@@ -426,6 +431,7 @@ type InodeGetRequest struct {
 	VolName     string `json:"vol"`
 	PartitionID uint64 `json:"pid"`
 	Inode       uint64 `json:"ino"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 // InodeGetResponse defines the response to the InodeGetRequest.
@@ -438,6 +444,7 @@ type BatchInodeGetRequest struct {
 	VolName     string   `json:"vol"`
 	PartitionID uint64   `json:"pid"`
 	Inodes      []uint64 `json:"inos"`
+	VerSeq      uint64   `json:"seq"`
 }
 
 // BatchInodeGetResponse defines the response to the request of getting the inode in batch.
@@ -450,12 +457,14 @@ type ReadDirRequest struct {
 	VolName     string `json:"vol"`
 	PartitionID uint64 `json:"pid"`
 	ParentID    uint64 `json:"pino"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 type ReadDirOnlyRequest struct {
 	VolName     string `json:"vol"`
 	PartitionID uint64 `json:"pid"`
 	ParentID    uint64 `json:"pino"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 // ReadDirResponse defines the response to the request of reading dir.
@@ -473,6 +482,7 @@ type ReadDirLimitRequest struct {
 	ParentID    uint64 `json:"pino"`
 	Marker      string `json:"marker"`
 	Limit       uint64 `json:"limit"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 type ReadDirLimitResponse struct {
@@ -493,6 +503,8 @@ type AppendExtentKeyWithCheckRequest struct {
 	Inode          uint64      `json:"ino"`
 	Extent         ExtentKey   `json:"ek"`
 	DiscardExtents []ExtentKey `json:"dek"`
+	VerSeq         uint64      `json:"seq"`
+	IsSplit        bool
 }
 
 // AppendObjExtentKeyRequest defines the request to append an obj extent key.
@@ -508,6 +520,7 @@ type GetExtentsRequest struct {
 	VolName     string `json:"vol"`
 	PartitionID uint64 `json:"pid"`
 	Inode       uint64 `json:"ino"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 // GetObjExtentsResponse defines the response to the request of getting obj extents.
@@ -523,6 +536,7 @@ type GetExtentsResponse struct {
 	Generation uint64      `json:"gen"`
 	Size       uint64      `json:"sz"`
 	Extents    []ExtentKey `json:"eks"`
+	Status     int
 }
 
 // TruncateRequest defines the request to truncate.
@@ -537,6 +551,13 @@ type EmptyExtentKeyRequest struct {
 	VolName     string `json:"vol"`
 	PartitionID uint64 `json:"pid"`
 	Inode       uint64 `json:"ino"`
+}
+
+type DelVerRequest struct {
+	VolName     string `json:"vol"`
+	PartitionID uint64 `json:"pid"`
+	Inode       uint64 `json:"ino"`
+	VerSeq      uint64 `json:"ver"`
 }
 
 type DelExtentKeyRequest struct {
@@ -557,6 +578,7 @@ type SetAttrRequest struct {
 	ModifyTime  int64  `json:"mt"`
 	AccessTime  int64  `json:"at"`
 	Valid       uint32 `json:"valid"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 const (
@@ -622,6 +644,7 @@ type GetXAttrRequest struct {
 	PartitionId uint64 `json:"pid"`
 	Inode       uint64 `json:"ino"`
 	Key         string `json:"key"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 type GetXAttrResponse struct {
@@ -643,6 +666,7 @@ type ListXAttrRequest struct {
 	VolName     string `json:"vol"`
 	PartitionId uint64 `json:"pid"`
 	Inode       uint64 `json:"ino"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 type ListXAttrResponse struct {
@@ -657,6 +681,7 @@ type BatchGetXAttrRequest struct {
 	PartitionId uint64   `json:"pid"`
 	Inodes      []uint64 `json:"inos"`
 	Keys        []string `json:"keys"`
+	VerSeq      uint64   `json:"seq"`
 }
 
 type BatchGetXAttrResponse struct {

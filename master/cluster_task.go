@@ -665,6 +665,9 @@ func (c *Cluster) handleMetaNodeTaskResponse(nodeAddr string, task *proto.AdminT
 	case proto.OpMasterDeleteInodeQuota:
 		response := task.Response.(*proto.BatchDeleteMetaserverQuotaResponse)
 		err = c.dealDeleteMetaserverQuotaResponse(task.OperatorAddr, response)
+	case proto.OpVersionOperation:
+		response := task.Response.(*proto.MultiVersionOpResponse)
+		err = c.dealOpMetaNodeMultiVerResp(task.OperatorAddr, response)
 	default:
 		err := fmt.Errorf("unknown operate code %v", task.OpCode)
 		log.LogError(err)
@@ -689,6 +692,36 @@ func (c *Cluster) dealUpdateMetaPartitionResp(nodeAddr string, resp *proto.Updat
 		log.LogError(msg)
 		Warn(c.Name, msg)
 	}
+	return
+}
+
+func (c *Cluster) dealOpMetaNodeMultiVerResp(nodeAddr string, resp *proto.MultiVersionOpResponse) (err error) {
+	if resp.Status == proto.TaskFailed {
+		msg := fmt.Sprintf("action[dealOpMetaNodeMultiVerResp],clusterID[%v] volume [%v] nodeAddr %v operate meta partition snapshot version,err %v",
+			c.Name, resp.VolumeID, nodeAddr, resp.Result)
+		log.LogError(msg)
+		Warn(c.Name, msg)
+	}
+	var vol *Vol
+	if vol, err = c.getVol(resp.VolumeID); err != nil {
+		return
+	}
+	vol.VersionMgr.handleTaskRsp(resp, TypeMetaPartition)
+	return
+}
+
+func (c *Cluster) dealOpDataNodeMultiVerResp(nodeAddr string, resp *proto.MultiVersionOpResponse) (err error) {
+	if resp.Status == proto.TaskFailed {
+		msg := fmt.Sprintf("action[dealOpMetaNodeMultiVerResp],clusterID[%v] volume [%v] nodeAddr %v operate meta partition snapshot version,err %v",
+			c.Name, resp.VolumeID, nodeAddr, resp.Result)
+		log.LogError(msg)
+		Warn(c.Name, msg)
+	}
+	var vol *Vol
+	if vol, err = c.getVol(resp.VolumeID); err != nil {
+		return
+	}
+	vol.VersionMgr.handleTaskRsp(resp, TypeDataPartition)
 	return
 }
 
@@ -840,6 +873,9 @@ func (c *Cluster) handleDataNodeTaskResponse(nodeAddr string, task *proto.AdminT
 	case proto.OpDataNodeHeartbeat:
 		response := task.Response.(*proto.DataNodeHeartbeatResponse)
 		err = c.handleDataNodeHeartbeatResp(task.OperatorAddr, response)
+	case proto.OpVersionOperation:
+		response := task.Response.(*proto.MultiVersionOpResponse)
+		err = c.dealOpDataNodeMultiVerResp(task.OperatorAddr, response)
 	default:
 		err = fmt.Errorf(fmt.Sprintf("unknown operate code %v", task.OpCode))
 		goto errHandler

@@ -17,6 +17,7 @@ package datanode
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/cubefs/cubefs/util/log"
 	"hash/crc32"
 	"sync/atomic"
 
@@ -64,6 +65,7 @@ func (s *DataNode) checkStoreMode(p *repl.Packet) (err error) {
 	if p.ExtentType == proto.TinyExtentType || p.ExtentType == proto.NormalExtentType {
 		return nil
 	}
+	log.LogErrorf("action[checkStoreMode] extent type %v", p.ExtentType)
 	return ErrIncorrectStoreType
 }
 
@@ -106,6 +108,9 @@ func (s *DataNode) addExtentInfo(p *repl.Packet) error {
 		extentID uint64
 		err      error
 	)
+
+	log.LogDebugf("action[prepare.addExtentInfo] pack opcode (%v) p.IsLeaderPacket(%v) p (%v)", p.Opcode, p.IsLeaderPacket(), p)
+
 	if p.IsLeaderPacket() && p.IsTinyExtentType() && p.IsWriteOperation() {
 		extentID, err = store.GetAvailableTinyExtent()
 		if err != nil {
@@ -116,6 +121,26 @@ func (s *DataNode) addExtentInfo(p *repl.Packet) error {
 		if err != nil {
 			return fmt.Errorf("addExtentInfo partition %v  %v GetTinyExtentOffset error %v", p.PartitionID, extentID, err.Error())
 		}
+	} else if p.IsRandomWrite() {
+		if err = s.checkMultiVersionStatus(p.Object.(*DataPartition).volumeID); err != nil {
+			return err
+		}
+	} else if p.IsSnapshotModWriteAppendOperation() {
+		if p.IsTinyExtentType() {
+			p.ExtentOffset, err = store.GetTinyExtentOffset(p.ExtentID)
+			if err != nil {
+				err = fmt.Errorf("addExtentInfo partition %v  %v GetTinyExtentOffset error %v", p.PartitionID, extentID, err.Error())
+				log.LogErrorf("err %v", err)
+			}
+			log.LogDebugf("action[prepare.addExtentInfo] dp %v append randomWrite p.ExtentOffset %v Kernel(file)Offset %v",
+				p.PartitionID, p.ExtentOffset, p.KernelOffset)
+			return err
+		}
+		p.ExtentOffset, err = store.GetExtentSnapshotModOffset(p.ExtentID)
+		log.LogDebugf("action[prepare.addExtentInfo] pack (%v)", p)
+		if err != nil {
+			return fmt.Errorf("addExtentInfo partition %v  %v GetSnapshotModExtentOffset error %v", p.PartitionID, extentID, err.Error())
+		}
 	} else if p.IsLeaderPacket() && p.IsCreateExtentOperation() {
 		if partition.isNormalType() && partition.GetExtentCount() >= storage.MaxExtentCount*3 {
 			return fmt.Errorf("addExtentInfo partition %v has reached maxExtentId", p.PartitionID)
@@ -124,7 +149,7 @@ func (s *DataNode) addExtentInfo(p *repl.Packet) error {
 		if err != nil {
 			return fmt.Errorf("addExtentInfo partition %v allocCheckLimit NextExtentId error %v", p.PartitionID, err)
 		}
-	} else if p.IsLeaderPacket() && p.IsMarkDeleteExtentOperation() && p.IsTinyExtentType() {
+	} else if p.IsLeaderPacket() && p.IsMarkDeleteExtentOperation() {
 		record := new(proto.TinyExtentDeleteRecord)
 		if err := json.Unmarshal(p.Data[:p.Size], record); err != nil {
 			return fmt.Errorf("addExtentInfo failed %v", err.Error())

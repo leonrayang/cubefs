@@ -16,6 +16,7 @@ package meta
 
 import (
 	"fmt"
+	"github.com/cubefs/cubefs/sdk/data/wrapper"
 	"sync"
 	"syscall"
 	"time"
@@ -85,8 +86,10 @@ type MetaConfig struct {
 	OnAsyncTaskError AsyncTaskErrorFunc
 	EnableSummary    bool
 	MetaSendTimeout  int64
+
 	//EnableTransaction uint8
 	//EnableTransaction bool
+	VerReadSeq uint64
 }
 
 type MetaWrapper struct {
@@ -136,6 +139,7 @@ type MetaWrapper struct {
 	partCond  *sync.Cond
 
 	// Allocated to trigger and throttle instant partition updates
+
 	forceUpdate         chan struct{}
 	forceUpdateLimit    *rate.Limiter
 	EnableSummary       bool
@@ -146,6 +150,10 @@ type MetaWrapper struct {
 	//EnableTransaction bool
 	QuotaInfoMap map[uint32]*proto.QuotaInfo
 	QuotaLock    sync.RWMutex
+
+	VerReadSeq uint64
+	LastVerSeq uint64
+	Client     wrapper.SimpleClientInfo
 }
 
 // the ticket from authnode
@@ -192,6 +200,7 @@ func NewMetaWrapper(config *MetaConfig) (*MetaWrapper, error) {
 	mw.EnableSummary = config.EnableSummary
 	mw.DirChildrenNumLimit = proto.DefaultDirChildrenNumLimit
 	//mw.EnableTransaction = config.EnableTransaction
+	mw.VerReadSeq = config.VerReadSeq
 
 	limit := 0
 

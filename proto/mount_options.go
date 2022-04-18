@@ -66,8 +66,9 @@ const (
 	MetaSendTimeout
 	BuffersTotalLimit
 	MaxStreamerLimit
-
 	EnableAudit
+	//snapshot
+	SnapshotReadVerSeq
 
 	MaxMountOption
 )
@@ -153,7 +154,7 @@ func InitMountOptions(opts []MountOption) {
 	opts[BcacheCheckIntervalS] = MountOption{"bcacheCheckIntervalS", "The block cache check interval", "", int64(300)}
 	opts[EnableAudit] = MountOption{"enableAudit", "enable client audit logging", "", false}
 	opts[RequestTimeout] = MountOption{"requestTimeout", "The Request Expiration Time", "", int64(0)}
-
+	opts[SnapshotReadVerSeq] = MountOption{"snapshotReadSeq", "Snapshot read seq", "", int64(0)} //default false
 	for i := 0; i < MaxMountOption; i++ {
 		flag.StringVar(&opts[i].cmdlineValue, opts[i].keyword, "", opts[i].description)
 	}
@@ -295,6 +296,7 @@ type MountOptions struct {
 	BcacheFilterFiles    string
 	BcacheCheckIntervalS int64
 	BcacheBatchCnt       int64
+	VerReadSeq           uint64
 	ReadThreads          int64
 	WriteThreads         int64
 	EnableSummary        bool

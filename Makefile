@@ -8,6 +8,7 @@ BIN_CLIENT2 := $(BIN_PATH)/cfs-client2
 BIN_AUTHTOOL := $(BIN_PATH)/cfs-authtool
 BIN_CLI := $(BIN_PATH)/cfs-cli
 BIN_FSCK := $(BIN_PATH)/cfs-fsck
+BIN_SNAPSHOT:= $(BIN_PATH)/cfs-snapshot
 BIN_LIBSDK := $(BIN_PATH)/libsdk
 BIN_FDSTORE := $(BIN_PATH)/fdstore
 BIN_PRELOAD := $(BIN_PATH)/cfs-preload
@@ -21,6 +22,7 @@ CLIENT2_SRC := $(wildcard clientv2/*.go clientv2/fs/*.go sdk/*.go)
 AUTHTOOL_SRC := $(wildcard authtool/*.go)
 CLI_SRC := $(wildcard cli/*.go)
 FSCK_SRC := $(wildcard fsck/*.go fsck/cmd/*.go)
+SNAPSHOT_SRC := $(wildcard snapshot/*.go snapshot/cmd/*.go)
 LIBSDK_SRC := $(wildcard libsdk/*.go)
 FDSTORE_SRC := $(wildcard fdstore/*.go)
 PRELOAD_SRC := $(wildcard preload/*.go)
@@ -33,8 +35,8 @@ default: all
 phony := all
 all: build
 
-phony += build server authtool client client2 cli fsck preload bcache
-build: server authtool client cli libsdk fsck preload bcache
+phony += build server authtool client client2 cli fsck snapshot preload bcache
+build: server authtool client cli libsdk fsck snapshot preload bcache
 
 server: $(BIN_SERVER)
 
@@ -47,6 +49,8 @@ authtool: $(BIN_AUTHTOOL)
 cli: $(BIN_CLI)
 
 fsck: $(BIN_FSCK)
+
+snapshot: $(BIN_SNAPSHOT)
 
 libsdk: $(BIN_LIBSDK)
 
@@ -73,6 +77,9 @@ $(BIN_CLI): $(COMMON_SRC) $(CLI_SRC)
 
 $(BIN_FSCK): $(COMMON_SRC) $(FSCK_SRC)
 	@build/build.sh fsck
+
+$(BIN_SNAPSHOT): $(COMMON_SRC) $(SNAPSHOT_SRC)
+	@build/build.sh snapshot
 
 $(BIN_LIBSDK): $(COMMON_SRC) $(LIBSDK_SRC)
 	@build/build.sh libsdk

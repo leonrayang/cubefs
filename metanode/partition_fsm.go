@@ -80,7 +80,7 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		if err = ino.Unmarshal(msg.V); err != nil {
 			return
 		}
-		resp = mp.fsmUnlinkInode(ino)
+		resp = mp.fsmUnlinkInode(ino, mp.multiVersionList.VerList)
 	case opFSMUnlinkInodeBatch:
 		inodes, err := InodeBatchUnmarshal(msg.V)
 		if err != nil {
@@ -159,7 +159,13 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		if err = ino.Unmarshal(msg.V); err != nil {
 			return
 		}
-		resp = mp.fsmAppendExtentsWithCheck(ino)
+		resp = mp.fsmAppendExtentsWithCheck(ino, false)
+	case opFSMExtentSplit:
+		ino := NewInode(0, 0)
+		if err = ino.Unmarshal(msg.V); err != nil {
+			return
+		}
+		resp = mp.fsmAppendExtentsWithCheck(ino, true)
 	case opFSMObjExtentsAdd:
 		ino := NewInode(0, 0)
 		if err = ino.Unmarshal(msg.V); err != nil {
@@ -185,9 +191,7 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		}
 		resp = mp.fsmClearInodeCache(ino)
 	case opFSMSentToChan:
-
-		resp = mp.fsmSendToChan(msg.V)
-
+		resp = mp.fsmSendToChan(msg.V, true)
 	case opFSMStoreTick:
 		inodeTree := mp.inodeTree.GetTree()
 		dentryTree := mp.dentryTree.GetTree()
@@ -254,7 +258,6 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		if cursor > mp.config.Cursor {
 			mp.config.Cursor = cursor
 		}
-
 	case opFSMSyncTxID:
 		var txID uint64
 		txID = binary.BigEndian.Uint64(msg.V)
@@ -367,8 +370,54 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 			return
 		}
 		resp = mp.fsmTxCreateLinkInode(txIno)
+	case opFSMVersionOp:
+		resp = mp.fsmVersionOp(msg.V)
 	}
 
+	return
+}
+
+func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
+
+	var opData VerOpData
+	if err = json.Unmarshal(reqData, &opData); err != nil {
+		log.LogErrorf("action[fsmVersionOp] unmarshal error %v", err)
+		return
+	}
+
+	mp.versionLock.Lock()
+	defer mp.versionLock.Unlock()
+	log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v", mp.config.PartitionId, opData.VerSeq, opData.Op)
+
+	if opData.Op == proto.CreateVersionCommit {
+		cnt := len(mp.multiVersionList.VerList)
+		if cnt > 0 && mp.multiVersionList.VerList[cnt-1].Ver >= opData.VerSeq {
+			log.LogErrorf("action[MultiVersionOp] reqeust seq %v lessOrEqual last exist snapshot seq %v",
+				mp.multiVersionList.VerList[cnt-1].Ver, opData.VerSeq)
+			return
+		}
+		newVer := &proto.VolVersionInfo{
+			Status: proto.VersionNormal,
+			Ctime:  time.Now(),
+			Ver:    opData.VerSeq,
+		}
+		mp.verSeq = opData.VerSeq
+		mp.multiVersionList.VerList = append(mp.multiVersionList.VerList, newVer)
+
+		log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v, seqArray size %v", mp.config.PartitionId, opData.VerSeq, opData.Op, len(mp.multiVersionList.VerList))
+	} else if opData.Op == proto.DeleteVersion {
+		for i, ver := range mp.multiVersionList.VerList {
+			if ver.Ver == opData.VerSeq {
+				log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v, seqArray size %v", mp.config.PartitionId, opData.VerSeq, opData.Op, len(mp.multiVersionList.VerList))
+				// mp.multiVersionList = append(mp.multiVersionList[:i], mp.multiVersionList[i+1:]...)
+				mp.multiVersionList.VerList = append(mp.multiVersionList.VerList[:i], mp.multiVersionList.VerList[i+1:]...)
+				break
+			}
+		}
+	} else {
+		log.LogErrorf("action[fsmVersionOp] mp %v with seq %v process op type %v seq %v not found",
+			mp.config.PartitionId, mp.verSeq, opData.Op, opData.VerSeq)
+	}
 	return
 }
 
@@ -418,7 +467,7 @@ func (mp *metaPartition) Snapshot() (snap raftproto.Snapshot, err error) {
 	return
 }
 
-// ApplySnapshot applies the given snapshots.
+// ApplySnapshot applies the given multiVersions.
 func (mp *metaPartition) ApplySnapshot(peers []raftproto.Peer, iter raftproto.SnapIterator) (err error) {
 	var (
 		data          []byte
@@ -571,7 +620,7 @@ func (mp *metaPartition) ApplySnapshot(peers []raftproto.Peer, iter raftproto.Sn
 			log.LogDebugf("ApplySnapshot: write snap extent delete file: partitonID(%v) filename(%v).",
 				mp.config.PartitionId, fileName)
 		default:
-			err = fmt.Errorf("unknown op=%d", snap.Op)
+			err = fmt.Errorf("unknown Op=%d", snap.Op)
 			return
 		}
 	}

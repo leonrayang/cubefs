@@ -313,6 +313,15 @@ build_fsck() {
     popd >/dev/null
 }
 
+build_snapshot() {
+    pre_build
+    pushd $SrcPath >/dev/null
+    echo -n "build cfs-snapshot	"
+    go build $MODFLAGS -ldflags "${LDFlags}" -o ${BuildBinPath}/cfs-snapshot ${SrcPath}/snapshot/*.go  && echo "success" || echo "failed"
+    popd >/dev/null
+}
+
+
 build_libsdk() {
     pre_build_server
     case `uname` in
@@ -404,6 +413,12 @@ case "$cmd" in
         ;;
     "fsck")
         build_fsck
+        ;;
+    "snapshot")
+        build_snapshot
+        ;;
+    "spdk")
+        build_spdk
         ;;
     "libsdk")
         build_libsdk
