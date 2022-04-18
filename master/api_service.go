@@ -1425,6 +1425,7 @@ func newSimpleView(vol *Vol) *proto.SimpleVolView {
 		CacheHighWater:     vol.CacheHighWater,
 		CacheRule:          vol.CacheRule,
 		PreloadCapacity:    vol.getPreloadCapacity(),
+		LatestVer:			vol.VersionMgr.getLatestVer(),
 	}
 }
 
@@ -3056,6 +3057,121 @@ func (m *Server) listVols(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sendOkReply(w, r, newSuccessHTTPReply(volsInfo))
+}
+
+func (m *Server) CreateVersion(w http.ResponseWriter, r *http.Request) {
+	var (
+		err error
+		vol *Vol
+		name string
+		ver *proto.VolVersionInfo
+	)
+	log.LogInfof("action[CreateVersion]")
+	if err = r.ParseForm(); err != nil {
+		sendErrReply(w, r, newErrHTTPReply(proto.ErrParamError))
+		return
+	}
+
+	if name, err = extractName(r); err != nil {
+		sendErrReply(w, r, newErrHTTPReply(proto.ErrParamError))
+		return
+	}
+
+	if vol, err = m.cluster.getVol(name); err != nil {
+		sendErrReply(w, r, newErrHTTPReply(proto.ErrVolNotExists))
+		return
+	}
+
+	if ver, err = vol.VersionMgr.createTask(m.cluster, uint64(time.Now().Unix()),  proto.CreateVersion); err != nil {
+		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVersionOpError, Msg: err.Error()})
+	}
+
+	sendOkReply(w, r, newSuccessHTTPReply(ver))
+}
+
+func (m *Server) DelVersion(w http.ResponseWriter, r *http.Request) {
+	var (
+		err error
+		vol *Vol
+		name string
+		verSeq uint64
+	)
+	if err = r.ParseForm(); err != nil {
+		return
+	}
+
+	if name, err = extractName(r); err != nil {
+		return
+	}
+
+	if verSeq, err = extractUint64(r, verSeqKey); err != nil {
+		return
+	}
+
+	if vol, err = m.cluster.getVol(name); err != nil {
+		sendErrReply(w, r, newErrHTTPReply(proto.ErrVolNotExists))
+		return
+	}
+	if _, err = vol.VersionMgr.createTask(m.cluster, verSeq, proto.DeleteVersion); err != nil {
+		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVersionOpError, Msg: err.Error()})
+	}
+
+	sendOkReply(w, r, newSuccessHTTPReply("success!"))
+}
+
+func (m *Server) GetVersionInfo(w http.ResponseWriter, r *http.Request) {
+	var (
+		err error
+		vol *Vol
+		name string
+		verSeq uint64
+		verInfo *proto.VolVersionInfo
+	)
+	if err = r.ParseForm(); err != nil {
+		return
+	}
+
+	if name, err = extractName(r); err != nil {
+		return
+	}
+
+	if verSeq, err = extractUint64(r, verSeqKey); err != nil {
+		return
+	}
+
+	if vol, err = m.cluster.getVol(name); err != nil {
+		sendErrReply(w, r, newErrHTTPReply(proto.ErrVolNotExists))
+		return
+	}
+	if verInfo, err = vol.VersionMgr.getVersionInfo(verSeq); err != nil {
+		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVersionOpError, Msg: err.Error()})
+	}
+
+	sendOkReply(w, r, newSuccessHTTPReply(verInfo))
+}
+
+func (m *Server) GetAllVersionInfo(w http.ResponseWriter, r *http.Request) {
+	var (
+		err error
+		vol *Vol
+		name string
+		verList *proto.VolVersionInfoList
+	)
+	if err = r.ParseForm(); err != nil {
+		return
+	}
+
+	if name, err = extractName(r); err != nil {
+		return
+	}
+
+	if vol, err = m.cluster.getVol(name); err != nil {
+		sendErrReply(w, r, newErrHTTPReply(proto.ErrVolNotExists))
+		return
+	}
+	verList = vol.VersionMgr.getVersionList()
+
+	sendOkReply(w, r, newSuccessHTTPReply(verList))
 }
 
 func genRespMessage(data []byte, req *proto.APIAccessReq, ts int64, key []byte) (message string, err error) {

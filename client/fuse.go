@@ -692,11 +692,17 @@ func parseMountOption(cfg *config.Config) (*proto.MountOptions, error) {
 	opt.EnableUnixPermission = GlobalMountOptions[proto.EnableUnixPermission].GetBool()
 	opt.ReadThreads = GlobalMountOptions[proto.ReadThreads].GetInt64()
 	opt.WriteThreads = GlobalMountOptions[proto.WriteThreads].GetInt64()
+
 	opt.BcacheDir = GlobalMountOptions[proto.BcacheDir].GetString()
 	//opt.EnableBcache = GlobalMountOptions[proto.EnableBcache].GetBool()
 	if _, err := os.Stat(bcache.UnixSocketPath); err == nil && opt.BcacheDir != "" {
 		opt.EnableBcache = true
 	}
+
+	opt.EnableBcache = GlobalMountOptions[proto.EnableBcache].GetBool()
+	opt.VerReadSeq = uint64(GlobalMountOptions[proto.SnapshotReadVerSeq].GetInt64())
+	opt.MetaSendTimeout = GlobalMountOptions[proto.MetaSendTimeout].GetInt64()
+
 	opt.BuffersTotalLimit = GlobalMountOptions[proto.BuffersTotalLimit].GetInt64()
 	opt.MetaSendTimeout = GlobalMountOptions[proto.MetaSendTimeout].GetInt64()
 	opt.MaxStreamerLimit = GlobalMountOptions[proto.MaxStreamerLimit].GetInt64()

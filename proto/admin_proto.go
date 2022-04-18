@@ -107,6 +107,13 @@ const (
 	AdminAddMetaReplica            = "/metaReplica/add"
 	AdminDeleteMetaReplica         = "/metaReplica/delete"
 
+	//admin multi version snapshot
+	AdminCreateVersion             = "/multiVer/create"
+	AdminDelVersion                = "/multiVer/del"
+	AdminGetVersionInfo            = "/multiVer/get"
+	AdminGetAllVersionInfo         = "/multiVer/getAll"
+
+
 	// Operation response
 	GetMetaNodeTaskResponse = "/metaNode/response" // Method: 'POST', ContentType: 'application/json'
 	GetDataNodeTaskResponse = "/dataNode/response" // Method: 'POST', ContentType: 'application/json'
@@ -176,6 +183,7 @@ type CreateDataPartitionRequest struct {
 	Hosts         []string
 	CreateType    int
 	LeaderSize    int
+	VerSeq        uint64
 }
 
 // CreateDataPartitionResponse defines the response to the request of creating a data partition.
@@ -277,6 +285,20 @@ type QosToDataNode struct {
 	QosIopsWriteLimit uint64
 	QosFlowReadLimit  uint64
 	QosFlowWriteLimit uint64
+}
+// MultiVersionOpRequest defines the request of
+type MultiVersionOpRequest struct {
+	VolumeID string
+	VerSeq   uint64
+	Op       uint8
+}
+
+// MultiVersionOpResponse defines the response to the request of l.
+type MultiVersionOpResponse struct {
+	VolumeID string
+	Addr     uint8
+	Status   uint8
+	Result   string
 }
 
 // HeartBeatRequest define the heartbeat request.
@@ -629,6 +651,8 @@ type SimpleVolView struct {
 	CacheTtl         int
 	CacheRule        string
 	PreloadCapacity  uint64
+	// multi version snapsho t
+	LatestVer 		uint64
 }
 
 type NodeSetInfo struct {

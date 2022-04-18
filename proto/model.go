@@ -252,3 +252,14 @@ type MetaPartitionDiagnosis struct {
 	LackReplicaMetaPartitionIDs []uint64
 	BadMetaPartitionIDs         []BadPartitionView
 }
+
+type VolVersionInfo struct {
+	Ver uint64
+	Ctime time.Time
+	Status uint8              // building,normal,deleted,abnormal
+}
+
+type VolVersionInfoList struct {
+	VerList []*VolVersionInfo
+}
+

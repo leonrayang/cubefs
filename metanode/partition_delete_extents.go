@@ -320,7 +320,8 @@ func (mp *metaPartition) deleteExtentsFromList(fileList *synclist.SyncList) {
 					panic(err)
 				}
 			} else {
-				if err = ek.UnmarshalBinary(buff); err != nil {
+				//ek for del no need to get version
+				if err = ek.UnmarshalBinary(buff, false); err != nil {
 					panic(err)
 				}
 			}

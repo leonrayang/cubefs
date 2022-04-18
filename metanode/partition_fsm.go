@@ -227,8 +227,51 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		if cursor > mp.config.Cursor {
 			mp.config.Cursor = cursor
 		}
+	case opFSMVersionOp:
+		resp = mp.fsmVersionOp(msg.V)
 	}
 
+	return
+}
+
+func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
+
+	var opData VerOpData
+	if err =  json.Unmarshal(reqData, &opData); err != nil {
+		log.LogErrorf("action[fsmVersionOp] unmarshal error %v", err)
+		return
+	}
+
+	mp.versionLock.Lock()
+	defer mp.versionLock.Unlock()
+	log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v", mp.config.PartitionId, opData.VerSeq, opData.Op)
+	if opData.Op == proto.CreateVersion {
+		cnt := len(mp.multiVersionList)
+		if cnt > 0 && uint64(mp.multiVersionList[cnt-1].VerSeq) >= opData.VerSeq {
+			log.LogErrorf("action[MultiVersionOp] reqeust seq %v lessOrEqual last exist snapshot seq %v",
+				mp.multiVersionList[cnt-1].VerSeq, opData.VerSeq)
+			return
+		}
+		newVer := &MetaMultiSnapshotInfo{
+			Status: proto.VersionNormal,
+			Ctime: time.Now(),
+			VerSeq: opData.VerSeq,
+		}
+		mp.multiVersionList = append(mp.multiVersionList, newVer)
+		mp.verSeq = opData.VerSeq
+		log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v, seqArray size %v", mp.config.PartitionId, opData.VerSeq, opData.Op, len(mp.multiVersionList))
+	}
+
+	if opData.Op == proto.DeleteVersion {
+		for i, ver := range mp.multiVersionList {
+			if ver.VerSeq == opData.VerSeq {
+				log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v, seqArray size %v", mp.config.PartitionId, opData.VerSeq, opData.Op, len(mp.multiVersionList))
+				// mp.multiVersionList = append(mp.multiVersionList[:i], mp.multiVersionList[i+1:]...)
+				mp.multiVersionList[i].Status = proto.VersionDeleted
+				break
+			}
+		}
+	}
 	return
 }
 
@@ -278,7 +321,7 @@ func (mp *metaPartition) Snapshot() (snap raftproto.Snapshot, err error) {
 	return
 }
 
-// ApplySnapshot applies the given snapshots.
+// ApplySnapshot applies the given multiVersions.
 func (mp *metaPartition) ApplySnapshot(peers []raftproto.Peer, iter raftproto.SnapIterator) (err error) {
 	var (
 		data          []byte
@@ -378,7 +421,7 @@ func (mp *metaPartition) ApplySnapshot(peers []raftproto.Peer, iter raftproto.Sn
 			log.LogDebugf("ApplySnapshot: write snap extent delete file: partitonID(%v) filename(%v).",
 				mp.config.PartitionId, fileName)
 		default:
-			err = fmt.Errorf("unknown op=%d", snap.Op)
+			err = fmt.Errorf("unknown Op=%d", snap.Op)
 			return
 		}
 	}

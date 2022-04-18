@@ -46,6 +46,8 @@ const (
 	DefaultTinySizeLimit = 1 * MB // TODO explain tiny extent?
 )
 
+type MultiVersionSeq uint64
+
 func Min(a, b int) int {
 	if a > b {
 		return b

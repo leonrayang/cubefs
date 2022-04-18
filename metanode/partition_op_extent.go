@@ -17,9 +17,10 @@ package metanode
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-
 	"github.com/cubefs/cubefs/proto"
+	"github.com/cubefs/cubefs/util/log"
+	"os"
+	"sort"
 )
 
 // ExtentAppend appends an extent.
@@ -78,8 +79,11 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 	}
 
 	ext := req.Extent
+	// extent key verSeq not set value since marshal will not include verseq
+	// use inode verSeq instead
+	ino.verSeq = mp.verSeq
 	ino.Extents.Append(ext)
-	//log.LogInfof("ExtentAppendWithCheck: ino(%v) ext(%v) discard(%v) eks(%v)", req.Inode, ext, req.DiscardExtents, ino.Extents.eks)
+	log.LogInfof("ExtentAppendWithCheck: ino(%v) mp(%v) verSeq (%v)", req.Inode, req.PartitionID, mp.verSeq)
 	// Store discard extents right after the append extent key.
 	if len(req.DiscardExtents) != 0 {
 		ino.Extents.eks = append(ino.Extents.eks, req.DiscardExtents...)
@@ -97,6 +101,59 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 	p.PacketErrorWithBody(resp.(uint8), nil)
 	return
 }
+type  VerOpData struct{
+	Op     uint8
+	VerSeq uint64
+}
+
+func (mp *metaPartition) MultiVersionOp(op uint8, verSeq uint64) (err error) {
+
+	verData := &VerOpData{
+		Op:     op,
+		VerSeq: verSeq,
+	}
+	data, _ := json.Marshal(verData)
+	_, err = mp.submit(opFSMVersionOp, data)
+
+	return
+}
+
+func (mp *metaPartition) GetAllVersionInfo(req *proto.MultiVersionOpRequest, p *Packet) (err error) {
+	return
+}
+
+func (mp *metaPartition) GetSpecVersionInfo(req *proto.MultiVersionOpRequest, p *Packet) (err error) {
+	return
+}
+
+func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest, rsp *proto.GetExtentsResponse) {
+	log.LogInfof("action[GetExtentByVer] read ino %v readseq %v ino seq %v", ino.Inode, req.VerSeq, ino.verSeq)
+	ino.DoReadFunc(func() {
+		if req.VerSeq > 0 && req.VerSeq < ino.verSeq {
+			for _, snapIno := range ino.multiVersions {
+				log.LogInfof("action[GetExtentByVer] read ino %v readseq %v snapIno ino seq %v", ino.Inode, req.VerSeq, snapIno.verSeq)
+				for _, ek := range ino.Extents.eks {
+					if req.VerSeq >= ek.VerSeq {
+						log.LogInfof("action[GetExtentByVer] get extent ino %v readseq %v snapIno ino seq %v, ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
+						rsp.Extents = append(rsp.Extents, ek)
+					} else {
+						log.LogInfof("action[GetExtentByVer] not get extent ino %v readseq %v snapIno ino seq %v, ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
+					}
+				}
+
+				if req.VerSeq >= snapIno.verSeq {
+					log.LogInfof("action[GetExtentByVer] finish read ino %v readseq %v snapIno ino seq %v", ino.Inode, req.VerSeq, snapIno.verSeq)
+					break
+				}
+			}
+			sort.SliceStable(ino.Extents.eks, func(i, j int) bool {
+				return ino.Extents.eks[i].FileOffset < ino.Extents.eks[j].FileOffset
+			})
+		}
+	})
+
+	return
+}
 
 // ExtentsList returns the list of extents.
 func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (err error) {
@@ -110,14 +167,19 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 
 	if status == proto.OpOk {
 		resp := &proto.GetExtentsResponse{}
-		ino.DoReadFunc(func() {
-			resp.Generation = ino.Generation
-			resp.Size = ino.Size
-			ino.Extents.Range(func(ek proto.ExtentKey) bool {
-				resp.Extents = append(resp.Extents, ek)
-				return true
+		log.LogInfof("action[ExtentsList] verseq %v", req.VerSeq)
+		if req.VerSeq > 0 && ino.verSeq > 0 {
+			mp.GetExtentByVer(ino, req, resp)
+		} else {
+			ino.DoReadFunc(func() {
+				resp.Generation = ino.Generation
+				resp.Size = ino.Size
+				ino.Extents.Range(func(ek proto.ExtentKey) bool {
+					resp.Extents = append(resp.Extents, ek)
+					return true
+				})
 			})
-		})
+		}
 		reply, err = json.Marshal(resp)
 		if err != nil {
 			status = proto.OpErr
@@ -172,6 +234,7 @@ func (mp *metaPartition) ExtentsTruncate(req *ExtentsTruncateReq, p *Packet) (er
 
 	ino := NewInode(req.Inode, proto.Mode(os.ModePerm))
 	ino.Size = req.Size
+	ino.verSeq = mp.verSeq
 	val, err := ino.Marshal()
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))

@@ -3,6 +3,7 @@ package metanode
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/cubefs/cubefs/util/log"
 	"sync"
 
 	"github.com/cubefs/cubefs/storage"
@@ -54,7 +55,7 @@ func (se *SortedExtents) MarshalBinary() ([]byte, error) {
 	return data, nil
 }
 
-func (se *SortedExtents) UnmarshalBinary(data []byte) error {
+func (se *SortedExtents) UnmarshalBinary(data []byte, v3 bool) error {
 	var ek proto.ExtentKey
 
 	se.Lock()
@@ -65,7 +66,7 @@ func (se *SortedExtents) UnmarshalBinary(data []byte) error {
 		if buf.Len() == 0 {
 			break
 		}
-		if err := ek.UnmarshalBinary(buf); err != nil {
+		if err := ek.UnmarshalBinary(buf, v3); err != nil {
 			return err
 		}
 		// Don't use se.Append here, since we need to retain the raw ek order.
@@ -132,17 +133,20 @@ func (se *SortedExtents) Append(ek proto.ExtentKey) (deleteExtents []proto.Exten
 func (se *SortedExtents) AppendWithCheck(ek proto.ExtentKey, discard []proto.ExtentKey) (deleteExtents []proto.ExtentKey, status uint8) {
 	status = proto.OpOk
 	endOffset := ek.FileOffset + uint64(ek.Size)
-
+	log.LogInfof("action[AppendWithCheck]")
 	se.Lock()
 	defer se.Unlock()
 
 	if len(se.eks) <= 0 {
 		se.eks = append(se.eks, ek)
+		log.LogInfof("action[AppendWithCheck] eks empty copy directly")
 		return
 	}
+
 	lastKey := se.eks[len(se.eks)-1]
 	if lastKey.FileOffset+uint64(lastKey.Size) <= ek.FileOffset {
 		se.eks = append(se.eks, ek)
+		log.LogInfof("action[AppendWithCheck] eks do append cleanly and directly")
 		return
 	}
 	firstKey := se.eks[0]

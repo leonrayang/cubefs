@@ -44,11 +44,14 @@ type ExtentKey struct {
 	ExtentOffset uint64
 	Size         uint32
 	CRC          uint32
+	//snapshot
+	VerSeq    uint64
 }
 
 // String returns the string format of the extentKey.
 func (k ExtentKey) String() string {
-	return fmt.Sprintf("ExtentKey{FileOffset(%v),Partition(%v),ExtentID(%v),ExtentOffset(%v),Size(%v),CRC(%v)}", k.FileOffset, k.PartitionId, k.ExtentId, k.ExtentOffset, k.Size, k.CRC)
+	return fmt.Sprintf("ExtentKey{FileOffset(%v),VerSeq(%v) Partition(%v),ExtentID(%v),ExtentOffset(%v),Size(%v),CRC(%v)}",
+		k.FileOffset, k.VerSeq, k.PartitionId, k.ExtentId, k.ExtentOffset, k.Size, k.CRC)
 }
 
 // Less defines the less comparator.
@@ -87,11 +90,14 @@ func (k *ExtentKey) MarshalBinary() ([]byte, error) {
 	if err := binary.Write(buf, binary.BigEndian, k.CRC); err != nil {
 		return nil, err
 	}
+	if err := binary.Write(buf, binary.BigEndian, k.VerSeq); err != nil {
+		return nil, err
+	}
 	return buf.Bytes(), nil
 }
 
 // UnmarshalBinary unmarshals the binary format of the extent key.
-func (k *ExtentKey) UnmarshalBinary(buf *bytes.Buffer) (err error) {
+func (k *ExtentKey) UnmarshalBinary(buf *bytes.Buffer, v3 bool) (err error) {
 	if err = binary.Read(buf, binary.BigEndian, &k.FileOffset); err != nil {
 		return
 	}
@@ -109,6 +115,11 @@ func (k *ExtentKey) UnmarshalBinary(buf *bytes.Buffer) (err error) {
 	}
 	if err = binary.Read(buf, binary.BigEndian, &k.CRC); err != nil {
 		return
+	}
+	if v3 {
+		if err = binary.Read(buf, binary.BigEndian, &k.VerSeq); err != nil {
+			return
+		}
 	}
 	return
 }

@@ -49,6 +49,13 @@ const (
 	streamWriterIdleTimeoutPeriod = 10
 )
 
+// VerUpdateRequest defines an verseq update request.
+type VerUpdateRequest struct {
+	err  error
+	verSeq uint64
+	done chan struct{}
+}
+
 // OpenRequest defines an open request.
 type OpenRequest struct {
 	done chan struct{}
@@ -269,6 +276,9 @@ func (s *Streamer) handleRequest(request interface{}) {
 	case *EvictRequest:
 		request.err = s.evict()
 		request.done <- struct{}{}
+	case *VerUpdateRequest:
+		request.err = s.updateVer(request.verSeq)
+		request.done <- struct{}{}
 	default:
 	}
 }
@@ -439,11 +449,11 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 	log.LogDebugf("doWrite enter: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
 	if proto.IsHot(s.client.volumeType) {
 		if storeMode == proto.NormalExtentType && (s.handler == nil || s.handler != nil && s.handler.fileOffset+s.handler.size != offset) {
-			if currentEK := s.extents.GetEnd(uint64(offset)); currentEK != nil && !storage.IsTinyExtent(currentEK.ExtentId) {
+			if currentEK := s.extents.GetEnd(uint64(offset), s.verSeq); currentEK != nil && !storage.IsTinyExtent(currentEK.ExtentId) {
 				s.closeOpenHandler()
 
-				log.LogDebugf("doWrite: found ek in ExtentCache, offset(%v) size(%v), ekoffset(%v) eksize(%v)",
-					offset, size, currentEK.FileOffset, currentEK.Size)
+				log.LogDebugf("doWrite: found ek in ExtentCache, extent_id(%v) offset(%v) size(%v), ekoffset(%v) eksize(%v)",
+					currentEK.ExtentId, offset, size, currentEK.FileOffset, currentEK.Size)
 				_, pidErr := s.client.dataWrapper.GetDataPartition(currentEK.PartitionId)
 				if pidErr == nil {
 					handler := NewExtentHandler(s, int(currentEK.FileOffset), storeMode, int(currentEK.Size))
@@ -453,6 +463,7 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 						ExtentId:     currentEK.ExtentId,
 						ExtentOffset: currentEK.ExtentOffset,
 						Size:         currentEK.Size,
+						VerSeq:       currentEK.VerSeq,
 					}
 					s.handler = handler
 					s.dirty = false
@@ -680,6 +691,22 @@ func (s *Streamer) truncate(size int) error {
 	s.extents.TruncDiscard(uint64(size))
 	return s.GetExtentsForce()
 }
+
+func (s *Streamer) updateVer(verSeq uint64) (err error) {
+	log.LogInfof("action[stream.updateVer] ver %v update to %v", s.verSeq, verSeq)
+	if s.verSeq != verSeq {
+		//log.LogInfof("action[stream.updateVer] ver %v update to %v", s.verSeq, verSeq)
+		//if s.handler != nil {
+		//	s.handler.verUpdate<-verSeq
+		//} else {
+		//	log.LogInfof("action[stream.updateVer] ver %v update to %v", s.verSeq, verSeq)
+		//}
+		log.LogInfof("action[stream.updateVer] ver %v update to %v", s.verSeq, verSeq)
+		s.verSeq = verSeq
+	}
+	return
+}
+
 
 func (s *Streamer) tinySizeLimit() int {
 	return util.DefaultTinySizeLimit

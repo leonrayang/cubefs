@@ -30,7 +30,7 @@ import (
 )
 
 func newCreateDataPartitionRequest(volName string, ID uint64, replicaNum int, members []proto.Peer,
-	dataPartitionSize, leaderSize int, hosts []string, createType int, partitionType int) (req *proto.CreateDataPartitionRequest) {
+	dataPartitionSize, leaderSize int, hosts []string, createType int, partitionType int, verSeq uint64) (req *proto.CreateDataPartitionRequest) {
 	req = &proto.CreateDataPartitionRequest{
 		PartitionTyp:  partitionType,
 		PartitionId:   ID,
@@ -41,6 +41,7 @@ func newCreateDataPartitionRequest(volName string, ID uint64, replicaNum int, me
 		Hosts:         hosts,
 		CreateType:    createType,
 		LeaderSize:    leaderSize,
+		VerSeq:        verSeq,
 	}
 	return
 }
@@ -98,6 +99,8 @@ func unmarshalTaskResponse(task *proto.AdminTask) (err error) {
 		response = &proto.UpdateMetaPartitionResponse{}
 	case proto.OpDecommissionMetaPartition:
 		response = &proto.MetaPartitionDecommissionResponse{}
+	case proto.OpVersionOperation:
+		response = &proto.MultiVersionOpResponse{}
 	default:
 		log.LogError(fmt.Sprintf("unknown operate code(%v)", task.OpCode))
 	}

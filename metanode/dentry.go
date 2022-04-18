@@ -17,6 +17,8 @@ package metanode
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	"github.com/cubefs/cubefs/util/log"
 )
 
 // Dentry wraps necessary properties of the `dentry` information in file system.
@@ -43,10 +45,13 @@ type Dentry struct {
 	Name     string // Name of the current dentry.
 	Inode    uint64 // FileID value of the current inode.
 	Type     uint32
+	//snapshot
+	VerSeq     uint64
+	dentryList DentryBatch
 }
 
 type DentryBatch []*Dentry
-
+// todo(leon chang), buffer need alloc first before and write directly consider the space and performance
 // Marshal marshals a dentry into a byte array.
 func (d *Dentry) Marshal() (result []byte, err error) {
 	keyBytes := d.MarshalKey()
@@ -54,7 +59,11 @@ func (d *Dentry) Marshal() (result []byte, err error) {
 	keyLen := uint32(len(keyBytes))
 	valLen := uint32(len(valBytes))
 	buff := bytes.NewBuffer(make([]byte, 0))
-	buff.Grow(64)
+	buff.Grow(int(keyLen+valLen+8))
+
+	log.LogInfof("action[dentry.Marshal] dentry name %v inode %v parent %v seq %v keyLen  %v valLen %v total len %v",
+		d.Name, d.Inode, d.ParentId, d.VerSeq, keyLen, valLen, int(keyLen+valLen+8))
+
 	if err = binary.Write(buff, binary.BigEndian, keyLen); err != nil {
 		return
 	}
@@ -186,24 +195,66 @@ func (d *Dentry) UnmarshalKey(k []byte) (err error) {
 
 // MarshalValue marshals the exporterKey to bytes.
 func (d *Dentry) MarshalValue() (k []byte) {
+
 	buff := bytes.NewBuffer(make([]byte, 0))
-	buff.Grow(12)
+	buff.Grow(20 + len(d.dentryList) * 20)
 	if err := binary.Write(buff, binary.BigEndian, &d.Inode); err != nil {
 		panic(err)
 	}
 	if err := binary.Write(buff, binary.BigEndian, &d.Type); err != nil {
 		panic(err)
 	}
+	if err := binary.Write(buff, binary.BigEndian, &d.VerSeq); err != nil {
+		panic(err)
+	}
+
+	for _, dd := range d.dentryList {
+		if err := binary.Write(buff, binary.BigEndian, &dd.Inode); err != nil {
+			panic(err)
+		}
+		if err := binary.Write(buff, binary.BigEndian, &dd.Type); err != nil {
+			panic(err)
+		}
+		if err := binary.Write(buff, binary.BigEndian, &dd.VerSeq); err != nil {
+			panic(err)
+		}
+	}
+
 	k = buff.Bytes()
+	log.LogInfof("action[MarshalValue] dentry name %v, inode %v, parent inode %v, val len %v", d.Name, d.Inode, d.ParentId, len(k))
 	return
 }
 
-// UnmarshalValue unmarshals the value from bytes.
 func (d *Dentry) UnmarshalValue(val []byte) (err error) {
 	buff := bytes.NewBuffer(val)
 	if err = binary.Read(buff, binary.BigEndian, &d.Inode); err != nil {
 		return
 	}
 	err = binary.Read(buff, binary.BigEndian, &d.Type)
+	log.LogInfof("action[UnmarshalValue] dentry name %v, inode %v, parent inode %v, val len %v", d.Name, d.Inode, d.ParentId, len(val))
+	if len(val) >= 20 {
+		err = binary.Read(buff, binary.BigEndian, &d.VerSeq)
+		if (len(val)-20) % 20 != 0 {
+			return fmt.Errorf("action[UnmarshalSnapshotValue] left len %v after divide by dentry len", len(val)-20)
+		}
+		for i:=0; i < (len(val)-20)/20; i++ {
+			//todo(leonchang) name and parentid should be removed to reduce space
+			den := &Dentry{
+				Name: d.Name,
+				ParentId: d.ParentId,
+			}
+			if err = binary.Read(buff, binary.BigEndian, &den.Inode); err != nil {
+				return
+			}
+			if err = binary.Read(buff, binary.BigEndian, &den.Type); err != nil {
+				return
+			}
+			if err = binary.Read(buff, binary.BigEndian, &den.VerSeq); err != nil {
+				return
+			}
+			d.dentryList = append(d.dentryList, den)
+		}
+	}
 	return
 }
+

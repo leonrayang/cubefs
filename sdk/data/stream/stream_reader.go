@@ -56,6 +56,8 @@ type Streamer struct {
 	writeLock            sync.Mutex
 	inflightL1cache      sync.Map
 	inflightEvictL1cache sync.Map
+	verSeq      uint64
+
 }
 
 // NewStreamer returns a new streamer.
@@ -69,6 +71,7 @@ func NewStreamer(client *ExtentClient, inode uint64) *Streamer {
 	s.done = make(chan struct{})
 	s.dirtylist = NewDirtyExtentList()
 	s.isOpen = true
+	s.verSeq = client.multiVerMgr.latestVerSeq
 	go s.server()
 	return s
 }

@@ -79,6 +79,7 @@ type MetaConfig struct {
 	OnAsyncTaskError AsyncTaskErrorFunc
 	EnableSummary    bool
 	MetaSendTimeout  int64
+	VerReadSeq       uint64
 }
 
 type MetaWrapper struct {
@@ -132,6 +133,8 @@ type MetaWrapper struct {
 	forceUpdateLimit *rate.Limiter
 	EnableSummary    bool
 	metaSendTimeout  int64
+	VerReadSeq	uint64
+	LastVerSeq  uint64
 }
 
 //the ticket from authnode
@@ -176,6 +179,7 @@ func NewMetaWrapper(config *MetaConfig) (*MetaWrapper, error) {
 	mw.forceUpdate = make(chan struct{}, 1)
 	mw.forceUpdateLimit = rate.NewLimiter(1, MinForceUpdateMetaPartitionsInterval)
 	mw.EnableSummary = config.EnableSummary
+	mw.VerReadSeq = config.VerReadSeq
 
 	limit := MaxMountRetryLimit
 

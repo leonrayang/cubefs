@@ -165,6 +165,20 @@ func (m *Server) registerAPIRoutes(router *mux.Router) {
 		Path(proto.AdminListVols).
 		HandlerFunc(m.listVols)
 
+	// multi version snapshot APIs
+	router.NewRoute().Methods(http.MethodGet).
+		Path(proto.AdminCreateVersion).
+		HandlerFunc(m.CreateVersion)
+	router.NewRoute().Methods(http.MethodGet).
+		Path(proto.AdminDelVersion).
+		HandlerFunc(m.DelVersion)
+	router.NewRoute().Methods(http.MethodGet).
+		Path(proto.AdminGetVersionInfo).
+		HandlerFunc(m.GetVersionInfo)
+	router.NewRoute().Methods(http.MethodGet).
+		Path(proto.AdminGetAllVersionInfo).
+		HandlerFunc(m.GetAllVersionInfo)
+
 	// node task response APIs
 	router.NewRoute().Methods(http.MethodGet, http.MethodPost).
 		Path(proto.GetDataNodeTaskResponse).
