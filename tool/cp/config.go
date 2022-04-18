@@ -158,7 +158,22 @@ func parseLogLevel(loglvl string) clog.Level {
 
 func (cfg *config) initLogger() {
 	level := parseLogLevel(cfg.LogLevel)
-	_, err := clog.InitLog(cfg.LogDir, "client", level, nil)
+
+	logDir := fmt.Sprintf("/tmp/%s/cfs-logs", getUser().Username)
+	_, err := os.Stat(logDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Fatalf("stat logDir %s err %s", logDir, err.Error())
+		}
+
+		err = os.MkdirAll(logDir, 0777)
+		if err != nil && !os.IsExist(err) {
+			log.Fatalf("mk logdir %s err %s", logDir, err.Error())
+		}
+
+	}
+
+	_, err = clog.InitLog(logDir, "client", level, nil)
 	if err != nil {
 		log.Fatalf("init log dir failed, logdir %s, err %s", cfg.LogDir, err.Error())
 	}
