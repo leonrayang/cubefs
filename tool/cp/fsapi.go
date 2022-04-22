@@ -118,12 +118,17 @@ func (f *OsFs) readlink(name string, parentIno uint64) (string, error) {
 }
 
 func (f *OsFs) updateStat(destDir string, stat *syscall.Stat_t, parentIno uint64) error {
+	mode := fileMode(stat.Mode)
+	if mode&os.ModeSymlink != 0 { // link do nothing
+		return nil
+	}
 
 	err := syscall.Chmod(destDir, stat.Mode)
 	if err != nil {
 		return err
 	}
 
+	// os.Chown()
 	err = syscall.Chown(destDir, int(stat.Uid), int(stat.Gid))
 	if err != nil {
 		return err
