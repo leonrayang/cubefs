@@ -135,7 +135,7 @@ func (w *Walker) createDir(src, dest string, srcParentIno, destParentIno uint64)
 
 	err = w.destApi.updateStat(dest, srcStat, destParentIno)
 	if err != nil {
-		clog.LogFatalf("update dest stat failed, dest %s err %s", dest, err.Error())
+		clog.LogFatalf("update dir dest stat failed, dest %s err %s", dest, err.Error())
 	}
 }
 

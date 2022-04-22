@@ -118,6 +118,7 @@ func (f *OsFs) readlink(name string, parentIno uint64) (string, error) {
 }
 
 func (f *OsFs) updateStat(destDir string, stat *syscall.Stat_t, parentIno uint64) error {
+
 	err := syscall.Chmod(destDir, stat.Mode)
 	if err != nil {
 		return err
@@ -150,7 +151,33 @@ func (f *OsFs) mkdir(dir string, parentIno uint64) error {
 }
 
 func (f *OsFs) symlink(oldname, newname string, parentIno uint64) error {
-	return os.Symlink(oldname, newname)
+	err := os.Symlink(oldname, newname)
+	if os.IsExist(err) {
+		// stat, err := f.statFile(newname, parentIno)
+		// if err != nil {
+		// 	return err
+		// }
+
+		// mode := fileMode(stat.Mode)
+		// // if symlink
+		// if mode&os.ModeSymlink == 0 {
+		// 	return fmt.Errorf("dest path %s is exist, but not link", newname)
+		// }
+
+		// link same same
+		oldLink, err := f.readlink(newname, parentIno)
+		if err != nil {
+			return err
+		}
+
+		if oldLink != oldname {
+			return fmt.Errorf("dest path %s is exist, with link %s", newname, oldLink)
+		}
+
+		return nil
+	}
+
+	return err
 }
 
 func (f *OsFs) readDir(dir string, parentIno uint64) (dirItmes []DirItem, err error) {
@@ -302,6 +329,21 @@ func (f *CubeFs) symlink(oldname, newname string, parentIno uint64) error {
 	_, filename := path.Split(newname)
 	dirf := cfs.NewDir(f.super, &proto.InodeInfo{Inode: parentIno}).(*cfs.Dir)
 	_, err := dirf.Symlink(ctx, &fuse.SymlinkRequest{NewName: filename, Target: oldname})
+
+	if err == fuse.EEXIST {
+		// link same
+		oldLink, err := f.readlink(newname, parentIno)
+		if err != nil {
+			return err
+		}
+
+		if oldLink != oldname {
+			return fmt.Errorf("dest path %s is exist, with link %s", newname, oldLink)
+		}
+
+		return nil
+	}
+
 	return err
 }
 

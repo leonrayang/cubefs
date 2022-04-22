@@ -19,7 +19,7 @@ var (
 	WorkerCnt = *flag.Int("workerCnt", 0, "thread count to copy or sync files")
 	WalkCnt   = *flag.Int("walkCnt", 0, "thread count to walk dirs")
 	QueueSize = *flag.Int("queueSize", 0, "use to store files, waiting to consume")
-	CfgPath   = *flag.String("cfgPath", "", "config file path")
+	CfgPath   = ""
 )
 
 type clusterCfg struct {
