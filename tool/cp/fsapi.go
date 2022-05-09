@@ -544,7 +544,7 @@ func (f *CubeFs) getParentInoByPath(filePath string) (ino uint64, err error) {
 			return 0, err
 		}
 
-		err = checkMode(stat, read)
+		err = checkMode(parentStat, read)
 		if err != nil {
 			return 0, err
 		}

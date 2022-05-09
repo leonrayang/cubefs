@@ -82,9 +82,9 @@ func (w *Walker) Execute() {
 		log.Fatalf("get dest inode by path failed, src %s, err %s", destCfg.dir, err.Error())
 	}
 
-	srcParentStat, err := w.destApi.statByInode(srcInode)
+	srcParentStat, err := w.srcApi.statByInode(srcInode)
 	if err != nil {
-		log.Fatal("get src inode failed", destCfg.dir, err.Error())
+		log.Fatal("get src inode failed", srcCfg.dir, err.Error())
 	}
 
 	err = checkMode(srcParentStat, read)
@@ -200,7 +200,7 @@ func (w *Walker) traverseDir(src string, srcParentIno, destParentIno uint64, op 
 		return
 	}
 
-	srcParentStat, err := w.destApi.statByInode(newSrcParentIno)
+	srcParentStat, err := w.srcApi.statByInode(newSrcParentIno)
 	if err != nil {
 		log.Fatal("get src inode failed", src, err.Error())
 	}

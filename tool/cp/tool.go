@@ -124,6 +124,16 @@ func (w *Walker) lsCmd() {
 		panic(fmt.Sprintf("look up path %s err %s", filepath, err.Error()))
 	}
 
+	srcParentStat, err := w.srcApi.statByInode(ino)
+	if err != nil {
+		log.Fatal("get src inode failed", filepath, err.Error())
+	}
+
+	err = checkMode(srcParentStat, read)
+	if err != nil {
+		log.Fatalf("src dir %s, err %s", filepath, err.Error())
+	}
+
 	// log.Println("get inode", ino)
 
 	fmt.Printf("%-12s%-10s%-10s%-20s%-24s%-10s\n", "mode", "user", "group", "size", "time", "name")
@@ -166,6 +176,20 @@ func (w *Walker) lsCmd() {
 	items, err := w.srcApi.readDir(filepath, stat.Ino)
 	if err != nil {
 		log.Fatalf("read dir failed, dir %s, err %s", filepath, err.Error())
+	}
+
+	if len(items) == 0 {
+		return
+	}
+
+	parentStat, err := w.srcApi.statByInode(stat.Ino)
+	if err != nil {
+		log.Fatal("get src inode failed", filepath, err.Error())
+	}
+
+	err = checkMode(parentStat, read)
+	if err != nil {
+		log.Fatalf("src dir %s, err %s", filepath, err.Error())
 	}
 
 	parIno := stat.Ino
