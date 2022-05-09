@@ -13,14 +13,22 @@ import (
 	"time"
 )
 
+var once = sync.Once{}
+var u *user.User
+
 func getUser() *user.User {
+	// var u *user.User
+	var err error
 
-	user, err := user.Current()
-	if err != nil {
-		log.Fatalf("get current user failed, err %s", err.Error())
-	}
+	once.Do(func() {
+		u, err = user.Current()
+		if err != nil {
+			log.Fatalf("get current user failed, err %s", err.Error())
+		}
+		fmt.Sprintln("get user info")
+	})
 
-	return user
+	return u
 }
 
 func PrintUsage() {

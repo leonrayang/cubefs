@@ -275,6 +275,47 @@ func fileMode(unixMode uint32) os.FileMode {
 	return mode
 }
 
+type modeOp int
+
+const (
+	read = iota
+	write
+)
+
+func checkMode(stat *syscall.Stat_t, op modeOp) error {
+	modeS := fileMode(stat.Mode).String()
+	mode := modeS[len(modeS)-9:]
+
+	check := func(m string, op modeOp) bool {
+		if op == read {
+			return m[0] == 'r' && m[2] == 'x'
+		}
+
+		return m == "rwx"
+	}
+
+	user := getUser()
+	if user.Uid == "0" {
+		return nil
+	}
+
+	uidS := fmt.Sprintf("%d", stat.Uid)
+	if user.Uid == uidS && check(mode[:3], op) {
+		return nil
+	}
+
+	gidS := fmt.Sprintf("%d", stat.Gid)
+	if user.Gid == gidS && check(mode[3:6], op) {
+		return nil
+	}
+
+	if check(mode[6:], op) {
+		return nil
+	}
+
+	return fmt.Errorf("permission not allowed")
+}
+
 func (f *CubeFs) updateStat(dir string, srcStat *syscall.Stat_t, parentIno uint64) error {
 	clog.LogDebugf("start cfs.updateStat, dir %s", dir)
 	if isRootDIr(dir) {
