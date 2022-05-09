@@ -28,6 +28,7 @@ type FsApi interface {
 	readlink(name string, parentIno uint64) (string, error)
 	mkdir(dir string, parentIno uint64) error
 	updateStat(dir string, stat *syscall.Stat_t, parentIno uint64) error
+	delete(filepath string, parentIno uint64, isDir bool) error
 }
 
 type DirItem struct {
@@ -112,6 +113,10 @@ func (f *OsFs) getParentInoByPath(filePath string) (ino uint64, err error) {
 	}
 
 	return
+}
+
+func (f *OsFs) delete(filepath string, parentIno uint64, isDir bool) error {
+	return os.Remove(filepath)
 }
 
 func (f *OsFs) statByInode(inode uint64) (info *syscall.Stat_t, err error) {
@@ -244,6 +249,12 @@ func (f *CubeFs) readlink(name string, parentIno uint64) (string, error) {
 	target, err := fd.Readlink(ctx, &fuse.ReadlinkRequest{})
 
 	return target, err
+}
+
+func (f *CubeFs) delete(filepath string, parentIno uint64, isDir bool) error {
+	_, name := path.Split(filepath)
+	_, err := f.mw.Delete_ll(parentIno, name, isDir)
+	return err
 }
 
 func (f *CubeFs) statByInode(inode uint64) (info *syscall.Stat_t, err error) {

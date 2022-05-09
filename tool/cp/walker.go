@@ -22,7 +22,7 @@ const (
 	CopyOp  opType = 0
 	SyncOp  opType = 1
 	CheckOp opType = 2
-	DelteOp opType = 3 // not imp
+	DelteOp opType = 3
 )
 
 type opTask struct {
@@ -40,6 +40,7 @@ type Walker struct {
 	Conf
 
 	traverJobCh chan bool
+	deleteJobCh chan struct{}
 	taskCh      chan opTask
 	processTask func(task opTask)
 	wg          sync.WaitGroup
@@ -49,6 +50,7 @@ func InitWalker(cfg Conf) *Walker {
 	w := &Walker{
 		Conf:        cfg,
 		traverJobCh: make(chan bool, cfg.TraverseJobCnt),
+		deleteJobCh: make(chan struct{}, cfg.workerCnt),
 		taskCh:      make(chan opTask, cfg.TaskCnt),
 	}
 
@@ -59,6 +61,8 @@ func InitWalker(cfg Conf) *Walker {
 		w.processTask = w.copyTask
 	} else if cfg.Op == SyncOp {
 		w.processTask = w.syncTask
+	} else if cfg.Op == DelteOp {
+		w.processTask = w.deleteTask
 	}
 
 	return w

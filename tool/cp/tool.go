@@ -37,6 +37,8 @@ func PrintUsage() {
 	fmt.Printf("use-age: %s sync localpath cid://path\n", os.Args[0])
 	fmt.Printf("use-age: %s sync cid://path localpath\n", os.Args[0])
 
+	fmt.Printf("use-age: %s del cid://path\n", os.Args[0])
+
 	fmt.Printf("use-age: %s show all\n", os.Args[0])
 	fmt.Printf("use-age: %s show idc idc-name\n", os.Args[0])
 	fmt.Printf("use-age: %s show cluster cluster-name\n", os.Args[0])

@@ -26,7 +26,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if os.Args[1] != "cp" && os.Args[1] != "sync" && os.Args[1] != "show" && os.Args[1] != "ls" {
+	if os.Args[1] != "cp" && os.Args[1] != "sync" && os.Args[1] != "show" && os.Args[1] != "ls" &&
+		os.Args[1] != "del" {
 		cp.PrintUsage()
 		os.Exit(1)
 	}
@@ -36,9 +37,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if os.Args[1] == "del" && len(os.Args) < 3 {
+		cp.PrintUsage()
+		os.Exit(1)
+	}
+
 	op := cp.CopyOp
 	if os.Args[1] == "sync" {
 		op = cp.SyncOp
+	} else if os.Args[1] == "del" {
+		op = cp.DelteOp
 	}
 
 	var srcDir, destDir string
@@ -48,7 +56,7 @@ func main() {
 		destDir = os.Args[3]
 	}
 
-	if os.Args[1] == "ls" {
+	if os.Args[1] == "ls" || os.Args[1] == "del" {
 		srcDir = os.Args[2]
 	}
 
@@ -57,6 +65,8 @@ func main() {
 
 	if os.Args[1] == "cp" || os.Args[1] == "sync" {
 		walker.Execute()
+	} else if os.Args[1] == "del" {
+		walker.ExecuteDel()
 	} else {
 		walker.ExecuteCmd()
 	}
