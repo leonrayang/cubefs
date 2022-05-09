@@ -119,7 +119,7 @@ func (w *Walker) lsCmd() {
 
 	filepath := w.SrcDir.dir
 
-	ino, err := w.srcApi.getInoByPath(filepath)
+	ino, err := w.srcApi.getParentInoByPath(filepath)
 	if err != nil {
 		panic(fmt.Sprintf("look up path %s err %s", filepath, err.Error()))
 	}

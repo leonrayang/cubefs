@@ -20,9 +20,10 @@ import (
 type FsApi interface {
 	readDir(dir string, parentIno uint64) (dirItmes []DirItem, err error)
 	statFile(filePath string, parentIno uint64) (info *syscall.Stat_t, err error)
+	statByInode(inode uint64) (info *syscall.Stat_t, err error)
 	openFile(filePath string, create bool, parentIno uint64) (fd FdApi, err error)
 	getIno(filePath string, parentIno uint64) (ino uint64, err error)
-	getInoByPath(filePath string) (ino uint64, err error)
+	getParentInoByPath(filePath string) (ino uint64, err error)
 	symlink(oldname, newname string, parentIno uint64) error
 	readlink(name string, parentIno uint64) (string, error)
 	mkdir(dir string, parentIno uint64) error
@@ -89,7 +90,7 @@ func initFs(cfg *pathCfg) (api FsApi) {
 type OsFs struct {
 }
 
-func (f *OsFs) getInoByPath(filePath string) (ino uint64, err error) {
+func (f *OsFs) getParentInoByPath(filePath string) (ino uint64, err error) {
 	dir, _ := path.Split(filePath)
 	if dir == "" || dir == "/" {
 		return
@@ -105,11 +106,16 @@ func (f *OsFs) getInoByPath(filePath string) (ino uint64, err error) {
 	}
 
 	// create dir first
-	err = os.MkdirAll(dir, 0777)
+	err = os.MkdirAll(dir, 0755)
 	if err != nil {
 		return
 	}
 
+	return
+}
+
+func (f *OsFs) statByInode(inode uint64) (info *syscall.Stat_t, err error) {
+	info.Mode = 0777
 	return
 }
 
@@ -152,23 +158,12 @@ func (f *OsFs) mkdir(dir string, parentIno uint64) error {
 		return nil
 	}
 
-	return os.Mkdir(dir, 0777)
+	return os.Mkdir(dir, 0755)
 }
 
 func (f *OsFs) symlink(oldname, newname string, parentIno uint64) error {
 	err := os.Symlink(oldname, newname)
 	if os.IsExist(err) {
-		// stat, err := f.statFile(newname, parentIno)
-		// if err != nil {
-		// 	return err
-		// }
-
-		// mode := fileMode(stat.Mode)
-		// // if symlink
-		// if mode&os.ModeSymlink == 0 {
-		// 	return fmt.Errorf("dest path %s is exist, but not link", newname)
-		// }
-
 		// link same same
 		oldLink, err := f.readlink(newname, parentIno)
 		if err != nil {
@@ -249,6 +244,15 @@ func (f *CubeFs) readlink(name string, parentIno uint64) (string, error) {
 	target, err := fd.Readlink(ctx, &fuse.ReadlinkRequest{})
 
 	return target, err
+}
+
+func (f *CubeFs) statByInode(inode uint64) (info *syscall.Stat_t, err error) {
+	inodeInfo, err := f.super.InodeGet(inode)
+	if err != nil {
+		return info, err
+	}
+
+	return buildStatFromInode(inodeInfo), nil
 }
 
 func fileMode(unixMode uint32) os.FileMode {
@@ -350,11 +354,11 @@ func (f *CubeFs) mkdir(dir string, parentIno uint64) (err error) {
 	stat, err := f.statFile(dir, parentIno)
 	if err == nil {
 		newMode := fileMode(stat.Mode)
-		if newMode.IsDir() {
-			return
+		if !newMode.IsDir() {
+			return fmt.Errorf("target %s is exist and not directory", dir)
 		}
 
-		return fmt.Errorf("target %s is exist and not directory", dir)
+		return
 	}
 
 	if err != nil && err != os.ErrNotExist {
@@ -363,7 +367,7 @@ func (f *CubeFs) mkdir(dir string, parentIno uint64) (err error) {
 
 	_, filename := path.Split(dir)
 	dirf := cfs.NewDir(f.super, &proto.InodeInfo{Inode: parentIno}).(*cfs.Dir)
-	_, err = dirf.Mkdir(ctx, &fuse.MkdirRequest{Name: filename, Mode: 0777})
+	_, err = dirf.Mkdir(ctx, &fuse.MkdirRequest{Name: filename, Mode: 0755})
 	return err
 }
 
@@ -484,7 +488,17 @@ func (f *CubeFs) statFile(filePath string, parentIno uint64) (stat *syscall.Stat
 		}
 	}
 
-	info, err := f.mw.InodeGet_ll(inode)
+	info, err := f.super.InodeGet(inode)
+	if err != nil {
+		return
+	}
+
+	stat = buildStatFromInode(info)
+	return
+}
+
+func (f *CubeFs) getInodeStat(inode uint64) (stat *syscall.Stat_t, err error) {
+	info, err := f.super.InodeGet(inode)
 	if err != nil {
 		return
 	}
@@ -509,18 +523,50 @@ func (f *CubeFs) getIno(filePath string, parentIno uint64) (ino uint64, err erro
 	return inode, err
 }
 
-func (f *CubeFs) getInoByPath(filePath string) (ino uint64, err error) {
+func (f *CubeFs) getParentInoByPath(filePath string) (ino uint64, err error) {
 	clog.LogDebugf("start cubefs.getInoByPath, path %s", filePath)
 	dir, _ := path.Split(filePath)
 	if isRootDIr(dir) {
 		return proto.RootIno, nil
 	}
 
+	var stat, parentStat *syscall.Stat_t
+
 	ino = proto.RootIno
 	dirs := strings.Split(dir, "/")
 	for _, dir := range dirs {
 		if dir == "/" || dir == "" {
 			continue
+		}
+
+		parentStat, err = f.getInodeStat(ino)
+		if err != nil {
+			return 0, err
+		}
+
+		err = checkMode(stat, read)
+		if err != nil {
+			return 0, err
+		}
+
+		stat, err = f.statFile(dir, ino)
+		if err == nil {
+			newMode := fileMode(stat.Mode)
+			if !newMode.IsDir() {
+				return 0, fmt.Errorf("target %s is exist and not directory", dir)
+			}
+
+			ino = stat.Ino
+			continue
+		}
+
+		if err != os.ErrNotExist {
+			return 0, err
+		}
+
+		err = checkMode(parentStat, write)
+		if err != nil {
+			return 0, err
 		}
 
 		err = f.mkdir(dir, ino)

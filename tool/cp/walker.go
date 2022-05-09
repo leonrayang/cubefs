@@ -1,6 +1,7 @@
 package cp
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -71,14 +72,34 @@ func (w *Walker) Execute() {
 
 	clog.LogDebugf("start excute task, src %s dest %s", srcCfg.dir, destCfg.dir)
 
-	srcInode, err := w.srcApi.getInoByPath(srcCfg.dir)
+	srcInode, err := w.srcApi.getParentInoByPath(srcCfg.dir)
 	if err != nil {
 		log.Fatalf("get src inode by path failed, src %s, err %s", srcCfg.dir, err.Error())
 	}
 
-	destIno, err := w.destApi.getInoByPath(destCfg.dir)
+	destIno, err := w.destApi.getParentInoByPath(destCfg.dir)
 	if err != nil {
 		log.Fatalf("get dest inode by path failed, src %s, err %s", destCfg.dir, err.Error())
+	}
+
+	srcParentStat, err := w.destApi.statByInode(srcInode)
+	if err != nil {
+		log.Fatal("get src inode failed", destCfg.dir, err.Error())
+	}
+
+	err = checkMode(srcParentStat, read)
+	if err != nil {
+		log.Fatalf("src dir %s, err %s", srcCfg.dir, err.Error())
+	}
+
+	destParentStat, err := w.destApi.statByInode(destIno)
+	if err != nil {
+		log.Fatal("get dest inode failed", destCfg.dir, err.Error())
+	}
+
+	err = checkMode(destParentStat, write)
+	if err != nil {
+		log.Fatalf("dest dir %s, err %s", srcCfg.dir, err.Error())
 	}
 
 	srcStat, err := w.srcApi.statFile(srcCfg.dir, srcInode)
@@ -88,6 +109,7 @@ func (w *Walker) Execute() {
 
 	mode := fileMode(srcStat.Mode)
 	if !mode.IsDir() {
+
 		task := opTask{
 			op:            w.Op,
 			src:           srcCfg.dir,
@@ -172,6 +194,30 @@ func (w *Walker) traverseDir(src string, srcParentIno, destParentIno uint64, op 
 	ents, err := w.srcApi.readDir(src, newSrcParentIno)
 	if err != nil {
 		log.Fatalf("read src dir failed, src %s, err %s", src, err.Error())
+	}
+
+	if len(ents) == 0 {
+		return
+	}
+
+	srcParentStat, err := w.destApi.statByInode(newSrcParentIno)
+	if err != nil {
+		log.Fatal("get src inode failed", src, err.Error())
+	}
+
+	err = checkMode(srcParentStat, read)
+	if err != nil {
+		fmt.Printf("src dir %s, err %s", src, err.Error())
+	}
+
+	destParentStat, err := w.destApi.statByInode(newDestParentIno)
+	if err != nil {
+		log.Fatal("get dest inode failed", dest, err.Error())
+	}
+
+	err = checkMode(destParentStat, write)
+	if err != nil {
+		fmt.Printf("dest dir %s, err %s", dest, err.Error())
 	}
 
 	localCh := make(chan bool, 1)
