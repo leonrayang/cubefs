@@ -34,7 +34,7 @@
             "volname": "vol2"
         }
     ],
-    "logLevel":"warn",
+    "logLevel":"debug",
     "logDir":"/home/cfs/logs",
     "walkerCnt":10,
     "workerCnt":6,

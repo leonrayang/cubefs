@@ -120,6 +120,7 @@ func (f *OsFs) delete(filepath string, parentIno uint64, isDir bool) error {
 }
 
 func (f *OsFs) statByInode(inode uint64) (info *syscall.Stat_t, err error) {
+	info = &syscall.Stat_t{}
 	info.Mode = 0777
 	return
 }
@@ -140,10 +141,10 @@ func (f *OsFs) updateStat(destDir string, stat *syscall.Stat_t, parentIno uint64
 	}
 
 	// os.Chown()
-	err = syscall.Chown(destDir, int(stat.Uid), int(stat.Gid))
-	if err != nil {
-		return err
-	}
+	syscall.Chown(destDir, int(stat.Uid), int(stat.Gid))
+	// if err != nil {
+	// 	return err
+	// }
 
 	err = syscall.UtimesNano(destDir, []syscall.Timespec{stat.Atim, stat.Mtim})
 	if err != nil {
@@ -253,7 +254,12 @@ func (f *CubeFs) readlink(name string, parentIno uint64) (string, error) {
 
 func (f *CubeFs) delete(filepath string, parentIno uint64, isDir bool) error {
 	_, name := path.Split(filepath)
-	_, err := f.mw.Delete_ll(parentIno, name, isDir)
+	info, err := f.mw.Delete_ll(parentIno, name, isDir)
+	if err != nil {
+		return err
+	}
+
+	f.mw.Evict(info.Inode)
 	return err
 }
 

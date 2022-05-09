@@ -151,17 +151,17 @@ func (w *Walker) createDir(src, dest string, srcParentIno, destParentIno uint64)
 
 	err := w.destApi.mkdir(dest, destParentIno)
 	if err != nil {
-		clog.LogFatalf("mkdir %s failed %s", dest, err.Error())
+		log.Fatalf("mkdir %s failed %s", dest, err.Error())
 	}
 
 	srcStat, err := w.srcApi.statFile(src, srcParentIno)
 	if err != nil {
-		clog.LogFatalf("stat src %s failed %s", src, err.Error())
+		log.Fatalf("stat src %s failed %s", src, err.Error())
 	}
 
 	err = w.destApi.updateStat(dest, srcStat, destParentIno)
 	if err != nil {
-		clog.LogFatalf("update dir dest stat failed, dest %s err %s", dest, err.Error())
+		log.Fatalf("update dir dest stat failed, dest %s err %s", dest, err.Error())
 	}
 }
 
@@ -200,6 +200,8 @@ func (w *Walker) traverseDir(src string, srcParentIno, destParentIno uint64, op 
 		log.Fatalf("read src dir failed, src %s, err %s", src, err.Error())
 	}
 
+	clog.LogErrorf("read %s get dents(%d)", src, len(ents))
+
 	if len(ents) == 0 {
 		return
 	}
@@ -211,7 +213,8 @@ func (w *Walker) traverseDir(src string, srcParentIno, destParentIno uint64, op 
 
 	err = checkMode(srcParentStat, read)
 	if err != nil {
-		fmt.Printf("src dir %s, err %s", src, err.Error())
+		fmt.Printf("visit src dir %s, err %s\n", src, err.Error())
+		return
 	}
 
 	destParentStat, err := w.destApi.statByInode(newDestParentIno)
@@ -221,7 +224,8 @@ func (w *Walker) traverseDir(src string, srcParentIno, destParentIno uint64, op 
 
 	err = checkMode(destParentStat, write)
 	if err != nil {
-		fmt.Printf("dest dir %s, err %s", dest, err.Error())
+		fmt.Printf("visit dest dir %s, err %s\n", dest, err.Error())
+		return
 	}
 
 	localCh := make(chan bool, 1)

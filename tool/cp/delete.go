@@ -29,12 +29,12 @@ func (w *Walker) ExecuteDel() {
 
 	err = checkMode(srcParentStat, write)
 	if err != nil {
-		log.Fatalf("src dir %s, err %s", srcCfg.dir, err.Error())
+		log.Fatalf("delete src dir %s, err %s", srcCfg.dir, err.Error())
 	}
 
 	srcStat, err := w.srcApi.statFile(srcCfg.dir, srcInode)
 	if err != nil {
-		clog.LogFatalf("stat src dir failed, srcDir %s, err %s", srcCfg.dir, err.Error())
+		log.Fatalf("stat src dir failed, srcDir %s, err %s", srcCfg.dir, err.Error())
 	}
 
 	mode := fileMode(srcStat.Mode)
@@ -91,6 +91,10 @@ func (w *Walker) traverseDel(src string, srcParentIno uint64) {
 	}
 
 	for _, ent := range ents {
+		if !ent.Mode.IsDir() {
+			continue
+		}
+
 		subDir := path.Join(src, ent.Name)
 		select {
 		case w.traverJobCh <- true:
@@ -116,27 +120,23 @@ func (w *Walker) traverseDel(src string, srcParentIno uint64) {
 		<-ch
 	}
 
+	// fmt.Println("start delete current dir")
+
 	for _, ent := range ents {
 		subDir := path.Join(src, ent.Name)
 
 		select {
 		case w.deleteJobCh <- struct{}{}:
-			wg.Add(1)
+			delWg.Add(1)
 			go deleteFunc(subDir, ent.Mode, w.deleteJobCh)
-		case delLocalCh <- <-delLocalCh:
-			wg.Add(1)
+		case delLocalCh <- struct{}{}:
+			delWg.Add(1)
 			go deleteFunc(subDir, ent.Mode, delLocalCh)
 		}
 	}
 
 	delWg.Wait()
 
-	task := opTask{
-		src:          src,
-		srcParentIno: srcParentIno,
-		mode:         os.ModeDir,
-	}
-	w.processTask(task)
 }
 
 func (w *Walker) deleteTask(task opTask) {
