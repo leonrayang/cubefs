@@ -14,18 +14,34 @@ import (
 )
 
 var once = sync.Once{}
-var u *user.User
 
-func getUser() *user.User {
+type User struct {
+	*user.User
+	groupIds []string
+}
+
+var u *User
+
+func getUser() *User {
 	// var u *user.User
-	var err error
 
 	once.Do(func() {
-		u, err = user.Current()
+		var err error
+		var u1 *user.User
+
+		u1, err = user.Current()
 		if err != nil {
 			log.Fatalf("get current user failed, err %s", err.Error())
 		}
-		fmt.Sprintln("get user info")
+
+		u = &User{User: u1}
+
+		u.groupIds, err = u1.GroupIds()
+		if err != nil {
+			log.Fatalf("get user's groupId failed, err %s", err.Error())
+		}
+
+		fmt.Printf("get user info, uid %s, gid %s, groupIds(%s)\n", u.Uid, u.Gid, u.groupIds)
 	})
 
 	return u

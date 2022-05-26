@@ -326,8 +326,21 @@ func checkMode(stat *syscall.Stat_t, op modeOp) error {
 	}
 
 	gidS := fmt.Sprintf("%d", stat.Gid)
-	if user.Gid == gidS && check(mode[3:6], op) {
+	checkGrp := func(gid string) bool {
+		if gid == gidS && check(mode[3:6], op) {
+			return true
+		}
+		return false
+	}
+
+	if checkGrp(user.Gid) {
 		return nil
+	}
+
+	for _, gid := range user.groupIds {
+		if checkGrp(gid) {
+			return nil
+		}
 	}
 
 	if check(mode[6:], op) {
