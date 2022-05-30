@@ -316,6 +316,8 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 		if err != nil {
 			return
 		}
+		// some extent key in requests with partition id 0 means it's append operation and on flight.
+		// need to flush and get the right key then used to make modification
 		requests = s.extents.PrepareWriteRequests(offset, size, data)
 		log.LogDebugf("Streamer write: ino(%v) prepared requests after flush(%v)", s.inode, requests)
 		break
@@ -333,6 +335,16 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 					s.inflightEvictL1cache.Delete(cacheKey)
 				}(cacheKey)
 			}
+			if req.ExtentKey.VerSeq == s.extents.verSeq {
+				writeSize, err = s.doOverwrite(req, direct)
+				if s.client.bcacheEnable {
+					cacheKey := util.GenerateKey(s.client.volumeName, s.inode, uint64(req.FileOffset))
+					go s.client.evictBcache(cacheKey)
+				}
+			} else {
+
+			}
+
 		} else {
 			writeSize, err = s.doWrite(req.Data, req.FileOffset, req.Size, direct)
 		}

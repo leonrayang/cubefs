@@ -129,27 +129,35 @@ func (mp *metaPartition) GetSpecVersionInfo(req *proto.MultiVersionOpRequest, p 
 func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest, rsp *proto.GetExtentsResponse) {
 	log.LogInfof("action[GetExtentByVer] read ino %v readseq %v ino seq %v", ino.Inode, req.VerSeq, ino.verSeq)
 	ino.DoReadFunc(func() {
-		if req.VerSeq > 0 && req.VerSeq < ino.verSeq {
-			for _, snapIno := range ino.multiVersions {
-				log.LogInfof("action[GetExtentByVer] read ino %v readseq %v snapIno ino seq %v", ino.Inode, req.VerSeq, snapIno.verSeq)
-				for _, ek := range ino.Extents.eks {
-					if req.VerSeq >= ek.VerSeq {
-						log.LogInfof("action[GetExtentByVer] get extent ino %v readseq %v snapIno ino seq %v, ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
-						rsp.Extents = append(rsp.Extents, ek)
-					} else {
-						log.LogInfof("action[GetExtentByVer] not get extent ino %v readseq %v snapIno ino seq %v, ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
-					}
-				}
+		ino.Extents.Range(func(ek proto.ExtentKey) bool {
+			if ek.VerSeq <= req.VerSeq {
+				rsp.Extents = append(rsp.Extents, ek)
+			}
+			return true
+		})
 
-				if req.VerSeq >= snapIno.verSeq {
-					log.LogInfof("action[GetExtentByVer] finish read ino %v readseq %v snapIno ino seq %v", ino.Inode, req.VerSeq, snapIno.verSeq)
-					break
+
+		for _, snapIno := range ino.multiVersions {
+			if req.VerSeq > snapIno.verSeq {
+				log.LogInfof("action[GetExtentByVer] finish read ino %v readseq %v snapIno ino seq %v", ino.Inode, req.VerSeq, snapIno.verSeq)
+				break
+			}
+			log.LogInfof("action[GetExtentByVer] read ino %v readseq %v snapIno ino seq %v", ino.Inode, req.VerSeq, snapIno.verSeq)
+			for _, ek := range ino.Extents.eks {
+				if req.VerSeq >= ek.VerSeq {
+					log.LogInfof("action[GetExtentByVer] get extent ino %v readseq %v snapIno ino seq %v, ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
+					rsp.Extents = append(rsp.Extents, ek)
+				} else {
+					log.LogInfof("action[GetExtentByVer] not get extent ino %v readseq %v snapIno ino seq %v, ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
 				}
 			}
-			sort.SliceStable(ino.Extents.eks, func(i, j int) bool {
-				return ino.Extents.eks[i].FileOffset < ino.Extents.eks[j].FileOffset
-			})
+
+
 		}
+		sort.SliceStable(ino.Extents.eks, func(i, j int) bool {
+			return ino.Extents.eks[i].FileOffset < ino.Extents.eks[j].FileOffset
+		})
+
 	})
 
 	return
@@ -168,6 +176,8 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 	if status == proto.OpOk {
 		resp := &proto.GetExtentsResponse{}
 		log.LogInfof("action[ExtentsList] verseq %v", req.VerSeq)
+
+
 		if req.VerSeq > 0 && ino.verSeq > 0 {
 			mp.GetExtentByVer(ino, req, resp)
 		} else {
@@ -180,6 +190,7 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 				})
 			})
 		}
+
 		reply, err = json.Marshal(resp)
 		if err != nil {
 			status = proto.OpErr
