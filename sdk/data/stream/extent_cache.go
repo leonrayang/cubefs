@@ -386,6 +386,7 @@ func (cache *ExtentCache) PrepareWriteRequests(offset, size int, data []byte) []
 	cache.root.DescendLessOrEqual(pivot, func(i btree.Item) bool {
 		ek := i.(*proto.ExtentKey)
 		lower.FileOffset = ek.FileOffset
+		log.LogDebugf("action[ExtentCache.PrepareWriteRequests] ek [%v]", ek.String())
 		return false
 	})
 
