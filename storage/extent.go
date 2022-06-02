@@ -50,6 +50,7 @@ type ExtentInfo struct {
 	ModifyTime int64  `json:"modTime"` // random write not update modify time
 	AccessTime int64  `json:"accessTime"`
 	Source     string `json:"src"`
+	SnapshotDataSize int64 `json:"snapSize"`
 }
 
 func (ei *ExtentInfo) String() (m string) {
@@ -87,6 +88,7 @@ type Extent struct {
 	dataSize   int64
 	hasClose   int32
 	header     []byte
+	snapshotDataSize int64
 	sync.Mutex
 }
 
@@ -149,6 +151,40 @@ func (e *Extent) InitToFS() (err error) {
 	return
 }
 
+func (e *Extent) GetDataSize(statSize int64) (dataSize int64) {
+	var (
+		dataStart	int64
+		holStart	int64
+		curOff		int64
+		err			error
+	)
+	for {
+		// curOff if the hold start and the data end
+		curOff, err = e.file.Seek(holStart, SEEK_DATA)
+		if err != nil || curOff > util.ExtentSize || holStart == curOff{
+			break
+		}
+		dataStart = curOff
+
+		curOff, err = e.file.Seek(dataStart, SEEK_HOLE)
+		if err != nil || curOff > util.ExtentSize || dataStart == curOff {
+			return
+		}
+		holStart = curOff
+	}
+
+	if holStart > dataStart {
+		dataSize = holStart
+	} else {
+		dataSize = statSize
+		if dataSize > util.ExtentSize {
+			dataSize = util.ExtentSize
+		}
+	}
+	return
+}
+
+
 // RestoreFromFS restores the entity data and status from the file stored on the filesystem.
 func (e *Extent) RestoreFromFS() (err error) {
 	if e.file, err = os.OpenFile(e.filePath, os.O_RDWR, 0666); err != nil {
@@ -172,7 +208,9 @@ func (e *Extent) RestoreFromFS() (err error) {
 		e.dataSize = watermark
 		return
 	}
-	e.dataSize = info.Size()
+
+	e.dataSize = e.GetDataSize(info.Size())
+
 	atomic.StoreInt64(&e.modifyTime, info.ModTime().Unix())
 
 	ts := info.Sys().(*syscall.Stat_t)
@@ -196,6 +234,10 @@ func IsRandomWrite(writeType int) bool {
 
 func IsAppendWrite(writeType int) bool {
 	return writeType == AppendWriteType
+}
+
+func IsAppendWriteBySnapshotMod(writeType int) bool {
+	return writeType == AppendWriteBySnapshotMode
 }
 
 // WriteTiny performs write on a tiny extent.
@@ -249,7 +291,11 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 	if IsAppendWrite(writeType) && e.dataSize != offset {
 		err = NewParameterMismatchErr(fmt.Sprintf("extent current size = %v write offset=%v write size=%v", e.dataSize, offset, size))
 		return
+	} else if IsAppendWriteBySnapshotMod(writeType) && e.snapshotDataSize != offset {
+		err = NewParameterMismatchErr(fmt.Sprintf("extent current snapshot size = %v write offset=%v write size=%v", e.snapshotDataSize, offset, size))
+		return
 	}
+
 	if _, err = e.file.WriteAt(data[:size], int64(offset)); err != nil {
 		return
 	}
@@ -259,7 +305,11 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 		if IsAppendWrite(writeType) {
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
 			e.dataSize = int64(math.Max(float64(e.dataSize), float64(offset+size)))
+		} else if IsAppendWriteBySnapshotMod(writeType) {
+			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
+			e.snapshotDataSize = int64(math.Max(float64(e.snapshotDataSize), float64(offset+size)))
 		}
+
 	}()
 	if isSync {
 		if err = e.file.Sync(); err != nil {

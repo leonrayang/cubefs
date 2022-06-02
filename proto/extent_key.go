@@ -38,14 +38,16 @@ var (
 
 // ExtentKey defines the extent key struct.
 type ExtentKey struct {
-	FileOffset   uint64
+	FileOffset   uint64  // offset in file
 	PartitionId  uint64
 	ExtentId     uint64
-	ExtentOffset uint64
-	Size         uint32
+	ExtentOffset uint64  // offset in extent like tiny extent offset large than 0,normal is 0
+	Size         uint32  // extent real size?
 	CRC          uint32
+
 	//snapshot
-	VerSeq    uint64
+	VerSeq       uint64
+	ModGen       uint64
 }
 
 // String returns the string format of the extentKey.

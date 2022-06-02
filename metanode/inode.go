@@ -613,6 +613,24 @@ func (i *Inode) CreateVer(ver uint64) {
 	i.verSeq = ver
 }
 
+func (i *Inode) SplitExtentWithCheck(ver uint64, ek proto.ExtentKey) (delExtents []proto.ExtentKey, status uint8) {
+	ek.VerSeq = ver
+	log.LogInfof("action[AppendExtentWithCheck] inode %v,ver %v,ek %v", i.Inode, ver, ek.String())
+	if ver != i.verSeq {
+		log.LogInfof("action[AppendExtentWithCheck]")
+		i.CreateVer(ver)
+		log.LogInfof("action[AppendExtentWithCheck]")
+	}
+
+	i.Lock()
+	defer i.Unlock()
+	delExtents, status = i.Extents.SplitWithCheck(ek)
+	if status != proto.OpOk {
+		log.LogInfof("action[AppendExtentWithCheck] status %v", status)
+		return
+	}
+}
+
 func (i *Inode) AppendExtentWithCheck(ver uint64, ek proto.ExtentKey, ct int64, discardExtents []proto.ExtentKey, volType int) (delExtents []proto.ExtentKey, status uint8) {
 	ek.VerSeq = ver
 	log.LogInfof("action[AppendExtentWithCheck] inode %v,ver %v,ek %v", i.Inode, ver, ek.String())

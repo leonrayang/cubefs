@@ -140,7 +140,13 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		if err = ino.Unmarshal(msg.V); err != nil {
 			return
 		}
-		resp = mp.fsmAppendExtentsWithCheck(ino)
+		resp = mp.fsmAppendExtentsWithCheck(ino, false)
+	case opFSMExtentSplit:
+		ino := NewInode(0, 0)
+		if err = ino.Unmarshal(msg.V); err != nil {
+			return
+		}
+		resp = mp.fsmAppendExtentsWithCheck(ino, true)
 	case opFSMObjExtentsAdd:
 		ino := NewInode(0, 0)
 		if err = ino.Unmarshal(msg.V); err != nil {

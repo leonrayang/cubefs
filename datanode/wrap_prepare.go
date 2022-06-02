@@ -112,6 +112,11 @@ func (s *DataNode) addExtentInfo(p *repl.Packet) error {
 		if err != nil {
 			return fmt.Errorf("addExtentInfo partition %v  %v GetTinyExtentOffset error %v", p.PartitionID, extentID, err.Error())
 		}
+	} else if p.IsLeaderPacket() && p.IsSnapshotModWriteOperation() {
+		p.ExtentOffset, err = store.GetExtentSnapshotModOffset(p.ExtentID)
+		if err != nil {
+			return fmt.Errorf("addExtentInfo partition %v  %v GetSnapshotModExtentOffset error %v", p.PartitionID, extentID, err.Error())
+		}
 	} else if p.IsLeaderPacket() && p.IsCreateExtentOperation() {
 		if partition.isNormalType() && partition.GetExtentCount() >= storage.MaxExtentCount*3 {
 			return fmt.Errorf("addExtentInfo partition %v has reached maxExtentId", p.PartitionID)

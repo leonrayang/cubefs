@@ -16,7 +16,6 @@ package stream
 
 import (
 	"fmt"
-	"runtime/debug"
 	"sync"
 
 	"github.com/cubefs/cubefs/proto"
@@ -110,6 +109,37 @@ func (cache *ExtentCache) update(gen, size uint64, eks []proto.ExtentKey) {
 	}
 }
 
+// Split extent key.
+func (cache *ExtentCache) SplitExtentKey(ek *proto.ExtentKey) (err error){
+
+	// When doing the append, we do not care about the data after the file offset.
+	// Those data will be overwritten by the current extent anyway.
+	item := cache.root.Get(ek)
+	if item == nil {
+		err = fmt.Errorf("ek %v not found in cache ", ek)
+		log.LogErrorf("action[SplitExtentKey] %v", err)
+		return
+	}
+
+	existEk := item.(*proto.ExtentKey)
+	newSize := uint32(ek.FileOffset - existEk.FileOffset)
+
+	cache.root.ReplaceOrInsert(ek)
+	cache.root.ReplaceOrInsert(&proto.ExtentKey{
+		FileOffset:		ek.FileOffset+uint64(ek.Size),
+		PartitionId:	existEk.PartitionId,
+		ExtentId:		existEk.ExtentId,
+		ExtentOffset:	existEk.ExtentOffset + uint64(existEk.Size + ek.Size),
+		Size:			existEk.Size-newSize-ek.Size,
+		VerSeq:			cache.verSeq,
+		ModGen:			ek.ModGen+1,
+	})
+	existEk.Size = newSize
+	existEk.VerSeq = cache.verSeq
+
+	return
+}
+
 // Append appends an extent key.
 func (cache *ExtentCache) Append(ek *proto.ExtentKey, sync bool) (discardExtents []proto.ExtentKey) {
 	ekEnd := ek.FileOffset + uint64(ek.Size)
@@ -164,7 +194,7 @@ func (cache *ExtentCache) Append(ek *proto.ExtentKey, sync bool) (discardExtents
 
 	log.LogDebugf("ExtentCache Append: ino(%v) sync(%v) ek(%v) local discard(%v) discardExtents(%v), seq(%v)",
 		cache.inode, sync, ek, discard, discardExtents, ek.VerSeq)
-	log.LogDebugf("ExtentCache Append stack[%v]", string(debug.Stack()))
+//	log.LogDebugf("ExtentCache Append stack[%v]", string(debug.Stack()))
 
 
 	cache.root.Descend(func(i btree.Item) bool {

@@ -93,7 +93,11 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
 		return
 	}
-	resp, err := mp.submit(opFSMExtentsAddWithCheck, val)
+	opFlag := opFSMExtentsAddWithCheck
+	if req.IsSplit {
+		opFlag = opFSMExtentSplit
+	}
+	resp, err := mp.submit(opFlag, val)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))
 		return

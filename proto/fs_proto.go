@@ -361,6 +361,7 @@ type AppendExtentKeyWithCheckRequest struct {
 	Extent         ExtentKey   `json:"ek"`
 	DiscardExtents []ExtentKey `json:"dek"`
 	VerSeq      uint64 `json:"seq"`
+	IsSplit     bool
 }
 
 // AppendObjExtentKeyRequest defines the request to append an obj extent key.

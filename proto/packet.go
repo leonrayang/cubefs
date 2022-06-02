@@ -67,6 +67,8 @@ const (
 	OpReadTinyDeleteRecord           uint8 = 0x14
 	OpTinyExtentRepairRead           uint8 = 0x15
 	OpGetMaxExtentIDAndPartitionSize uint8 = 0x16
+	OpRandomWriteAppend              uint8 = 0x17
+	OpSyncRandomWriteAppend          uint8 = 0x18
 
 	// Operations: Client -> MetaNode.
 	OpMetaCreateInode   uint8 = 0x20

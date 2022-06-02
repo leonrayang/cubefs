@@ -31,6 +31,7 @@ import (
 	"github.com/cubefs/cubefs/util/stat"
 )
 
+type SplitExtentKeyFunc func(parentInode, inode uint64, key proto.ExtentKey) error
 type AppendExtentKeyFunc func(parentInode, inode uint64, key proto.ExtentKey, discard []proto.ExtentKey) error
 type GetExtentsFunc func(inode uint64) (uint64, uint64, []proto.ExtentKey, error)
 type TruncateFunc func(inode, size uint64) error
@@ -94,6 +95,7 @@ type ExtentConfig struct {
 	BcacheEnable      bool
 	VerReadSeq        uint64
 	OnAppendExtentKey AppendExtentKeyFunc
+	OnSplitExtentKey  SplitExtentKeyFunc
 	OnGetExtents      GetExtentsFunc
 	OnTruncate        TruncateFunc
 	OnEvictIcache     EvictIcacheFunc
@@ -122,6 +124,7 @@ type ExtentClient struct {
 	preload         bool
 	dataWrapper     *wrapper.Wrapper
 	appendExtentKey AppendExtentKeyFunc
+	splitExtentKey  SplitExtentKeyFunc
 	getExtents      GetExtentsFunc
 	truncate        TruncateFunc
 	evictIcache     EvictIcacheFunc //May be null, must check before using
@@ -154,6 +157,7 @@ retry:
 	client.multiVerMgr = &MultiVerMgr{}
 
 	client.appendExtentKey = config.OnAppendExtentKey
+	client.splitExtentKey = config.OnSplitExtentKey
 	client.getExtents = config.OnGetExtents
 	client.truncate = config.OnTruncate
 	client.evictIcache = config.OnEvictIcache

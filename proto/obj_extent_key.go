@@ -39,8 +39,8 @@ type ObjExtentKey struct {
 	FileOffset uint64 // obj offset in file
 	Crc        uint32
 	// snapshot
-	VerSeq uint64
-	Share  bool
+	VerSeq     uint64
+	ModGen     uint64
 }
 
 // String returns the string format of the extentKey.

@@ -649,7 +649,7 @@ func (mw *MetaWrapper) readdirlimit(mp *MetaPartition, parentID uint64, from str
 	return statusOK, resp.Children, nil
 }
 
-func (mw *MetaWrapper) appendExtentKey(mp *MetaPartition, inode uint64, extent proto.ExtentKey, discard []proto.ExtentKey) (status int, err error) {
+func (mw *MetaWrapper) appendExtentKey(mp *MetaPartition, inode uint64, extent proto.ExtentKey, discard []proto.ExtentKey, isSplit bool) (status int, err error) {
 	bgTime := stat.BeginStat()
 	defer func() {
 		stat.EndStat("appendExtentKey", err, bgTime, 1)
@@ -661,6 +661,7 @@ func (mw *MetaWrapper) appendExtentKey(mp *MetaPartition, inode uint64, extent p
 		Inode:          inode,
 		Extent:         extent,
 		DiscardExtents: discard,
+		IsSplit:        isSplit,
 	}
 
 	packet := proto.NewPacketReqID()

@@ -406,6 +406,10 @@ func (p *Packet) IsWriteOperation() bool {
 	return p.Opcode == proto.OpWrite || p.Opcode == proto.OpSyncWrite
 }
 
+func (p *Packet) IsSnapshotModWriteOperation() bool {
+	return p.Opcode == proto.OpWrite || p.Opcode == proto.OpSyncWrite
+}
+
 func (p *Packet) IsCreateExtentOperation() bool {
 	return p.Opcode == proto.OpCreateExtent
 }
