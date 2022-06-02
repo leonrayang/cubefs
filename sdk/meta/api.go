@@ -577,8 +577,37 @@ func (mw *MetaWrapper) DentryUpdate_ll(parentID uint64, name string, inode uint6
 	}
 	return
 }
+func (mw *MetaWrapper) SplitExtentKey(parentInode, inode uint64, ek proto.ExtentKey) error {
+	mp := mw.getPartitionByInode(inode)
+	if mp == nil {
+		return syscall.ENOENT
+	}
+	var oldInfo *proto.InodeInfo
+	if mw.EnableSummary {
+		oldInfo, _ = mw.InodeGet_ll(inode)
+	}
 
-// Allocated as a callback by stream sdk
+	status, err := mw.appendExtentKey(mp, inode, ek, nil, true)
+	if err != nil || status != statusOK {
+		log.LogErrorf("AppendExtentKey: inode(%v) ek(%v) err(%v) status(%v)", inode, ek, err, status)
+		return statusToErrno(status)
+	}
+	log.LogDebugf("AppendExtentKey: ino(%v) ek(%v)", inode, ek)
+
+	if mw.EnableSummary {
+		go func() {
+			newInfo, _ := mw.InodeGet_ll(inode)
+			if oldInfo != nil && newInfo != nil {
+				if int64(oldInfo.Size) < int64(newInfo.Size) {
+					mw.UpdateSummary_ll(parentInode, 0, 0, int64(newInfo.Size)-int64(oldInfo.Size))
+				}
+			}
+		}()
+	}
+
+	return nil
+}
+// Used as a callback by stream sdk
 func (mw *MetaWrapper) AppendExtentKey(parentInode, inode uint64, ek proto.ExtentKey, discard []proto.ExtentKey) error {
 	mp := mw.getPartitionByInode(inode)
 	if mp == nil {
@@ -589,7 +618,7 @@ func (mw *MetaWrapper) AppendExtentKey(parentInode, inode uint64, ek proto.Exten
 		oldInfo, _ = mw.InodeGet_ll(inode)
 	}
 
-	status, err := mw.appendExtentKey(mp, inode, ek, discard)
+	status, err := mw.appendExtentKey(mp, inode, ek, discard, false)
 	if err != nil || status != statusOK {
 		log.LogErrorf("AppendExtentKey: inode(%v) ek(%v) local discard(%v) err(%v) status(%v)", inode, ek, discard, err, status)
 		return statusToErrno(status)
@@ -653,6 +682,7 @@ func (mw *MetaWrapper) GetExtents(inode uint64) (gen uint64, size uint64, extent
 		log.LogErrorf("GetExtents: ino(%v) err(%v) status(%v)", inode, err, status)
 		return 0, 0, nil, statusToErrno(status)
 	}
+	// log.LogDebugf("GetObjExtents stack[%v]", string(debug.Stack()))
 	log.LogDebugf("GetExtents: ino(%v) gen(%v) size(%v) extents(%v)", inode, gen, size, extents)
 	return gen, size, extents, nil
 }

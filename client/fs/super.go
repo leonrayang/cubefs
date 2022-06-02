@@ -190,6 +190,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 		MaxStreamerLimit:  opt.MaxStreamerLimit,
 		VerReadSeq:        opt.VerReadSeq,
 		OnAppendExtentKey: s.mw.AppendExtentKey,
+		OnSplitExtentKey:  s.mw.SplitExtentKey,
 		OnGetExtents:      s.mw.GetExtents,
 		OnTruncate:        s.mw.Truncate,
 		OnEvictIcache:     s.ic.Delete,

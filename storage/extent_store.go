@@ -54,6 +54,7 @@ const (
 	RepairInterval               = 60
 	RandomWriteType              = 2
 	AppendWriteType              = 1
+	AppendWriteBySnapshotMode    = 3
 	NormalExtentDeleteRetainTime = 3600 * 4
 )
 
@@ -190,6 +191,10 @@ func (ei *ExtentInfo) UpdateExtentInfo(extent *Extent, crc uint32) {
 	}
 
 	ei.Size = uint64(extent.dataSize)
+	ei.SnapshotDataSize = extent.snapshotDataSize
+
+	log.LogInfof("action[ExtentInfo.UpdateExtentInfo] ei info [%v]", ei.String())
+
 	if !IsTinyExtent(ei.FileID) {
 		atomic.StoreUint32(&ei.Crc, crc)
 		ei.ModifyTime = extent.ModifyTime()
@@ -500,6 +505,20 @@ func (s *ExtentStore) GetTinyExtentOffset(extentID uint64) (watermark int64, err
 		return
 	}
 	watermark = int64(einfo.Size)
+	if watermark%PageSize != 0 {
+		watermark = watermark + (PageSize - watermark%PageSize)
+	}
+
+	return
+}
+
+// GetTinyExtentOffset returns the offset of the given extent.
+func (s *ExtentStore) GetExtentSnapshotModOffset(extentID uint64) (watermark int64, err error) {
+	einfo, err := s.Watermark(extentID)
+	if err != nil {
+		return
+	}
+	watermark = int64(einfo.SnapshotDataSize)
 	if watermark%PageSize != 0 {
 		watermark = watermark + (PageSize - watermark%PageSize)
 	}

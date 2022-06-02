@@ -135,6 +135,7 @@ const (
 	opFSMSentToChan
 	opFSMSentToChanV1
 	opFSMVersionOp
+	opFSMExtentSplit
 )
 
 var (

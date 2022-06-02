@@ -137,7 +137,7 @@ func (s *DataNode) OperatePacket(p *repl.Packet, c net.Conn) (err error) {
 		s.handleMarkDeletePacket(p, c)
 	case proto.OpBatchDeleteExtent:
 		s.handleBatchMarkDeletePacket(p, c)
-	case proto.OpRandomWrite, proto.OpSyncRandomWrite:
+	case proto.OpRandomWrite, proto.OpSyncRandomWrite, proto.OpRandomWriteAppend, proto.OpSyncRandomWriteAppend:
 		s.handleRandomWritePacket(p)
 	case proto.OpNotifyReplicasToRepair:
 		s.handlePacketToNotifyExtentRepair(p)

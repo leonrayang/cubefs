@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"net"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -337,14 +338,13 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 			}
 			if req.ExtentKey.VerSeq == s.extents.verSeq {
 				writeSize, err = s.doOverwrite(req, direct)
-				if s.client.bcacheEnable {
-					cacheKey := util.GenerateKey(s.client.volumeName, s.inode, uint64(req.FileOffset))
-					go s.client.evictBcache(cacheKey)
-				}
 			} else {
-
+				writeSize, err = s.doOverwriteByAppend(req, direct)
 			}
-
+			if s.client.bcacheEnable {
+				cacheKey := util.GenerateKey(s.client.volumeName, s.inode, uint64(req.FileOffset))
+				go s.client.evictBcache(cacheKey)
+			}
 		} else {
 			writeSize, err = s.doWrite(req.Data, req.FileOffset, req.Size, direct)
 		}
@@ -359,6 +359,113 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 		log.LogDebugf("Streamer write: ino(%v) filesize changed to (%v)", s.inode, offset+total)
 	}
 	log.LogDebugf("Streamer write exit: ino(%v) offset(%v) size(%v) done total(%v) err(%v)", s.inode, offset, size, total, err)
+	return
+}
+
+func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total int, err error) {
+	var (
+		once   sync.Once
+		verOff int64
+		dp *wrapper.DataPartition
+	)
+
+	err = s.flush()
+	if err != nil {
+		return
+	}
+
+	offset := req.FileOffset
+	size := req.Size
+
+	// the extent key needs to be updated because when preparing the requests,
+	// the obtained extent key could be a local key which can be inconsistent with the remote key.
+	req.ExtentKey = s.extents.Get(uint64(offset))
+	ekFileOffset := int(req.ExtentKey.FileOffset)
+	ekExtOffset := int(req.ExtentKey.ExtentOffset)
+	if req.ExtentKey == nil {
+		err = errors.New(fmt.Sprintf("doOverwrite: extent key not exist, ino(%v) ekFileOffset(%v) ek(%v)", s.inode, ekFileOffset, req.ExtentKey))
+		return
+	}
+
+	if dp, err = s.client.dataWrapper.GetDataPartition(req.ExtentKey.PartitionId); err != nil {
+		// TODO unhandled error
+		errors.Trace(err, "doOverwrite: ino(%v) failed to get datapartition, ek(%v)", s.inode, req.ExtentKey)
+		return
+	}
+
+	retry := true
+	if proto.IsCold(s.client.volumeType) {
+		retry = false
+	}
+
+	sc := NewStreamConn(dp, false)
+	for total < size {
+		// right position in extent:offset-ekFileOffset+total+ekExtOffset .
+		// ekExtOffset means?
+		reqPacket := NewOverwriteByAppendPacket(dp, req.ExtentKey.ExtentId, offset-ekFileOffset+total+ekExtOffset, s.inode, offset)
+		if direct {
+			reqPacket.Opcode = proto.OpSyncRandomWriteAppend
+		}
+		packSize := util.Min(size-total, util.BlockSize)
+		copy(reqPacket.Data[:packSize], req.Data[total:total+packSize])
+		reqPacket.Size = uint32(packSize)
+		reqPacket.CRC = crc32.ChecksumIEEE(reqPacket.Data[:packSize])
+
+		replyPacket := new(Packet)
+		err = sc.Send(retry, reqPacket, func(conn *net.TCPConn) (error, bool) {
+			e := replyPacket.ReadFromConn(conn, proto.ReadDeadlineTime)
+			if e != nil {
+				log.LogWarnf("Stream Writer doOverwrite: ino(%v) failed to read from connect, req(%v) err(%v)", s.inode, reqPacket, e)
+				// Upon receiving TryOtherAddrError, other hosts will be retried.
+				return TryOtherAddrError, false
+			}
+
+			if replyPacket.ResultCode == proto.OpAgain {
+				return nil, true
+			}
+
+			if replyPacket.ResultCode == proto.OpTryOtherAddr {
+				e = TryOtherAddrError
+			}
+			return e, false
+		})
+
+		proto.Buffers.Put(reqPacket.Data)
+		reqPacket.Data = nil
+		log.LogDebugf("doOverwrite: ino(%v) req(%v) reqPacket(%v) err(%v) replyPacket(%v)", s.inode, req, reqPacket, err, replyPacket)
+
+		if err != nil || replyPacket.ResultCode != proto.OpOk {
+			err = errors.New(fmt.Sprintf("doOverwrite: failed or reply NOK: err(%v) ino(%v) req(%v) replyPacket(%v)", err, s.inode, req, replyPacket))
+			break
+		}
+
+		if !reqPacket.isValidWriteReply(replyPacket) || reqPacket.CRC != replyPacket.CRC {
+			err = errors.New(fmt.Sprintf("doOverwrite: is not the corresponding reply, ino(%v) req(%v) replyPacket(%v)", s.inode, req, replyPacket))
+			break
+		}
+
+		once.Do(func() {
+			verOff = replyPacket.ExtentOffset
+		})
+
+		total += packSize
+	}
+
+	extKey := &proto.ExtentKey{
+		FileOffset:   req.ExtentKey.FileOffset,
+		PartitionId:  req.ExtentKey.PartitionId,
+		ExtentId:     req.ExtentKey.ExtentId,
+		ExtentOffset: uint64(verOff),
+		Size:         uint32(total),
+		VerSeq:       s.verSeq,
+		ModGen:       req.ExtentKey.ModGen,
+	}
+
+	if nil != s.extents.SplitExtentKey(extKey) {
+		return
+	}
+
+	err = s.client.splitExtentKey(s.parentInode, s.inode, *extKey)
 	return
 }
 
@@ -398,6 +505,8 @@ func (s *Streamer) doOverwrite(req *ExtentRequest, direct bool) (total int, err 
 
 	for total < size {
 		reqPacket := NewOverwritePacket(dp, req.ExtentKey.ExtentId, offset-ekFileOffset+total+ekExtOffset, s.inode, offset)
+		log.LogInfof("action[doOverwrite] inode %v extentid %v,extentOffset %v(%v,%v,%v,%v) offset %v", s.inode, req.ExtentKey.ExtentId, reqPacket.ExtentOffset,
+			offset, ekFileOffset, total, ekExtOffset, offset)
 		if direct {
 			reqPacket.Opcode = proto.OpSyncRandomWrite
 		}
