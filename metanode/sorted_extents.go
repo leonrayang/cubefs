@@ -130,7 +130,7 @@ func (se *SortedExtents) Append(ek proto.ExtentKey) (deleteExtents []proto.Exten
 	return
 }
 
-func (se *SortedExtents) SplitWithCheck(ek proto.ExtentKey) (deleteExtents []proto.ExtentKey, status uint8) {
+func (se *SortedExtents) SplitWithCheck(ek proto.ExtentKey) (status uint8) {
 	status = proto.OpOk
 	endOffset := ek.FileOffset + uint64(ek.Size)
 	log.LogInfof("action[AppendWithCheck]")
@@ -192,14 +192,15 @@ func (se *SortedExtents) SplitWithCheck(ek proto.ExtentKey) (deleteExtents []pro
 	}
 
 	keySize := key.Size
-	keySeq  := key.VerSeq
-	keyGen  := key.ModGen
+	key.ModGen++
+	key.IsSplit = true
 
 	if key.FileOffset < ek.FileOffset { // in the middle
+
 		key.Size = uint32(ek.FileOffset - key.FileOffset)
 
-		eks := se.eks[startIndex:]
-		se.eks = se.eks[:startIndex]
+		eks := se.eks[startIndex+1:]
+		se.eks = se.eks[:startIndex+1]
 		se.eks = append(se.eks, ek)
 		se.eks = append(se.eks, proto.ExtentKey{
 			FileOffset:ek.FileOffset+uint64(ek.Size),
@@ -210,34 +211,31 @@ func (se *SortedExtents) SplitWithCheck(ek proto.ExtentKey) (deleteExtents []pro
 			//crc
 			VerSeq: key.VerSeq,
 			ModGen: 0,
+			IsSplit:true,
 		})
+
 		se.eks = append(se.eks, eks...)
 	} else if key.FileOffset == ek.FileOffset { // at the begin
-		key.Size = ek.Size
-		key.VerSeq = ek.VerSeq
-		key.ModGen = 0
 
 		eks := se.eks[startIndex:]
 		se.eks = se.eks[:startIndex]
-		se.eks = append(se.eks, proto.ExtentKey{
-			FileOffset: key.FileOffset+uint64(key.Size),
-			PartitionId: key.PartitionId,
-			ExtentId: key.ExtentId,
-			ExtentOffset: key.ExtentOffset+uint64(key.Size),
-			Size: keySize-key.Size,
-			//crc
-			VerSeq:keySeq,
-			ModGen:keyGen+1,
-		})
+		se.eks =  append(se.eks, ek)
+
+		key.FileOffset = key.FileOffset+uint64(ek.Size)
+		key.ExtentOffset = key.ExtentOffset+uint64(ek.Size)
+		key.Size = keySize-ek.Size
+
 		se.eks = append(se.eks, eks...)
+
 	} else if key.FileOffset+uint64(key.Size) == ek.FileOffset+uint64(ek.Size) { // in the end
 		key.Size = keySize-ek.Size
-		key.ModGen++
-		eks := se.eks[startIndex:]
-		se.eks = se.eks[:startIndex]
+
+		eks := se.eks[startIndex+1:]
+		se.eks = se.eks[:startIndex+1]
 		se.eks = append(se.eks, ek)
 		se.eks = append(se.eks, eks...)
 	}
+	return
 }
 
 func (se *SortedExtents) AppendWithCheck(ek proto.ExtentKey, discard []proto.ExtentKey) (deleteExtents []proto.ExtentKey, status uint8) {

@@ -79,7 +79,14 @@ type Inode struct {
 
 	// for snapshot
 	verSeq        uint64
+	SplitExtents  []SplitExtentInfo  // used for split extent
 	multiVersions InodeBatch
+}
+
+type SplitExtentInfo struct {
+	PartitionId  uint64
+	ExtentId     uint64
+	refCnt		 uint64
 }
 
 type InodeBatch []*Inode
@@ -106,6 +113,9 @@ func (i *Inode) String() string {
 	buff.WriteString(fmt.Sprintf("Reserved[%d]", i.Reserved))
 	buff.WriteString(fmt.Sprintf("Extents[%s]", i.Extents))
 	buff.WriteString(fmt.Sprintf("ObjExtents[%s]", i.ObjExtents))
+	buff.WriteString(fmt.Sprintf("verSeq[%v]", i.verSeq))
+	buff.WriteString(fmt.Sprintf("SplitExtents.len[%v]", len(i.SplitExtents)))
+	buff.WriteString(fmt.Sprintf("multiVersions.len[%v]", len(i.multiVersions)))
 	buff.WriteString("}")
 	return buff.String()
 }
@@ -560,6 +570,19 @@ func (i *Inode) AppendObjExtents(eks []proto.ObjExtentKey, ct int64) (err error)
 	return
 }
 
+func (i *Inode) PrintAllSplitInfo() {
+	for id, info := range i.SplitExtents {
+		log.LogInfof("action[PrintAllSplitInfo] inode [%v] index [%v] extent be splited with info [dp:%v,extid:%v,refcnt:%v]",
+			i.Inode, id, info.PartitionId, info.ExtentId, info.refCnt)
+	}
+}
+
+func (i *Inode) PrintAllVersionInfo() {
+	for id, info := range i.multiVersions {
+		log.LogInfof("action[PrintAllVersionInfo] layer [%v] inode [%v]", id, info)
+	}
+}
+
 // restore ext info to older version or deleted if no right version
 func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExtents []proto.ExtentKey, err error){
 	log.LogInfof("action[RestoreMultiSnapExts] delExtents size [%v]", len(delExtents))
@@ -572,8 +595,37 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExt
 	specSnapExtent := make([]proto.ExtentKey, 0)
 
 	for _, ext := range delExtentsOrigin {
-		if ext.VerSeq < restSeq {
-			delExtents = append(delExtents, ext)
+		// curr deleting ext with a seq larger than the next version's seq, it doesn't belong to any
+		// versions,so try to delete it
+		if ext.VerSeq > restSeq {
+			// split need check the reference count, delete it when it's reference is 0
+			if ext.IsSplit { // todo:optimize the algorithm
+				i.PrintAllSplitInfo()
+				for id, info := range i.SplitExtents {
+					log.LogInfof("action[RestoreMultiSnapExts] inode [%v] index [%v] extent be splited with info [dp:%v,extid:%v,refcnt:%v]",
+						i.Inode, id, info.PartitionId, info.ExtentId, info.refCnt)
+
+					if info.PartitionId == ext.PartitionId && info.ExtentId == ext.ExtentId {
+						log.LogErrorf("action[RestoreMultiSnapExts] inode [%v] refcnt [%v]", i.Inode, info.refCnt)
+						if info.refCnt > 0 {
+							info.refCnt--
+							if info.refCnt == 0 {
+								delExtents = append(delExtents, ext)
+								exts := i.SplitExtents[id+1:]
+								i.SplitExtents = i.SplitExtents[:id]
+								i.SplitExtents = append(i.SplitExtents, exts...)
+
+								i.PrintAllSplitInfo()
+							}
+						} else {
+							log.LogErrorf("action[RestoreMultiSnapExts] inode [%v] refcnt should not be zero", i.Inode)
+						}
+						break
+					}
+				}
+			} else {
+				delExtents = append(delExtents, ext)
+			}
 		} else {
 			log.LogInfof("action[RestoreMultiSnapExts] move to level 1 ext [%v] specSnapExtent size [%v]", ext, len(specSnapExtent))
 			specSnapExtent = append(specSnapExtent, ext)
@@ -589,6 +641,8 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExt
 		return
 	}
 
+	i.PrintAllVersionInfo()
+
 	i.multiVersions[0].Extents.eks = append(i.multiVersions[0].Extents.eks, specSnapExtent...)
 
 	sort.SliceStable(
@@ -596,6 +650,7 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExt
 			return i.multiVersions[0].Extents.eks[w].FileOffset < i.multiVersions[0].Extents.eks[z].FileOffset
 		})
 
+	i.PrintAllVersionInfo()
 	return
 }
 
@@ -624,11 +679,12 @@ func (i *Inode) SplitExtentWithCheck(ver uint64, ek proto.ExtentKey) (delExtents
 
 	i.Lock()
 	defer i.Unlock()
-	delExtents, status = i.Extents.SplitWithCheck(ek)
+	status = i.Extents.SplitWithCheck(ek)
 	if status != proto.OpOk {
 		log.LogInfof("action[AppendExtentWithCheck] status %v", status)
 		return
 	}
+	return
 }
 
 func (i *Inode) AppendExtentWithCheck(ver uint64, ek proto.ExtentKey, ct int64, discardExtents []proto.ExtentKey, volType int) (delExtents []proto.ExtentKey, status uint8) {

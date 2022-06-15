@@ -276,9 +276,6 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		_, status = ino2.SplitExtentWithCheck(ino.verSeq, eks[0])
 	}
 
-
-
-
 	log.LogInfof("fsmAppendExtentWithCheck inode(%v) ek(%v) deleteExtents(%v) discardExtents(%v) status(%v)", ino2.Inode, eks[0], delExtents, discardExtentKey, status)
 	return
 }
