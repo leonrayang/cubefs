@@ -48,6 +48,7 @@ type ExtentKey struct {
 	//snapshot
 	VerSeq       uint64
 	ModGen       uint64
+	IsSplit      bool
 }
 
 // String returns the string format of the extentKey.
