@@ -96,6 +96,13 @@ func (md *DataPartitionMetadata) Validate() (err error) {
 	return
 }
 
+// MetaMultiSnapshotInfo
+type MetaMultiSnapshotInfo struct {
+	VerSeq uint64
+	Status int8
+	Ctime  time.Time
+}
+
 type DataPartition struct {
 	clusterID       string
 	volumeID        string
@@ -138,6 +145,7 @@ type DataPartition struct {
 	persistMetaMutex              sync.RWMutex
 
 	verSeq   uint64
+	multiVersionList 	[]*MetaMultiSnapshotInfo
 }
 
 func CreateDataPartition(dpCfg *dataPartitionCfg, disk *Disk, request *proto.CreateDataPartitionRequest) (dp *DataPartition, err error) {
@@ -326,6 +334,17 @@ func (dp *DataPartition) replicasInit() {
 			dp.isLeader = true
 		}
 	}
+}
+
+func (dp *DataPartition) UpdateVersion(req *proto.MultiVersionOpRequest) (err error) {
+	log.LogInfof("action[UpdateVersion] update seq from [%v] to [%v]", dp.verSeq, req.VerSeq)
+	if req.VerSeq < dp.verSeq {
+		err = fmt.Errorf("error.seq [%v] less than exist [%v]", req.VerSeq, dp.verSeq)
+		log.LogErrorf("action[UpdateVersion] %v", err)
+		return
+	}
+	dp.verSeq = req.VerSeq
+	return
 }
 
 func (dp *DataPartition) GetExtentCount() int {
