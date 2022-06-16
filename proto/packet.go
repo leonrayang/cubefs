@@ -233,6 +233,7 @@ type Packet struct {
 	StartT             int64
 	mesg               string
 	HasPrepare         bool
+	VerSeq             uint64
 }
 
 // NewPacket returns a new packet.
@@ -522,7 +523,9 @@ func (p *Packet) UnmarshalHeader(in []byte) error {
 	p.ExtentOffset = int64(binary.BigEndian.Uint64(in[33:41]))
 	p.ReqID = int64(binary.BigEndian.Uint64(in[41:49]))
 	p.KernelOffset = binary.BigEndian.Uint64(in[49:util.PacketHeaderSize])
-
+	if p.Opcode == OpRandomWrite || p.Opcode == OpSyncRandomWriteAppend {
+		p.VerSeq = binary.BigEndian.Uint64(in[util.PacketHeaderSize:util.PacketHeaderSize+8])
+	}
 	return nil
 }
 

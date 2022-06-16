@@ -246,9 +246,11 @@ func (s *DataNode) handlePacketToCreateDataPartition(p *repl.Packet) {
 
 // Handle OpHeartbeat packet.
 func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
+	log.LogInfof("action[handleUpdateVerPacket] enter in")
 	var err error
 	task := &proto.AdminTask{}
 	err = json.Unmarshal(p.Data, task)
+
 	defer func() {
 		if err != nil {
 			p.PackErrorBody(ActionUpdateVersion, err.Error())
@@ -263,7 +265,6 @@ func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 	go func() {
 		request := &proto.MultiVersionOpRequest{}
 		response := &proto.MultiVersionOpResponse{}
-
 		response.Status = proto.TaskSucceeds
 
 		if task.OpCode == proto.OpVersionOperation {
@@ -272,6 +273,13 @@ func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 				log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
 				response.Status = proto.TaskFailed
 			}
+			for _, dp := range s.space.partitions {
+				if dp.volumeID != request.VolumeID {
+					continue
+				}
+				dp.UpdateVersion(request)
+			}
+
 			log.LogInfof("action[handleUpdateVerPacket] handle master version reqeust %v", request)
 		} else {
 			response.Status = proto.TaskFailed
@@ -589,6 +597,11 @@ func (s *DataNode) handleRandomWritePacket(p *repl.Packet) {
 		metricPartitionIOLabels = GetIoMetricLabels(partition, "randwrite")
 		partitionIOMetric = exporter.NewTPCnt(MetricPartitionIOName)
 	}
+
+	if partition.verSeq > 0 {
+		if
+	}
+
 	err = partition.RandomWriteSubmit(p)
 	if !shallDegrade {
 		s.metrics.MetricIOBytes.AddWithLabels(int64(p.Size), metricPartitionIOLabels)
