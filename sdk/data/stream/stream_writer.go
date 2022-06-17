@@ -381,6 +381,9 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		if direct {
 			reqPacket.Opcode = proto.OpSyncRandomWriteAppend
 		}
+
+
+
 		packSize := util.Min(size-total, util.BlockSize)
 		copy(reqPacket.Data[:packSize], req.Data[total:total+packSize])
 		reqPacket.Size = uint32(packSize)

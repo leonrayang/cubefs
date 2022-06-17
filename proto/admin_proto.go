@@ -168,6 +168,7 @@ type CreateDataPartitionRequest struct {
 	Members       []Peer
 	Hosts         []string
 	CreateType    int
+	IsMultiVer    bool
 	VerSeq        uint64
 }
 

@@ -15,6 +15,7 @@
 package repl
 
 import (
+	"encoding/binary"
 	"fmt"
 	"github.com/cubefs/cubefs/util/log"
 	"io"
@@ -345,6 +346,13 @@ func (p *Packet) ReadFromConnFromCli(c net.Conn, deadlineTime time.Duration) (er
 	if err = p.UnmarshalHeader(header); err != nil {
 		return
 	}
+	if p.Opcode == proto.OpRandomWriteVer {
+		ver := make([]byte, 8)
+		if _, err = io.ReadFull(c, ver); err != nil {
+			return
+		}
+		p.VerSeq =  binary.BigEndian.Uint64(ver)
+	}
 
 	if p.ArgLen > 0 {
 		if err = proto.ReadFull(c, &p.Arg, int(p.ArgLen)); err != nil {
@@ -406,8 +414,8 @@ func (p *Packet) IsWriteOperation() bool {
 	return p.Opcode == proto.OpWrite || p.Opcode == proto.OpSyncWrite
 }
 
-func (p *Packet) IsSnapshotModWriteOperation() bool {
-	return p.Opcode == proto.OpWrite || p.Opcode == proto.OpSyncWrite
+func (p *Packet) IsSnapshotModWriteAppendOperation() bool {
+	return p.Opcode == proto.OpRandomWriteAppend || p.Opcode == proto.OpSyncRandomWriteAppend
 }
 
 func (p *Packet) IsCreateExtentOperation() bool {
@@ -433,7 +441,8 @@ func (p *Packet) IsReadOperation() bool {
 }
 
 func (p *Packet) IsRandomWrite() bool {
-	return p.Opcode == proto.OpRandomWrite || p.Opcode == proto.OpSyncRandomWrite
+	return p.Opcode == proto.OpRandomWrite || p.Opcode == proto.OpSyncRandomWrite ||
+		p.Opcode == proto.OpRandomWriteVer || p.Opcode == proto.OpSyncRandomWriteVer
 }
 
 func (p *Packet) IsSyncWrite() bool {

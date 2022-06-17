@@ -86,7 +86,7 @@ func NewOverwritePacket(dp *wrapper.DataPartition, extentID uint64, extentOffset
 	p.Arg = nil
 	p.ArgLen = 0
 	p.RemainingFollowers = 0
-	p.Opcode = proto.OpRandomWrite
+	p.Opcode = proto.OpRandomWriteVer  // proto.OpRandomWrite
 	p.inode = inode
 	p.KernelOffset = uint64(fileOffset)
 	p.Data, _ = proto.Buffers.Get(util.BlockSize)

@@ -599,7 +599,18 @@ func (s *DataNode) handleRandomWritePacket(p *repl.Packet) {
 	}
 
 	if partition.verSeq > 0 {
-		if
+		if p.Opcode == proto.OpSyncRandomWrite || p.Opcode == proto.OpRandomWrite {
+			err = fmt.Errorf("volume enable mulit version")
+			log.LogErrorf("action[handleRandomWritePacket] error %v", err)
+			return
+		}
+		if p.Opcode == proto.OpRandomWriteVer || p.Opcode == proto.OpSyncRandomWriteVer {
+			if partition.verSeq > p.VerSeq {
+				err = fmt.Errorf("client verSeq[%v] small than dataPartiton ver[%v]", p.VerSeq, partition.verSeq)
+				log.LogErrorf("action[handleRandomWritePacket] error %v", err)
+				return
+			}
+		}
 	}
 
 	err = partition.RandomWriteSubmit(p)
