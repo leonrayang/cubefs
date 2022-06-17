@@ -112,7 +112,7 @@ func (s *DataNode) addExtentInfo(p *repl.Packet) error {
 		if err != nil {
 			return fmt.Errorf("addExtentInfo partition %v  %v GetTinyExtentOffset error %v", p.PartitionID, extentID, err.Error())
 		}
-	} else if p.IsLeaderPacket() && p.IsSnapshotModWriteOperation() {
+	} else if p.IsLeaderPacket() && p.IsSnapshotModWriteAppendOperation() {
 		p.ExtentOffset, err = store.GetExtentSnapshotModOffset(p.ExtentID)
 		if err != nil {
 			return fmt.Errorf("addExtentInfo partition %v  %v GetSnapshotModExtentOffset error %v", p.PartitionID, extentID, err.Error())

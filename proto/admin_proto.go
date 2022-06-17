@@ -183,6 +183,7 @@ type CreateDataPartitionRequest struct {
 	Hosts         []string
 	CreateType    int
 	LeaderSize    int
+	IsMultiVer    bool
 	VerSeq        uint64
 }
 

@@ -67,8 +67,7 @@ const (
 	OpReadTinyDeleteRecord           uint8 = 0x14
 	OpTinyExtentRepairRead           uint8 = 0x15
 	OpGetMaxExtentIDAndPartitionSize uint8 = 0x16
-	OpRandomWriteAppend              uint8 = 0x17
-	OpSyncRandomWriteAppend          uint8 = 0x18
+
 
 	// Operations: Client -> MetaNode.
 	OpMetaCreateInode   uint8 = 0x20
@@ -141,6 +140,12 @@ const (
 	OpMetaBatchDeleteDentry uint8 = 0x91
 	OpMetaBatchUnlinkInode  uint8 = 0x92
 	OpMetaBatchEvictInode   uint8 = 0x93
+
+	//Multi version snapshot
+	OpRandomWriteAppend              uint8 = 0xA1
+	OpSyncRandomWriteAppend          uint8 = 0xA2
+	OpRandomWriteVer                 uint8 = 0xA3
+	OpSyncRandomWriteVer             uint8 = 0xA4
 
 	// Commons
 	OpConflictExtentsErr uint8 = 0xF2
@@ -234,7 +239,7 @@ type Packet struct {
 	StartT             int64
 	mesg               string
 	HasPrepare         bool
-	VerSeq             uint64
+	VerSeq             uint64  // change too much to use
 }
 
 // NewPacket returns a new packet.
@@ -502,6 +507,9 @@ func (p *Packet) MarshalHeader(out []byte) {
 	binary.BigEndian.PutUint64(out[33:41], uint64(p.ExtentOffset))
 	binary.BigEndian.PutUint64(out[41:49], uint64(p.ReqID))
 	binary.BigEndian.PutUint64(out[49:util.PacketHeaderSize], p.KernelOffset)
+	if p.Opcode == OpRandomWriteVer {
+		binary.BigEndian.PutUint64(out[util.PacketHeaderSize:util.PacketHeaderSize+8], p.VerSeq)
+	}
 	return
 }
 
@@ -524,9 +532,11 @@ func (p *Packet) UnmarshalHeader(in []byte) error {
 	p.ExtentOffset = int64(binary.BigEndian.Uint64(in[33:41]))
 	p.ReqID = int64(binary.BigEndian.Uint64(in[41:49]))
 	p.KernelOffset = binary.BigEndian.Uint64(in[49:util.PacketHeaderSize])
-	if p.Opcode == OpRandomWrite || p.Opcode == OpSyncRandomWriteAppend {
-		p.VerSeq = binary.BigEndian.Uint64(in[util.PacketHeaderSize:util.PacketHeaderSize+8])
-	}
+
+	// header opcode OpRandomWriteVer should not unmarshal here due to header size is const
+	// the ver param should read at the higher level directly
+	//if p.Opcode ==OpRandomWriteVer {
+
 	return nil
 }
 

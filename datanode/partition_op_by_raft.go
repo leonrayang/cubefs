@@ -245,9 +245,16 @@ func (dp *DataPartition) ApplyRandomWrite(command []byte, raftApplyID uint64) (r
 		var syncWrite bool
 		writeType := storage.RandomWriteType
 		if opItem.opcode == proto.OpRandomWriteAppend || opItem.opcode == proto.OpSyncRandomWriteAppend {
+			if dp.verSeq > 0 {
+				err = fmt.Errorf("enable snapshot need new client")
+				log.LogErrorf("action[ApplyRandomWrite] volume [%v] dp [%v] %v", dp.volumeID, dp.partitionID, err)
+				return
+			}
 			writeType = storage.AppendWriteBySnapshotMode
 		}
-		if opItem.opcode == proto.OpSyncRandomWriteAppend || opItem.opcode == proto.OpSyncRandomWrite {
+
+
+		if opItem.opcode == proto.OpSyncRandomWriteAppend || opItem.opcode == proto.OpSyncRandomWrite || opItem.opcode == proto.OpSyncRandomWriteVer {
 			syncWrite = true
 		}
 
