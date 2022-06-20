@@ -102,17 +102,17 @@ func (f *OsFs) getParentInoByPath(filePath string) (ino uint64, err error) {
 		return stat.Ino, err
 	}
 
-	if err != os.ErrNotExist {
-		return
-	}
+	// if err != os.ErrNotExist {
+	// 	return
+	// }
 
 	// create dir first
-	err = os.MkdirAll(dir, 0755)
-	if err != nil {
-		return
-	}
+	// err = os.MkdirAll(dir, 0755)
+	// if err != nil {
+	// 	return
+	// }
 
-	return
+	return 0, err
 }
 
 func (f *OsFs) delete(filepath string, parentIno uint64, isDir bool) error {
@@ -590,26 +590,28 @@ func (f *CubeFs) getParentInoByPath(filePath string) (ino uint64, err error) {
 			continue
 		}
 
-		if err != os.ErrNotExist {
-			return 0, err
-		}
+		return 0, err
 
-		err = checkMode(parentStat, write)
-		if err != nil {
-			return 0, err
-		}
+		// if err != os.ErrNotExist {
+		// 	return 0, err
+		// }
 
-		err = f.mkdir(dir, ino)
-		if err != nil {
-			return
-		}
+		// err = checkMode(parentStat, write)
+		// if err != nil {
+		// 	return 0, err
+		// }
 
-		newIno, err := f.getIno(dir, ino)
-		if err != nil {
-			return 0, err
-		}
+		// err = f.mkdir(dir, ino)
+		// if err != nil {
+		// 	return
+		// }
 
-		ino = newIno
+		// newIno, err := f.getIno(dir, ino)
+		// if err != nil {
+		// 	return 0, err
+		// }
+
+		// ino = newIno
 	}
 
 	return ino, nil
