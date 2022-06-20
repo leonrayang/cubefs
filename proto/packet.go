@@ -146,6 +146,7 @@ const (
 	OpSyncRandomWriteAppend          uint8 = 0xA2
 	OpRandomWriteVer                 uint8 = 0xA3
 	OpSyncRandomWriteVer             uint8 = 0xA4
+	OpMetaLinkInodeVer     			 uint8 = 0xA5
 
 	// Commons
 	OpConflictExtentsErr uint8 = 0xF2
@@ -206,6 +207,7 @@ const (
 const (
 	VersionNormal = 1
 	VersionDeleted = 2
+	VersionDeleting = 3
 )
 
 
@@ -347,6 +349,8 @@ func (p *Packet) GetOpMsg() (m string) {
 		m = "OpMetaTruncate"
 	case OpMetaLinkInode:
 		m = "OpMetaLinkInode"
+	case OpMetaLinkInodeVer:
+		m = "OpMetaLinkInodeVer"
 	case OpMetaEvictInode:
 		m = "OpMetaEvictInode"
 	case OpMetaBatchEvictInode:

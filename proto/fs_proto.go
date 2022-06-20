@@ -158,6 +158,7 @@ type LinkInodeRequest struct {
 	VolName     string `json:"vol"`
 	PartitionID uint64 `json:"pid"`
 	Inode       uint64 `json:"ino"`
+	IsRename    bool   `json:"rename"`
 }
 
 // LinkInodeResponse defines the response to the request of linking an inode.
@@ -247,6 +248,7 @@ type DeleteDentryRequest struct {
 	PartitionID uint64 `json:"pid"`
 	ParentID    uint64 `json:"pino"`
 	Name        string `json:"name"`
+	Verseq      uint64 `json:"ver"`
 }
 
 type BatchDeleteDentryRequest struct {
@@ -408,6 +410,13 @@ type EmptyExtentKeyRequest struct {
 	VolName     string `json:"vol"`
 	PartitionID uint64 `json:"pid"`
 	Inode       uint64 `json:"ino"`
+}
+
+type DelVerRequest struct {
+	VolName     string `json:"vol"`
+	PartitionID uint64 `json:"pid"`
+	Inode       uint64 `json:"ino"`
+	VerSeq      uint64 `json:"ver"`
 }
 
 type DelExtentKeyRequest struct {

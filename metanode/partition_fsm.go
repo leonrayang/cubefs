@@ -159,6 +159,12 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 			return
 		}
 		resp = mp.fsmExtentsEmpty(ino)
+	case opFSMDelVer:
+		ino := NewInode(0, 0)
+		if err = ino.Unmarshal(msg.V); err != nil {
+			return
+		}
+		resp = mp.fsmExtentsEmpty(ino)
 	// case opFSMExtentsDel:
 	// 	ino := NewInode(0, 0)
 	// 	if err = ino.Unmarshal(msg.V); err != nil {
@@ -273,7 +279,7 @@ func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
 			if ver.VerSeq == opData.VerSeq {
 				log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v, seqArray size %v", mp.config.PartitionId, opData.VerSeq, opData.Op, len(mp.multiVersionList))
 				// mp.multiVersionList = append(mp.multiVersionList[:i], mp.multiVersionList[i+1:]...)
-				mp.multiVersionList[i].Status = proto.VersionDeleted
+				mp.multiVersionList[i].Status = proto.VersionDeleting
 				break
 			}
 		}

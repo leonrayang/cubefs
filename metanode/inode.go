@@ -78,7 +78,8 @@ type Inode struct {
 	ObjExtents *SortedObjExtents
 
 	// for snapshot
-	verSeq        uint64
+	verShareLink  uint32  // count for inode shared by different version after be renamed cross versions
+	verSeq        uint64  // latest version be create or modified
 	SplitExtents  []SplitExtentInfo  // used for split extent
 	multiVersions InodeBatch
 }
@@ -591,26 +592,26 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExt
 		log.LogWarnf("action[RestoreMultiSnapExts] restore have no old version left")
 		return delExtentsOrigin, nil
 	}
-	restSeq := i.multiVersions[0].verSeq
+	lastSeq := i.multiVersions[0].verSeq
 	specSnapExtent := make([]proto.ExtentKey, 0)
 
-	for _, ext := range delExtentsOrigin {
-		// curr deleting ext with a seq larger than the next version's seq, it doesn't belong to any
+	for _, delExt := range delExtentsOrigin {
+		// curr deleting delExt with a seq larger than the next version's seq, it doesn't belong to any
 		// versions,so try to delete it
-		if ext.VerSeq > restSeq {
+		if delExt.VerSeq > lastSeq {
 			// split need check the reference count, delete it when it's reference is 0
-			if ext.IsSplit { // todo:optimize the algorithm
+			if delExt.IsSplit { // todo:optimize the algorithm
 				i.PrintAllSplitInfo()
 				for id, info := range i.SplitExtents {
 					log.LogInfof("action[RestoreMultiSnapExts] inode [%v] index [%v] extent be splited with info [dp:%v,extid:%v,refcnt:%v]",
 						i.Inode, id, info.PartitionId, info.ExtentId, info.refCnt)
 
-					if info.PartitionId == ext.PartitionId && info.ExtentId == ext.ExtentId {
+					if info.PartitionId == delExt.PartitionId && info.ExtentId == delExt.ExtentId {
 						log.LogErrorf("action[RestoreMultiSnapExts] inode [%v] refcnt [%v]", i.Inode, info.refCnt)
 						if info.refCnt > 0 {
 							info.refCnt--
 							if info.refCnt == 0 {
-								delExtents = append(delExtents, ext)
+								delExtents = append(delExtents, delExt)
 								exts := i.SplitExtents[id+1:]
 								i.SplitExtents = i.SplitExtents[:id]
 								i.SplitExtents = append(i.SplitExtents, exts...)
@@ -624,11 +625,11 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExt
 					}
 				}
 			} else {
-				delExtents = append(delExtents, ext)
+				delExtents = append(delExtents, delExt)
 			}
 		} else {
-			log.LogInfof("action[RestoreMultiSnapExts] move to level 1 ext [%v] specSnapExtent size [%v]", ext, len(specSnapExtent))
-			specSnapExtent = append(specSnapExtent, ext)
+			log.LogInfof("action[RestoreMultiSnapExts] move to level 1 delExt [%v] specSnapExtent size [%v]", delExt, len(specSnapExtent))
+			specSnapExtent = append(specSnapExtent, delExt)
 		}
 	}
 	if len(specSnapExtent) == 0 {
@@ -654,13 +655,45 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExt
 	return
 }
 
+func (i *Inode) ShouldDelVer(ver uint64) bool {
+	for _, inoVer := range i.multiVersions {
+		if inoVer.verSeq == ver {
+			return true
+		}
+		if inoVer.verSeq < ver {
+			return false
+		}
+	}
+	return false
+}
+
+func (i *Inode) DelVerExtents(ver uint64) (delExtents []proto.ExtentKey, status uint8) {
+	p := &Packet{}
+	req := &proto.EmptyExtentKeyRequest{
+		Inode: inode.Inode,
+	}
+	ino := NewInode(req.Inode, 0)
+	curTime = Now.GetCurrentTime().Unix()
+	if inode.ModifyTime < curTime {
+		ino.ModifyTime = curTime
+	}
+
+	mp.ExtentsEmpty(req, p, ino)
+	// check empty result.
+	// if result is OpAgain, means the extDelCh maybe full,
+	// so let it sleep 1s.
+	if p.ResultCode == proto.OpAgain {
+		needSleep = true
+	}
+}
+
 func (i *Inode) CreateVer(ver uint64) {
 	log.LogInfof("action[CreateVer] inode %v create new version [%v] and store old one [%v]",i.Inode, ver, i.verSeq)
 	//inode copy not include multi ver array
 	ino := i.Copy().(*Inode)
 	ino.Extents = NewSortedExtents()
 	ino.ObjExtents = NewSortedObjExtents()
-
+	
 	i.Lock()
 	defer i.Unlock()
 
@@ -735,6 +768,25 @@ func (i *Inode) ExtentsTruncate(length uint64, ct int64) (delExtents []proto.Ext
 	return
 }
 
+func (i *Inode) IncShareVerLink() {
+	i.Lock()
+	i.verShareLink++
+	i.Unlock()
+}
+
+func (i *Inode) DecShareVerLink() {
+	i.Lock()
+	i.verShareLink--
+	i.Unlock()
+}
+
+// GetNLink returns the nLink value.
+func (i *Inode) GetShareLink() uint32 {
+	i.RLock()
+	defer i.RUnlock()
+	return i.verShareLink
+}
+
 // IncNLink increases the nLink value by one.
 func (i *Inode) IncNLink() {
 	i.Lock()
@@ -753,6 +805,22 @@ func (i *Inode) DecNLink() {
 	}
 	i.Unlock()
 }
+
+
+// DecNLink decreases the nLink value by one.
+func (i *Inode) GetDecNLinkResult() (nLink uint32) {
+	i.Lock()
+	nLink = i.NLink
+	if proto.IsDir(i.Type) && nLink == 2 {
+		nLink--
+	}
+	if nLink > 0 {
+		nLink--
+	}
+	i.Unlock()
+	return
+}
+
 
 // GetNLink returns the nLink value.
 func (i *Inode) GetNLink() uint32 {

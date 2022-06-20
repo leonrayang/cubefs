@@ -338,13 +338,13 @@ func (mp *metaPartition) BatchObjExtentAppend(req *proto.AppendObjExtentKeysRequ
 // }
 
 // ExtentsEmpty only use in datalake situation
-func (mp *metaPartition) ExtentsEmpty(req *proto.EmptyExtentKeyRequest, p *Packet, ino *Inode) (err error) {
+func (mp *metaPartition) ExtentsOp(p *Packet, ino *Inode, op uint32) (err error) {
 	val, err := ino.Marshal()
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
 		return
 	}
-	resp, err := mp.submit(opFSMExtentsEmpty, val)
+	resp, err := mp.submit(op, val)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))
 		return
