@@ -50,6 +50,16 @@ type Dentry struct {
 	dentryList DentryBatch
 }
 
+func (d *Dentry) String() string {
+	str := fmt.Sprintf("dentry(name:[%v],parentId:[%v],inode:[%v],type:[%v],seq:[%v],dentryList_len[%v]",
+		d.ParentId, d.Name, d.Inode, d.Type, d.VerSeq, len(d.dentryList))
+
+	for idx, den := range d.dentryList {
+		str += fmt.Sprintf("idx:%v,content(%v)", idx, den)
+	}
+	return str
+}
+
 type DentryBatch []*Dentry
 // todo(leon chang), buffer need alloc first before and write directly consider the space and performance
 // Marshal marshals a dentry into a byte array.

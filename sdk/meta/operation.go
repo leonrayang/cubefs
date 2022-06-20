@@ -328,7 +328,7 @@ func (mw *MetaWrapper) dupdate(mp *MetaPartition, parentID uint64, name string, 
 	return statusOK, resp.Inode, nil
 }
 
-func (mw *MetaWrapper) ddelete(mp *MetaPartition, parentID uint64, name string) (status int, inode uint64, err error) {
+func (mw *MetaWrapper) ddelete(mp *MetaPartition, parentID uint64, name string, verSeq uint64) (status int, inode uint64, err error) {
 	bgTime := stat.BeginStat()
 	defer func() {
 		stat.EndStat("ddelete", err, bgTime, 1)
@@ -339,6 +339,7 @@ func (mw *MetaWrapper) ddelete(mp *MetaPartition, parentID uint64, name string) 
 		PartitionID: mp.PartitionID,
 		ParentID:    parentID,
 		Name:        name,
+		Verseq:      verSeq,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -873,7 +874,16 @@ func (mw *MetaWrapper) truncate(mp *MetaPartition, inode, size uint64) (status i
 	return statusOK, nil
 }
 
+
+func (mw *MetaWrapper) ilinkVer(mp *MetaPartition, inode uint64) (status int, info *proto.InodeInfo, err error) {
+	return mw.ilinkWork(mp, inode, proto.OpMetaLinkInodeVer)
+}
+
 func (mw *MetaWrapper) ilink(mp *MetaPartition, inode uint64) (status int, info *proto.InodeInfo, err error) {
+	return mw.ilinkWork(mp, inode, proto.OpMetaLinkInode)
+}
+
+func (mw *MetaWrapper) ilinkWork(mp *MetaPartition, inode uint64, op uint8) (status int, info *proto.InodeInfo, err error) {
 	bgTime := stat.BeginStat()
 	defer func() {
 		stat.EndStat("ilink", err, bgTime, 1)
@@ -886,7 +896,7 @@ func (mw *MetaWrapper) ilink(mp *MetaPartition, inode uint64) (status int, info 
 	}
 
 	packet := proto.NewPacketReqID()
-	packet.Opcode = proto.OpMetaLinkInode
+	packet.Opcode = op
 	packet.PartitionID = mp.PartitionID
 	err = packet.MarshalData(req)
 	if err != nil {

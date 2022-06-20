@@ -327,11 +327,18 @@ func (mw *MetaWrapper) BatchGetXAttr(inodes []uint64, keys []string) ([]*proto.X
 	return xattrs, nil
 }
 
+func (mw *MetaWrapper) Delete_Ver_ll(parentID uint64, name string, isDir bool, verSeq uint64) (*proto.InodeInfo, error) {
+	return mw.Delete_ll_EX(parentID, name, isDir, verSeq)
+}
+
+func (mw *MetaWrapper) Delete_ll(parentID uint64, name string, isDir bool) (*proto.InodeInfo, error) {
+	return mw.Delete_ll_EX(parentID, name, isDir, 0)
+}
 /*
  * Note that the return value of InodeInfo might be nil without error,
  * and the caller should make sure InodeInfo is valid before using it.
  */
-func (mw *MetaWrapper) Delete_ll(parentID uint64, name string, isDir bool) (*proto.InodeInfo, error) {
+func (mw *MetaWrapper) Delete_ll_EX(parentID uint64, name string, isDir bool, verSeq uint64) (*proto.InodeInfo, error) {
 	var (
 		status int
 		inode  uint64
@@ -369,7 +376,7 @@ func (mw *MetaWrapper) Delete_ll(parentID uint64, name string, isDir bool) (*pro
 		}
 	}
 
-	status, inode, err = mw.ddelete(parentMP, parentID, name)
+	status, inode, err = mw.ddelete(parentMP, parentID, name, verSeq)
 	if err != nil || status != statusOK {
 		if status == statusNoent {
 			return nil, nil
@@ -462,7 +469,7 @@ func (mw *MetaWrapper) Rename_ll(srcParentID uint64, srcName string, dstParentID
 	}
 
 	// delete dentry from src parent
-	status, _, err = mw.ddelete(srcParentMP, srcParentID, srcName)
+	status, _, err = mw.ddelete(srcParentMP, srcParentID, srcName, 0)
 	if err != nil {
 		log.LogErrorf("mw.ddelete(srcParentMP, srcParentID, %s) failed.", srcName)
 		return statusToErrno(status)
@@ -472,7 +479,7 @@ func (mw *MetaWrapper) Rename_ll(srcParentID uint64, srcName string, dstParentID
 			e   error
 		)
 		if oldInode == 0 {
-			sts, _, e = mw.ddelete(dstParentMP, dstParentID, dstName)
+			sts, _, e = mw.ddelete(dstParentMP, dstParentID, dstName, 0)
 		} else {
 			sts, _, e = mw.dupdate(dstParentMP, dstParentID, dstName, oldInode)
 		}

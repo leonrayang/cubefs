@@ -56,6 +56,11 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 		resp.Status = proto.OpNotExistErr
 		return
 	}
+	if ino.verShareLink > 0 {
+		if mp.verSeq > i.verSeq { // dec while nlink is zero to stop inode be deleted
+			i.IncShareVerLink()
+		}
+	}
 	i.IncNLink()
 	resp.Msg = i
 	return
@@ -144,8 +149,11 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 	if inode.IsEmptyDir() {
 		mp.inodeTree.Delete(inode)
 	}
-
-	inode.DecNLink()
+	if inode.GetDecNLinkResult() == 0 && inode.verShareLink > 0 {
+		inode.DecShareVerLink()
+	} else {
+		inode.DecNLink()
+	}
 
 	//Fix#760: when nlink == 0, push into freeList and delay delete inode after 7 days
 	if inode.IsTempFile() {
@@ -415,6 +423,37 @@ func (mp *metaPartition) fsmSetAttr(req *SetattrRequest) (err error) {
 
 // fsmExtentsEmpty only use in datalake situation
 func (mp *metaPartition) fsmExtentsEmpty(ino *Inode) (status uint8) {
+	status = proto.OpOk
+	item := mp.inodeTree.CopyGet(ino)
+	if item == nil {
+		status = proto.OpNotExistErr
+		return
+	}
+	i := item.(*Inode)
+	if i.ShouldDelete() {
+		status = proto.OpNotExistErr
+		return
+	}
+	if proto.IsDir(i.Type) {
+		status = proto.OpArgMismatchErr
+		return
+	}
+	log.LogDebugf("action[fsmExtentsEmpty] mp(%d) ino [%v],eks len [%v]", mp.config.PartitionId, ino.Inode, len(i.Extents.eks))
+	tinyEks := i.CopyTinyExtents()
+	log.LogDebugf("action[fsmExtentsEmpty] mp(%d) ino [%v],eks tiny len [%v]", mp.config.PartitionId, ino.Inode, len(tinyEks))
+
+	if len(tinyEks) > 0 {
+		mp.extDelCh <- tinyEks
+		log.LogDebugf("fsmExtentsEmpty mp(%d) inode(%d) tinyEks(%v)", mp.config.PartitionId, ino.Inode, tinyEks)
+	}
+
+	i.EmptyExtents(ino.ModifyTime)
+
+	return
+}
+
+// fsmExtentsEmpty only use in datalake situation
+func (mp *metaPartition) fsmDelVerExtents(ino *Inode) (status uint8) {
 	status = proto.OpOk
 	item := mp.inodeTree.CopyGet(ino)
 	if item == nil {

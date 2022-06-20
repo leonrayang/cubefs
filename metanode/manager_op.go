@@ -170,6 +170,35 @@ func (m *metadataManager) opCreateInode(conn net.Conn, p *Packet,
 	return
 }
 
+func (m *metadataManager) opMetaLinkInodeByRName(conn net.Conn, p *Packet,
+	remoteAddr string) (err error) {
+	req := &LinkInodeReq{
+		IsRename: true,
+	}
+	if err = json.Unmarshal(p.Data, req); err != nil {
+		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
+		m.respondToClient(conn, p)
+		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
+		return
+	}
+	mp, err := m.getPartition(req.PartitionID)
+	if err != nil {
+		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
+		m.respondToClient(conn, p)
+		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
+		return
+	}
+	if !m.serveProxy(conn, mp, p) {
+		return
+	}
+	err = mp.CreateInodeLink(req, p)
+
+	m.respondToClient(conn, p)
+	log.LogDebugf("%s [opMetaLinkInode] req: %d - %v, resp: %v, body: %s",
+		remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data)
+	return
+}
+
 func (m *metadataManager) opMetaLinkInode(conn net.Conn, p *Packet,
 	remoteAddr string) (err error) {
 	req := &LinkInodeReq{}

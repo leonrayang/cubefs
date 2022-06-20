@@ -56,6 +56,7 @@ func (mp *metaPartition) DeleteDentry(req *DeleteDentryReq, p *Packet) (err erro
 	dentry := &Dentry{
 		ParentId: req.ParentID,
 		Name:     req.Name,
+		VerSeq:   req.Verseq,
 	}
 	val, err := dentry.Marshal()
 	if err != nil {

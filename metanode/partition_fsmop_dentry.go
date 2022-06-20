@@ -65,8 +65,13 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 			status = proto.OpArgMismatchErr
 			return
 		}
-
-		if dentry.ParentId == d.ParentId && strings.Compare(dentry.Name, d.Name) == 0 && dentry.Inode == d.Inode {
+		if d.VerSeq == uint64(-1) {
+			d.Inode = dentry.Inode
+			d.VerSeq = dentry.VerSeq
+			d.Type = dentry.Type
+			d.ParentId = dentry.ParentId
+			log.LogInfof("action[fsmCreateDentry.ver] latest dentry already deleted.now create new one [%v]", dentry)
+		} else if dentry.ParentId == d.ParentId && strings.Compare(dentry.Name, d.Name) == 0 && dentry.Inode == d.Inode {
 			return
 		}
 
@@ -106,6 +111,26 @@ func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
 
+	delVerFuc := func(den *Dentry) *Dentry {
+		if den.VerSeq == uint64(-1) {
+			return nil
+		}
+		// create dentry version
+		if den.VerSeq != mp.verSeq {
+			nDen := den.Copy().(*Dentry)
+			nDen.dentryList = nil
+			den.dentryList = append(den.dentryList, nDen)
+			den.VerSeq = uint64(-1)
+			return den
+		} else {
+			den.VerSeq = uint64(-1)
+			if len(den.dentryList) == 0 {
+				return mp.dentryTree.tree.Delete(dentry).(*Dentry)
+			}
+			return den
+		}
+	}
+
 	var item interface{}
 	if checkInode {
 		item = mp.dentryTree.Execute(func(tree *btree.BTree) interface{} {
@@ -113,13 +138,17 @@ func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
 			if d == nil {
 				return nil
 			}
-			if d.(*Dentry).Inode != dentry.Inode {
+			den := d.(*Dentry)
+			if den.Inode != dentry.Inode {
 				return nil
 			}
-			return mp.dentryTree.tree.Delete(dentry)
+			return delVerFuc(den)
 		})
 	} else {
-		item = mp.dentryTree.Delete(dentry)
+		item = mp.dentryTree.Get(dentry)
+		if item != nil {
+			item = delVerFuc(item.(*Dentry))
+		}
 	}
 
 	if item == nil {
