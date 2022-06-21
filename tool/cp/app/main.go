@@ -13,6 +13,8 @@ var (
 	configVersion = flag.Bool("v", false, "show version")
 )
 
+var opMap = map[string]int{"cp": 4, "sync": 4, "del": 3, "show": 2, "ls": 3, "mkdir": 3}
+
 func main() {
 	flag.Parse()
 
@@ -26,18 +28,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if os.Args[1] != "cp" && os.Args[1] != "sync" && os.Args[1] != "show" && os.Args[1] != "ls" &&
-		os.Args[1] != "del" {
-		cp.PrintUsage()
-		os.Exit(1)
-	}
-
-	if (os.Args[1] == "cp" || os.Args[1] == "sync") && len(os.Args) < 4 {
-		cp.PrintUsage()
-		os.Exit(1)
-	}
-
-	if os.Args[1] == "del" && len(os.Args) < 3 {
+	argLen, ok := opMap[os.Args[1]]
+	if !ok || len(os.Args) < argLen {
 		cp.PrintUsage()
 		os.Exit(1)
 	}
@@ -51,12 +43,12 @@ func main() {
 
 	var srcDir, destDir string
 
-	if os.Args[1] == "cp" || os.Args[1] == "sync" {
+	if argLen == 4 {
 		srcDir = os.Args[2]
 		destDir = os.Args[3]
 	}
 
-	if os.Args[1] == "ls" || os.Args[1] == "del" {
+	if argLen == 3 {
 		srcDir = os.Args[2]
 	}
 

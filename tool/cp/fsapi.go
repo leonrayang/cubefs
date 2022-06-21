@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -27,6 +28,7 @@ type FsApi interface {
 	symlink(oldname, newname string, parentIno uint64) error
 	readlink(name string, parentIno uint64) (string, error)
 	mkdir(dir string, parentIno uint64) error
+	mkdirall(dir string) error
 	updateStat(dir string, stat *syscall.Stat_t, parentIno uint64) error
 	delete(filepath string, parentIno uint64, isDir bool) error
 }
@@ -91,6 +93,15 @@ func initFs(cfg *pathCfg) (api FsApi) {
 type OsFs struct {
 }
 
+func (f *OsFs) mkdirall(dir string) error {
+	err := os.MkdirAll(dir, 0755)
+	if err != os.ErrExist {
+		return err
+	}
+
+	return nil
+}
+
 func (f *OsFs) getParentInoByPath(filePath string) (ino uint64, err error) {
 	dir, _ := path.Split(filePath)
 	if dir == "" || dir == "/" {
@@ -101,16 +112,6 @@ func (f *OsFs) getParentInoByPath(filePath string) (ino uint64, err error) {
 	if err == nil {
 		return stat.Ino, err
 	}
-
-	// if err != os.ErrNotExist {
-	// 	return
-	// }
-
-	// create dir first
-	// err = os.MkdirAll(dir, 0755)
-	// if err != nil {
-	// 	return
-	// }
 
 	return 0, err
 }
@@ -238,6 +239,78 @@ func (f *OsFs) openFile(filePath string, create bool, parentIno uint64) (fd FdAp
 type CubeFs struct {
 	super *cfs.Super
 	mw    *meta.MetaWrapper
+}
+
+func (f *CubeFs) mkdirall(dirPath string) error {
+	var err error
+	dirPath = path.Clean(dirPath)
+	if isRootDIr(dirPath) {
+		return err
+	}
+
+	user := getUser()
+	uid, _ := strconv.ParseInt(user.Uid, 10, 64)
+	gid, _ := strconv.ParseInt(user.Gid, 10, 64)
+	log.Printf("uid %d gid %d\n", uid, gid)
+
+	ino := proto.RootIno
+	dirs := strings.Split(dirPath, "/")
+	var stat, parentStat *syscall.Stat_t
+
+	for _, dir := range dirs {
+		if dir == "/" || dir == "" {
+			continue
+		}
+
+		parentStat, err = f.getInodeStat(ino)
+		if err != nil {
+			return err
+		}
+
+		err = checkMode(parentStat, read)
+		if err != nil {
+			return err
+		}
+
+		stat, err = f.statFile(dir, ino)
+		if err == nil {
+			newMode := fileMode(stat.Mode)
+			if !newMode.IsDir() {
+				return fmt.Errorf("target %s is exist and not directory", dir)
+			}
+
+			ino = stat.Ino
+			continue
+		}
+
+		if err != os.ErrNotExist {
+			return err
+		}
+
+		err = checkMode(parentStat, write)
+		if err != nil {
+			return err
+		}
+
+		err = f.mkdir(dir, ino)
+		if err != nil {
+			return err
+		}
+
+		newIno, err := f.getIno(dir, ino)
+		if err != nil {
+			return err
+		}
+
+		valid := proto.AttrUid | proto.AttrGid
+		err = f.mw.Setattr(newIno, valid, 0755, uint32(uid), uint32(gid), 0, 0)
+		if err != nil {
+			return err
+		}
+
+		ino = newIno
+	}
+	return nil
 }
 
 func (f *CubeFs) readlink(name string, parentIno uint64) (string, error) {

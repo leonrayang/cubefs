@@ -41,7 +41,7 @@ func getUser() *User {
 			log.Fatalf("get user's groupId failed, err %s", err.Error())
 		}
 
-		fmt.Printf("get user info, uid %s, gid %s, groupIds(%s)\n", u.Uid, u.Gid, u.groupIds)
+		// fmt.Printf("get user info, uid %s, gid %s, groupIds(%s)\n", u.Uid, u.Gid, u.groupIds)
 	})
 
 	return u
@@ -60,6 +60,8 @@ func PrintUsage() {
 	fmt.Printf("use-age: %s show cluster cluster-name\n", os.Args[0])
 
 	fmt.Printf("use-age: %s ls cid://path\n", os.Args[0])
+
+	fmt.Printf("use-age: %s mkdir cid://path\n", os.Args[0])
 }
 
 func (w *Walker) ExecuteCmd() {
@@ -68,9 +70,25 @@ func (w *Walker) ExecuteCmd() {
 		w.showCmd()
 	case "ls":
 		w.lsCmd()
+	case "mkdir":
+		w.mkdir()
 	default:
 		PrintUsage()
 	}
+}
+
+func (w *Walker) mkdir() {
+	if os.Args[2] == "" {
+		PrintUsage()
+		os.Exit(1)
+	}
+
+	filepath := w.SrcDir.dir
+	err := w.srcApi.mkdirall(filepath)
+	if err != nil {
+		log.Fatalf("mkdir dir %s failed, err %s", filepath, err.Error())
+	}
+
 }
 
 func (w *Walker) showCmd() {
