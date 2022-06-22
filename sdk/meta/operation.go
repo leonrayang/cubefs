@@ -87,7 +87,7 @@ func (mw *MetaWrapper) icreate(mp *MetaPartition, mode, uid, gid uint32, target 
 	return statusOK, resp.Info, nil
 }
 
-func (mw *MetaWrapper) iunlink(mp *MetaPartition, inode uint64) (status int, info *proto.InodeInfo, err error) {
+func (mw *MetaWrapper) iunlink(mp *MetaPartition, inode uint64, verSeq uint64) (status int, info *proto.InodeInfo, err error) {
 	bgTime := stat.BeginStat()
 	defer func() {
 		stat.EndStat("iunlink", err, bgTime, 1)
@@ -97,6 +97,7 @@ func (mw *MetaWrapper) iunlink(mp *MetaPartition, inode uint64) (status int, inf
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		Inode:       inode,
+		V
 	}
 
 	packet := proto.NewPacketReqID()
@@ -240,6 +241,7 @@ func (mw *MetaWrapper) dcreate(mp *MetaPartition, parentID uint64, name string, 
 		Inode:       inode,
 		Name:        name,
 		Mode:        mode,
+		VerSeq:      mw.LastVerSeq,
 	}
 
 	packet := proto.NewPacketReqID()

@@ -94,6 +94,8 @@ func (mp *metaPartition) CreateInode(req *CreateInoReq, p *Packet) (err error) {
 // DeleteInode deletes an inode.
 func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 	ino := NewInode(req.Inode, 0)
+	ino.verSeq = req.VerSeq
+
 	val, err := ino.Marshal()
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
