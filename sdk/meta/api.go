@@ -148,7 +148,7 @@ create_dentry:
 		return nil, statusToErrno(status)
 	} else if status != statusOK {
 		if status != statusExist {
-			mw.iunlink(mp, info.Inode)
+			mw.iunlink(mp, info.Inode, mw.LastVerSeq)
 			mw.ievict(mp, info.Inode)
 		}
 		return nil, statusToErrno(status)
@@ -393,7 +393,7 @@ func (mw *MetaWrapper) Delete_ll_EX(parentID uint64, name string, isDir bool, ve
 		return nil, nil
 	}
 
-	status, info, err = mw.iunlink(mp, inode)
+	status, info, err = mw.iunlink(mp, inode, verSeq)
 	if err != nil || status != statusOK {
 		return nil, nil
 	}
@@ -412,7 +412,10 @@ func (mw *MetaWrapper) Delete_ll_EX(parentID uint64, name string, isDir bool, ve
 }
 
 func (mw *MetaWrapper) Rename_ll(srcParentID uint64, srcName string, dstParentID uint64, dstName string, overwritten bool) (err error) {
-	var oldInode uint64
+	var (
+		oldInode uint64
+	)
+	lastVerSeq := mw.LastVerSeq
 
 	srcParentMP := mw.getPartitionByInode(srcParentID)
 	if srcParentMP == nil {
@@ -466,12 +469,12 @@ func (mw *MetaWrapper) Rename_ll(srcParentID uint64, srcName string, dstParentID
 	}
 
 	if status != statusOK {
-		mw.iunlink(srcMP, inode)
+		mw.iunlink(srcMP, inode, lastVerSeq)
 		return statusToErrno(status)
 	}
 
 	// delete dentry from src parent
-	status, _, err = mw.ddelete(srcParentMP, srcParentID, srcName, 0)
+	status, _, err = mw.ddelete(srcParentMP, srcParentID, srcName, lastVerSeq)
 	if err != nil {
 		log.LogErrorf("mw.ddelete(srcParentMP, srcParentID, %s) failed.", srcName)
 		return statusToErrno(status)
@@ -481,23 +484,23 @@ func (mw *MetaWrapper) Rename_ll(srcParentID uint64, srcName string, dstParentID
 			e   error
 		)
 		if oldInode == 0 {
-			sts, _, e = mw.ddelete(dstParentMP, dstParentID, dstName, 0)
+			sts, _, e = mw.ddelete(dstParentMP, dstParentID, dstName, lastVerSeq)
 		} else {
 			sts, _, e = mw.dupdate(dstParentMP, dstParentID, dstName, oldInode)
 		}
 		if e == nil && sts == statusOK {
-			mw.iunlink(srcMP, inode)
+			mw.iunlink(srcMP, inode, lastVerSeq)
 		}
 		return statusToErrno(status)
 	}
 
-	mw.iunlink(srcMP, inode)
+	mw.iunlink(srcMP, inode, lastVerSeq)
 
 	if oldInode != 0 {
 		// overwritten
 		inodeMP := mw.getPartitionByInode(oldInode)
 		if inodeMP != nil {
-			mw.iunlink(inodeMP, oldInode)
+			mw.iunlink(inodeMP, oldInode, lastVerSeq)
 			// evict oldInode to avoid oldInode becomes orphan inode
 			mw.ievict(inodeMP, oldInode)
 		}
@@ -764,7 +767,7 @@ func (mw *MetaWrapper) Link(parentID uint64, name string, ino uint64) (*proto.In
 		return nil, statusToErrno(status)
 	} else if status != statusOK {
 		if status != statusExist {
-			mw.iunlink(mp, ino)
+			mw.iunlink(mp, ino, mw.LastVerSeq)
 		}
 		return nil, statusToErrno(status)
 	}
@@ -847,7 +850,7 @@ func (mw *MetaWrapper) InodeUnlink_ll(inode uint64) (*proto.InodeInfo, error) {
 		log.LogErrorf("InodeUnlink_ll: No such partition, ino(%v)", inode)
 		return nil, syscall.EINVAL
 	}
-	status, info, err := mw.iunlink(mp, inode)
+	status, info, err := mw.iunlink(mp, inode, mw.LastVerSeq)
 	if err != nil || status != statusOK {
 		log.LogErrorf("InodeUnlink_ll: ino(%v) err(%v) status(%v)", inode, err, status)
 		return nil, statusToErrno(status)

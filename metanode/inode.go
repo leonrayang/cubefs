@@ -695,10 +695,11 @@ func (i *Inode) CreateVer(ver uint64) {
 	ino.ObjExtents = NewSortedObjExtents()
 	
 	i.Lock()
-	defer i.Unlock()
-
 	i.multiVersions = append(i.multiVersions, ino)
 	i.verSeq = ver
+	i.Unlock()
+	// snapshot means deletion take effect while all version be deleted(also include renamed shared link)
+	i.IncNLink()
 }
 
 func (i *Inode) SplitExtentWithCheck(ver uint64, ek proto.ExtentKey) (delExtents []proto.ExtentKey, status uint8) {
@@ -838,7 +839,7 @@ func (i *Inode) IsTempFile() bool {
 
 func (i *Inode) IsEmptyDir() bool {
 	i.RLock()
-	ok := (proto.IsDir(i.Type) && i.NLink <= 2)
+	ok := proto.IsDir(i.Type) && i.NLink <= 2
 	i.RUnlock()
 	return ok
 }

@@ -57,24 +57,33 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 			return
 		}
 	}
+
 	if item, ok := mp.dentryTree.ReplaceOrInsert(dentry, false); !ok {
 		//do not allow directories and files to overwrite each
 		// other when renaming
 		d := item.(*Dentry)
-		if proto.OsModeType(dentry.Type) != proto.OsModeType(d.Type) {
-			status = proto.OpArgMismatchErr
-			return
-		}
-		if d.VerSeq == uint64(-1) {
+		verSeq, denStaus := d.getVerSeq()
+		if denStaus == DentryDeleted {
+			if verSeq < dentry.VerSeq {
+				dn := d.Copy()
+				dn.(*Dentry).dentryList = nil
+				d.dentryList = append(d.dentryList, dn.(*Dentry))
+			}
 			d.Inode = dentry.Inode
 			d.VerSeq = dentry.VerSeq
 			d.Type = dentry.Type
 			d.ParentId = dentry.ParentId
 			log.LogInfof("action[fsmCreateDentry.ver] latest dentry already deleted.now create new one [%v]", dentry)
+			if !forceUpdate {
+				parIno.IncNLink()
+				parIno.SetMtime()
+			}
+		} else if proto.OsModeType(dentry.Type) != proto.OsModeType(d.Type) {
+			status = proto.OpArgMismatchErr
+			return
 		} else if dentry.ParentId == d.ParentId && strings.Compare(dentry.Name, d.Name) == 0 && dentry.Inode == d.Inode {
 			return
 		}
-
 		status = proto.OpExistErr
 	} else {
 		if !forceUpdate {
@@ -94,11 +103,22 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 		status = proto.OpNotExistErr
 		return nil, status
 	}
-	if dentry.VerSeq == 0 || item.(*Dentry).VerSeq <= dentry.VerSeq {
+
+	verSeq, denStatus := item.(*Dentry).getVerSeq()
+	if dentry.VerSeq == 0 || verSeq <= dentry.VerSeq {
+		if denStatus == DentryDeleted {
+			status = proto.OpNotExistErr
+			return nil, status
+		}
 		return item.(*Dentry), status
 	}
 	for _, d := range item.(*Dentry).dentryList {
-		if d.VerSeq <= dentry.VerSeq {
+		verSeq, denStatus = d.getVerSeq()
+		if verSeq <= dentry.VerSeq {
+			if denStatus == DentryDeleted {
+				status = proto.OpNotExistErr
+				return nil, status
+			}
 			return item.(*Dentry), status
 		}
 	}
@@ -117,10 +137,11 @@ func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
 		}
 		// create dentry version
 		if den.VerSeq != mp.verSeq {
-			nDen := den.Copy().(*Dentry)
-			nDen.dentryList = nil
-			den.dentryList = append(den.dentryList, nDen)
-			den.VerSeq = uint64(-1)
+			//nDen := den.Copy().(*Dentry)
+			//nDen.dentryList = nil
+			//nDen.setDeleted()
+			//den.dentryList = append(den.dentryList, nDen)
+			den.setDeleted()
 			return den
 		} else {
 			den.VerSeq = uint64(-1)

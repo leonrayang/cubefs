@@ -149,6 +149,13 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 	if inode.IsEmptyDir() {
 		mp.inodeTree.Delete(inode)
 	}
+
+	if ino.verSeq > 0 && ino.verSeq != inode.verSeq {
+		if ino.
+		return
+	}
+
+
 	if inode.GetDecNLinkResult() == 0 && inode.verShareLink > 0 {
 		inode.DecShareVerLink()
 	} else {

@@ -50,6 +50,26 @@ type Dentry struct {
 	dentryList DentryBatch
 }
 
+const (
+	DentryNormal = 1
+	DentryDeleted = 2
+)
+
+func (d *Dentry) getVerSeq() (verSeq uint64, status int8) {
+	if d.VerSeq & 0x80000000 > 0 {
+		return d.VerSeq & 0xFFFFFFF, DentryDeleted
+	}
+	return d.VerSeq, DentryNormal
+}
+
+func (d *Dentry) isDeleted() bool {
+	return d.VerSeq & 0x80000000 > 0
+}
+
+func (d *Dentry) setDeleted() {
+	d.VerSeq |= 0x80000000
+}
+
 func (d *Dentry) String() string {
 	str := fmt.Sprintf("dentry(name:[%v],parentId:[%v],inode:[%v],type:[%v],seq:[%v],dentryList_len[%v]",
 		d.ParentId, d.Name, d.Inode, d.Type, d.VerSeq, len(d.dentryList))
