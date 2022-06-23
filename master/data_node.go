@@ -229,11 +229,12 @@ func (dataNode *DataNode) createHeartbeatTask(masterAddr string, enableDiskQos b
 	return
 }
 
-func (dataNode *DataNode) createVersionTask(volume string, version uint64, op uint8) (task *proto.AdminTask) {
+func (dataNode *DataNode) createVersionTask(volume string, version uint64, op uint8, addr string) (task *proto.AdminTask) {
 	request := &proto.MultiVersionOpRequest{
 		VolumeID: volume,
 		VerSeq:   version,
 		Op:       op,
+		Addr:     addr,
 	}
 	task = proto.NewAdminTask(proto.OpVersionOperation, dataNode.Addr, request)
 	return

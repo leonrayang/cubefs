@@ -51,6 +51,8 @@ const (
 	AdminUpdateZoneExcludeRatio     = "/admin/updateZoneExcludeRatio"
 	AdminSetNodeRdOnly              = "/admin/setNodeRdOnly"
 	AdminSetDpRdOnly                = "/admin/setDpRdOnly"
+	AdminGetVolVer                  = "/vol/getVer"
+
 	//graphql master api
 	AdminClusterAPI = "/api/cluster"
 	AdminUserAPI    = "/api/user"
@@ -157,6 +159,13 @@ type HTTPReply struct {
 // RegisterMetaNodeResp defines the response to register a meta node.
 type RegisterMetaNodeResp struct {
 	ID uint64
+}
+
+type VolumeVerInfo struct {
+	Name                string
+	VerSeq				uint64
+	VerSeqPrepare		uint64
+	VerPrepareStatus    uint8
 }
 
 // ClusterInfo defines the cluster infomation.
@@ -292,12 +301,15 @@ type MultiVersionOpRequest struct {
 	VolumeID string
 	VerSeq   uint64
 	Op       uint8
+	Addr     string
 }
 
 // MultiVersionOpResponse defines the response to the request of l.
 type MultiVersionOpResponse struct {
 	VolumeID string
-	Addr     uint8
+	Addr     string
+	Op       uint8
+	VerSeq   uint64
 	Status   uint8
 	Result   string
 }

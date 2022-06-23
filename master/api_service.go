@@ -1055,6 +1055,30 @@ func (m *Server) markDeleteVol(w http.ResponseWriter, r *http.Request) {
 	sendOkReply(w, r, newSuccessHTTPReply(msg))
 }
 
+
+func (m *Server) getVolVer(w http.ResponseWriter, r *http.Request) {
+	var (
+		err error
+		name string
+		info *proto.VolumeVerInfo
+		verRsp []byte
+	)
+	if name, err = parseVolName(r); err != nil {
+		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
+		return
+	}
+
+	if info, err = m.cluster.getVolVer(name); err != nil {
+		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVolNotExists, Msg: err.Error()})
+		return
+	}
+	if verRsp, err = json.Marshal(info); err != nil {
+		err = fmt.Errorf("json marshal for response failed %s", err.Error())
+		return
+	}
+	sendOkReply(w, r, newSuccessHTTPReply(verRsp))
+}
+
 func (m *Server) updateVol(w http.ResponseWriter, r *http.Request) {
 	var (
 		req          = &updateVolReq{}
@@ -3065,6 +3089,8 @@ func (m *Server) CreateVersion(w http.ResponseWriter, r *http.Request) {
 		vol *Vol
 		name string
 		ver *proto.VolVersionInfo
+		value string
+		force bool
 	)
 	log.LogInfof("action[CreateVersion]")
 	if err = r.ParseForm(); err != nil {
@@ -3082,7 +3108,11 @@ func (m *Server) CreateVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ver, err = vol.VersionMgr.createTask(m.cluster, uint64(time.Now().Unix()),  proto.CreateVersion); err != nil {
+	if value = r.FormValue(forceKey); value != "" {
+		force, _ = strconv.ParseBool(value)
+	}
+
+	if ver, err = vol.VersionMgr.createVer2PhaseTask(m.cluster, uint64(time.Now().Unix()),  proto.CreateVersion, force); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVersionOpError, Msg: err.Error()})
 	}
 
@@ -3095,6 +3125,8 @@ func (m *Server) DelVersion(w http.ResponseWriter, r *http.Request) {
 		vol *Vol
 		name string
 		verSeq uint64
+		value string
+		force bool
 	)
 	if err = r.ParseForm(); err != nil {
 		return
@@ -3107,12 +3139,14 @@ func (m *Server) DelVersion(w http.ResponseWriter, r *http.Request) {
 	if verSeq, err = extractUint64(r, verSeqKey); err != nil {
 		return
 	}
-
+	if value = r.FormValue(forceKey); value != "" {
+		force, _ = strconv.ParseBool(value)
+	}
 	if vol, err = m.cluster.getVol(name); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(proto.ErrVolNotExists))
 		return
 	}
-	if _, err = vol.VersionMgr.createTask(m.cluster, verSeq, proto.DeleteVersion); err != nil {
+	if _, err = vol.VersionMgr.createTask(m.cluster, verSeq, proto.DeleteVersion, force); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVersionOpError, Msg: err.Error()})
 	}
 

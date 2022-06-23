@@ -193,14 +193,18 @@ const (
 const (
 	CreateVersion = 1
 	DeleteVersion = 2
+	CreateVersionPrepare = 3
+	CreateVersionCommit = 4
+
 )
 
 // stage of version building
 const (
-	VersionBuilding 		= 1
-	VersionBuildingTimeOut 	= 2
-	VersionBuildingAbnoraml = 3
-	VersionBuildingFinished = 4
+	VersionInit            = 0
+	VersionWorking         = 1
+	VersionWorkingTimeOut  = 2
+	VersionWorkingAbnormal = 3
+	VersionWorkingFinished = 4
 )
 
 // status of version
