@@ -131,9 +131,10 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
 
-	// the lastest denParm may be deleted before, the deleted verSeq to the last element of the his list verSeq,
-	// used to identify the scope of effect of history denParm,if create anther denParm with larger verSeq, put the
-	// deleted denParm to the history list. deleted denParm also a point the time line means it's empty until a new denParm be created.
+	// the lastest dentry may be deleted before, the scope of  deleted verSeq to the newest file in the his list verSeq,
+	// used to identify the validity of the file,if create anther dentry with larger verSeq, put the
+	// deleted dentry to the history list. deleted dentry is also a point of the time line ,
+	// the dentry with DentryDeleted flag means it's empty until a new dentry be created.
 	delVerFuc := func(den *Dentry) *Dentry {
 		_, status := den.getVerSeq()
 		// create denParm version
