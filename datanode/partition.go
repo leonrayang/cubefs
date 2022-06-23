@@ -144,8 +144,11 @@ type DataPartition struct {
 	isLoadingDataPartition        bool
 	persistMetaMutex              sync.RWMutex
 
-	verSeq   uint64
-	multiVersionList 	[]*MetaMultiSnapshotInfo
+	// snapshot
+	verSeq			uint64
+	verSeqPrepare		uint64
+	verSeqCommitStatus	int8
+	multiVersionList	[]*MetaMultiSnapshotInfo
 }
 
 func CreateDataPartition(dpCfg *dataPartitionCfg, disk *Disk, request *proto.CreateDataPartitionRequest) (dp *DataPartition, err error) {

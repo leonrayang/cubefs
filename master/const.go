@@ -207,6 +207,7 @@ const (
 	opSyncExclueDomain         uint32 = 0x23
 	opSyncUpdateZone           uint32 = 0x24
 	opSyncAllocClientID        uint32 = 0x25
+	opSyncMulitVersion         uint32 = 0x26
 )
 
 const (
@@ -236,6 +237,7 @@ const (
 	nodeSetGrpPrefix      = keySeparator + nodeSetGrpAcronym + keySeparator
 	DomainPrefix          = keySeparator + domainAcronym + keySeparator
 	zonePrefix            = keySeparator + zoneAcronym + keySeparator
+	MultiVerPrefix        = keySeparator + "multiVer" + keySeparator
 	akAcronym             = "ak"
 	userAcronym           = "user"
 	volUserAcronym        = "voluser"
