@@ -667,24 +667,22 @@ func (i *Inode) ShouldDelVer(ver uint64) bool {
 	return false
 }
 
-func (i *Inode) DelVerExtents(ver uint64) (delExtents []proto.ExtentKey, status uint8) {
-	p := &Packet{}
-	req := &proto.EmptyExtentKeyRequest{
-		Inode: inode.Inode,
+func (i *Inode) getDelVer(dVer uint64) (delExtents []proto.ExtentKey) {
+	if dVer >= i.verSeq {
+		return i.Extents.eks
 	}
-	ino := NewInode(req.Inode, 0)
-	curTime = Now.GetCurrentTime().Unix()
-	if inode.ModifyTime < curTime {
-		ino.ModifyTime = curTime
+	if len(i.multiVersions) == 0 {
+		return nil
 	}
-
-	mp.ExtentsEmpty(req, p, ino)
-	// check empty result.
-	// if result is OpAgain, means the extDelCh maybe full,
-	// so let it sleep 1s.
-	if p.ResultCode == proto.OpAgain {
-		needSleep = true
+	for _, ino := range i.multiVersions {
+		if ino.verSeq == dVer {
+			return ino.Extents.eks
+		}
+		if ino.verSeq > dVer {
+			break
+		}
 	}
+	return nil
 }
 
 func (i *Inode) CreateVer(ver uint64) {

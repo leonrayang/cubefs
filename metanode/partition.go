@@ -412,18 +412,18 @@ func (mp *metaPartition) onStart() (err error) {
 	mp.updateSize()
 
 	// do cache TTL die out process
-	if err = mp.cacheTTLWork(multiVersionTTLWork; err != nil {
+	if err = mp.cacheTTLWork(); err != nil {
 		err = errors.NewErrorf("[onStart] start CacheTTLWork id=%d: %s",
 			mp.config.PartitionId, err.Error())
 		return
 	}
 
-	// do cache TTL die out process
-	if err = mp.multiVersionTTLWork(); err != nil {
-		err = errors.NewErrorf("[onStart] start CacheTTLWork id=%d: %s",
-			mp.config.PartitionId, err.Error())
-		return
-	}
+	//// do cache TTL die out process
+	//if err = mp.multiVersionTTLWork(); err != nil {
+	//	err = errors.NewErrorf("[onStart] start CacheTTLWork id=%d: %s",
+	//		mp.config.PartitionId, err.Error())
+	//	return
+	//}
 	return
 }
 
@@ -848,7 +848,7 @@ func (mp *metaPartition) multiVersionTTLWork() (err error) {
 		for {
 			select {
 			case <- ttl.C:
-				log.LogDebugf("[multiVersionTTLWork] begin cache ttl, mp[%v] cacheTTL[%v]", mp.config.PartitionId, cacheTTL)
+				log.LogDebugf("[multiVersionTTLWork] begin cache ttl, mp[%v]", mp.config.PartitionId)
 				// only leader can do TTL work
 				if _, ok := mp.IsLeader(); !ok {
 					log.LogDebugf("[multiVersionTTLWork] partitionId=%d is not leader, skip", mp.config.PartitionId)
@@ -882,6 +882,7 @@ func (mp *metaPartition) delVersion(verSeq uint64) (err error) {
 		if proto.IsDir(inode.Type) {
 			return true
 		}
+
 		inode.RLock()
 		// eks is empty just skip
 		if !inode.ShouldDelVer(verSeq) {
@@ -890,13 +891,11 @@ func (mp *metaPartition) delVersion(verSeq uint64) (err error) {
 		}
 
 		p := &Packet{}
-		req := &proto.DelVerRequest{
+		req := &proto.UnlinkInodeRequest{
 			Inode: inode.Inode,
 			VerSeq: verSeq,
 		}
-		ino := NewInode(req.Inode, 0)
-
-		mp.ExtentsOp(p, ino, opFSMDelVer)
+		mp.UnlinkInode(req,p)
 		// check empty result.
 		// if result is OpAgain, means the extDelCh maybe full,
 		// so let it sleep 1s.
@@ -930,6 +929,12 @@ func (mp *metaPartition) cacheTTLWork() (err error) {
 	if volView.VolType != proto.VolumeTypeCold {
 		return
 	}
+
+	if mp.verSeq > 0 {
+		log.LogWarnf("[doCacheTTL] volume [%v] enable snapshot.exit cache ttl, mp[%v]", mp.GetVolName(), mp.config.PartitionId)
+		return
+	}
+
 	// do cache ttl work
 	go mp.doCacheTTL(volView.CacheTTL)
 	return
@@ -945,6 +950,11 @@ func (mp *metaPartition) doCacheTTL(cacheTTL int) (err error) {
 	for {
 		select {
 		case <-ttl.C:
+			if mp.verSeq > 0 {
+				log.LogWarnf("[doCacheTTL] volume [%v] enable snapshot.exit cache ttl, mp[%v] cacheTTL[%v]",
+					mp.GetVolName(), mp.config.PartitionId, cacheTTL)
+				return
+			}
 			log.LogDebugf("[doCacheTTL] begin cache ttl, mp[%v] cacheTTL[%v]", mp.config.PartitionId, cacheTTL)
 			// only leader can do TTL work
 			if _, ok := mp.IsLeader(); !ok {

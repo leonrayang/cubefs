@@ -159,12 +159,6 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 			return
 		}
 		resp = mp.fsmExtentsEmpty(ino)
-	case opFSMDelVer:
-		ino := NewInode(0, 0)
-		if err = ino.Unmarshal(msg.V); err != nil {
-			return
-		}
-		resp = mp.fsmExtentsEmpty(ino)
 	// case opFSMExtentsDel:
 	// 	ino := NewInode(0, 0)
 	// 	if err = ino.Unmarshal(msg.V); err != nil {
