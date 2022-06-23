@@ -40,12 +40,12 @@ func newVersionMgr(vol *Vol) *VolVersionManager {
 	}
 }
 
-func (verMgr *VolVersionManager) GenerateVer() (ver *proto.VolVersionInfo){
+func (verMgr *VolVersionManager) GenerateVer(verSeq uint64) (ver *proto.VolVersionInfo){
 	verMgr.Lock()
 	defer verMgr.Unlock()
 	tm := time.Now()
 	ver =  &proto.VolVersionInfo{
-		Ver:	uint64(tm.Unix()),
+		Ver:	verSeq,
 		Ctime:	tm,
 		Status:	proto.VersionBuilding,
 	}
@@ -55,7 +55,7 @@ func (verMgr *VolVersionManager) GenerateVer() (ver *proto.VolVersionInfo){
 		ver.Ver = uint64(verMgr.multiVersionList[size-1].Ctime.Unix() + 1)
 	}
 	verMgr.multiVersionList = append(verMgr.multiVersionList, ver)
-	// todo(leon): persistent and recovery
+
 	return
 }
 
@@ -124,11 +124,24 @@ func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op 
 	cluster.addMetaNodeTasks(tasks)
 
 	if op == proto.CreateVersion {
-		verMgr.GenerateVer()
+		verMgr.GenerateVer(verSeq)
 	} else if op == proto.DeleteVersion {
 		verMgr.DelVer(verSeq)
 	}
+
+	var val []byte
+	if val, err = json.Marshal(verMgr.multiVersionList); err != nil {
+		return
+	}
+	cluster.syncMultiVersion(verMgr.vol, val)
 	return
+}
+
+func (verMgr *VolVersionManager) loadMultiVersion(val []byte) (err error) {
+	if err = json.Unmarshal(val, verMgr.multiVersionList); err != nil {
+		return
+	}
+	return nil
 }
 
 func (verMgr *VolVersionManager) getVersionInfo(verGet uint64) (verInfo *proto.VolVersionInfo, err error) {

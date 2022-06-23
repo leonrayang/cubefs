@@ -178,6 +178,7 @@ const (
 	opSyncNodeSetGrp           uint32 = 0x1F
 	opSyncDataPartitionsView   uint32 = 0x20
 	opSyncExclueDomain         uint32 = 0x23
+	opSyncMulitVersion         uint32 = 0x24
 )
 
 const (
@@ -204,6 +205,7 @@ const (
 	nodeSetPrefix         = keySeparator + nodeSetAcronym + keySeparator
 	nodeSetGrpPrefix      = keySeparator + nodeSetGrpAcronym + keySeparator
 	DomainPrefix          = keySeparator + domainAcronym + keySeparator
+	MultiVerPrefix        = keySeparator + "multiVer" + keySeparator
 	akAcronym             = "ak"
 	userAcronym           = "user"
 	volUserAcronym        = "voluser"

@@ -465,6 +465,30 @@ func (c *Cluster) syncPutVolInfo(opType uint32, vol *Vol) (err error) {
 	return c.submit(metadata)
 }
 
+func (c *Cluster) syncMultiVersion(vol *Vol, val []byte) (err error) {
+	metadata := new(RaftCmd)
+	metadata.Op = opSyncMulitVersion
+	metadata.K = MultiVerPrefix + strconv.FormatUint(vol.ID, 10)
+	metadata.V = val
+
+	return c.submit(metadata)
+}
+
+
+func (c *Cluster) loadMultiVersion(vol *Vol) (err error) {
+	key := MultiVerPrefix + strconv.FormatUint(vol.ID, 10)
+	result, err := c.fsm.store.SeekForPrefix([]byte(key))
+	if err != nil {
+		err = fmt.Errorf("action[loadClusterValue],err:%v", err.Error())
+		return err
+	}
+	for _, value := range result {
+		return vol.VersionMgr.loadMultiVersion(value)
+	}
+
+}
+
+
 // key=#mp#volID#metaPartitionID,value=json.Marshal(metaPartitionValue)
 func (c *Cluster) syncAddMetaPartition(mp *MetaPartition) (err error) {
 	return c.putMetaPartitionInfo(opSyncAddMetaPartition, mp)
@@ -878,6 +902,8 @@ func (c *Cluster) loadVols() (err error) {
 		vol := newVolFromVolValue(vv)
 		vol.Status = vv.Status
 		c.putVol(vol)
+
+		c.loadMultiVersion(vol)
 		log.LogInfof("action[loadVols],vol[%v]", vol.Name)
 	}
 	return
