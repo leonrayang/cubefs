@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"hash/crc32"
@@ -244,6 +245,74 @@ func (s *DataNode) handlePacketToCreateDataPartition(p *repl.Packet) {
 	return
 }
 
+
+
+func (m *DataNode) prepareCreateVersion(req *proto.MultiVersionOpRequest) (err error, opAagin bool) {
+	var (
+		ver2Phase *verOp2Phase
+	)
+	if value, ok := m.volUpdating.Load(req.VolumeID); ok {
+		ver2Phase = value.(*verOp2Phase)
+		if req.VerSeq < ver2Phase.verSeq {
+			err = fmt.Errorf("seq %v create less than loal %v", req.VerSeq, ver2Phase.verSeq)
+			return
+		} else if req.VerSeq == ver2Phase.verPrepare {
+			if ver2Phase.step == proto.VersionWorking {
+				opAagin = true
+				return
+			}
+		}
+	} else {
+		ver2Phase = &verOp2Phase{}
+		ver2Phase.op = req.Op
+		m.volUpdating.Store(req.VolumeID, ver2Phase)
+	}
+
+	ver2Phase.step = proto.VersionWorking
+	ver2Phase.verPrepare = req.VerSeq
+	ver2Phase.step = proto.CreateVersionPrepare
+	return
+}
+
+func (m *DataNode) checkMultiVersionStatus(volName string) (err error) {
+	var info *proto.VolumeVerInfo
+	if value, ok := m.volUpdating.Load(volName); ok {
+		ver2Phase := value.(*verOp2Phase)
+		if atomic.LoadUint32(&ver2Phase.status) != proto.VersionWorkingAbnormal  &&
+			atomic.LoadUint32(&ver2Phase.step) == proto.CreateVersionPrepare {
+
+			ver2Phase.Lock() // here trylock may be better after go1.18 adapted to compile
+			defer ver2Phase.Unlock()
+
+			// check again in case of sth already happened during be blocked by lock
+			if atomic.LoadUint32(&ver2Phase.status) == proto.VersionWorkingAbnormal ||
+				atomic.LoadUint32(&ver2Phase.step) != proto.CreateVersionPrepare {
+				return
+			}
+
+			if info, err = MasterClient.AdminAPI().GetVerInfo(); err != nil {
+				return
+			}
+			if info.VerSeqPrepare != ver2Phase.verPrepare {
+				ver2Phase.status = proto.VersionWorkingAbnormal
+				return
+			}
+			if info.VerPrepareStatus == proto.CreateVersionCommit {
+				ver2Phase.step = proto.CreateVersionCommit
+				for _, dp := range m.space.partitions {
+					if ver2Phase.verSeq < dp.verSeq {
+						err = fmt.Errorf("error.seq [%v] less than exist [%v]", ver2Phase.verSeq, dp.verSeq)
+						log.LogErrorf("action[UpdateVersion] %v", err)
+						return
+					}
+					dp.verSeq = ver2Phase.verSeq
+				}
+			}
+		}
+	}
+	return
+}
+
 // Handle OpHeartbeat packet.
 func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 	log.LogInfof("action[handleUpdateVerPacket] enter in")
@@ -273,14 +342,21 @@ func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 				log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
 				response.Status = proto.TaskFailed
 			}
-			for _, dp := range s.space.partitions {
-				if dp.volumeID != request.VolumeID {
-					continue
-				}
-				dp.UpdateVersion(request)
-			}
 
-			log.LogInfof("action[handleUpdateVerPacket] handle master version reqeust %v", request)
+			if request.Op == proto.CreateVersionPrepare {
+				s.prepareCreateVersion(request)
+			} else {
+				for _, dp := range s.space.partitions {
+					if dp.volumeID != request.VolumeID {
+						continue
+					}
+					dp.UpdateVersion(request)
+					response.VerSeq = request.VerSeq
+					response.Op = request.Op
+					response.Addr = request.Addr
+				}
+				log.LogInfof("action[handleUpdateVerPacket] handle master version reqeust %v", request)
+			}
 		} else {
 			response.Status = proto.TaskFailed
 			err = fmt.Errorf("illegal opcode")

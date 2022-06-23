@@ -56,6 +56,15 @@ type MetadataManagerConfig struct {
 	RaftStore raftstore.RaftStore
 }
 
+type verOp2Phase struct {
+	verSeq      uint64
+	verPrepare  uint64
+	status      uint32
+	step        uint32
+	op          uint8
+	sync.Mutex
+}
+
 type metadataManager struct {
 	nodeId             uint64
 	zoneName           string
@@ -67,6 +76,7 @@ type metadataManager struct {
 	partitions         map[uint64]MetaPartition // Key: metaRangeId, Val: metaPartition
 	metaNode           *MetaNode
 	flDeleteBatchCount atomic.Value
+	volUpdating        *sync.Map //map[string]*verOp2Phase
 }
 
 func (m *metadataManager) getPacketLabels(p *Packet) (labels map[string]string) {
@@ -520,6 +530,7 @@ func NewMetadataManager(conf MetadataManagerConfig, metaNode *MetaNode) Metadata
 		raftStore:  conf.RaftStore,
 		partitions: make(map[uint64]MetaPartition),
 		metaNode:   metaNode,
+		volUpdating: new(sync.Map),
 	}
 }
 

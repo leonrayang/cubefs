@@ -144,6 +144,9 @@ func (m *Server) registerAPIRoutes(router *mux.Router) {
 		Path(proto.AdminDeleteVol).
 		HandlerFunc(m.markDeleteVol)
 	router.NewRoute().Methods(http.MethodGet, http.MethodPost).
+		Path(proto.AdminGetVolVer).
+		HandlerFunc(m.getVolVer)
+	router.NewRoute().Methods(http.MethodGet, http.MethodPost).
 		Path(proto.AdminUpdateVol).
 		HandlerFunc(m.updateVol)
 	router.NewRoute().Methods(http.MethodGet, http.MethodPost).

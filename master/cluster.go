@@ -783,6 +783,24 @@ func (c *Cluster) putVol(vol *Vol) {
 	}
 }
 
+func (c *Cluster) getVolVer(volName string) (info *proto.VolumeVerInfo, err error) {
+	c.volMutex.RLock()
+	defer c.volMutex.RUnlock()
+	vol, ok := c.vols[volName]
+	if !ok {
+		err = proto.ErrVolNotExists
+		return
+	}
+
+	info = &proto.VolumeVerInfo{
+		Name:volName,
+		VerSeq: vol.VersionMgr.verSeq,
+		VerSeqPrepare: vol.VersionMgr.prepareCommit.prepareInfo.Ver,
+		VerPrepareStatus: vol.VersionMgr.status,
+	}
+	return
+}
+
 func (c *Cluster) getVol(volName string) (vol *Vol, err error) {
 	c.volMutex.RLock()
 	defer c.volMutex.RUnlock()

@@ -373,6 +373,19 @@ func (api *AdminAPI) GetClusterInfo() (ci *proto.ClusterInfo, err error) {
 	return
 }
 
+func (api *AdminAPI) GetVerInfo() (ci *proto.VolumeVerInfo, err error) {
+	var request = newAPIRequest(http.MethodGet, proto.AdminGetVolVer)
+	var buf []byte
+	if buf, err = api.mc.serveRequest(request); err != nil {
+		return
+	}
+	ci = &proto.VolumeVerInfo{}
+	if err = json.Unmarshal(buf, &ci); err != nil {
+		return
+	}
+	return
+}
+
 func (api *AdminAPI) CreateMetaPartition(volName string, inodeStart uint64) (err error) {
 	var request = newAPIRequest(http.MethodGet, proto.AdminCreateMetaPartition)
 	request.addParam("name", volName)
