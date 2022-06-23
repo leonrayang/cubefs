@@ -150,11 +150,11 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 		mp.inodeTree.Delete(inode)
 	}
 
-	if ino.verSeq > 0 && ino.verSeq != inode.verSeq {
-		if ino.
+	var ext2Del []proto.ExtentKey
+	// don't unlink if no version satisfied
+	if ext2Del = inode.getDelVer(ino.verSeq); ext2Del == nil {
 		return
 	}
-
 
 	if inode.GetDecNLinkResult() == 0 && inode.verShareLink > 0 {
 		inode.DecShareVerLink()
@@ -170,6 +170,8 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 				mp.freeList.Push(inode.Inode)
 			}
 		})
+	} else {
+		mp.extDelCh <- ext2Del
 	}
 
 	return

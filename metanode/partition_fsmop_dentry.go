@@ -126,47 +126,59 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 }
 
 // Delete dentry from the dentry tree.
-func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
+func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 	resp *DentryResponse) {
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
 
+	// the lastest denParm may be deleted before, the deleted verSeq to the last element of the his list verSeq,
+	// used to identify the scope of effect of history denParm,if create anther denParm with larger verSeq, put the
+	// deleted denParm to the history list. deleted denParm also a point the time line means it's empty until a new denParm be created.
 	delVerFuc := func(den *Dentry) *Dentry {
-		if den.VerSeq == uint64(-1) {
-			return nil
-		}
-		// create dentry version
-		if den.VerSeq != mp.verSeq {
-			//nDen := den.Copy().(*Dentry)
-			//nDen.dentryList = nil
-			//nDen.setDeleted()
-			//den.dentryList = append(den.dentryList, nDen)
-			den.setDeleted()
-			return den
-		} else {
-			den.VerSeq = uint64(-1)
+		_, status := den.getVerSeq()
+		// create denParm version
+		if denParm.VerSeq >= mp.verSeq {
+			if status == DentryDeleted {
+				return nil
+			}
+			den.setDeleted() // denParm create at the same version.no need to push to history list
 			if len(den.dentryList) == 0 {
-				return mp.dentryTree.tree.Delete(dentry).(*Dentry)
+				return mp.dentryTree.tree.Delete(denParm).(*Dentry)
 			}
 			return den
+		} else {
+			for _, hDen := range den.dentryList {
+				verSeq, status := hDen.getVerSeq()
+				if verSeq == denParm.VerSeq {
+					if status == DentryDeleted {
+						return nil
+					}
+					hDen.setDeleted()
+					return hDen
+				}
+				if hDen.VerSeq > denParm.VerSeq {
+					return nil
+				}
+			}
+			return nil
 		}
 	}
 
 	var item interface{}
 	if checkInode {
 		item = mp.dentryTree.Execute(func(tree *btree.BTree) interface{} {
-			d := tree.CopyGet(dentry)
+			d := tree.CopyGet(denParm)
 			if d == nil {
 				return nil
 			}
 			den := d.(*Dentry)
-			if den.Inode != dentry.Inode {
+			if den.Inode != denParm.Inode {
 				return nil
 			}
 			return delVerFuc(den)
 		})
 	} else {
-		item = mp.dentryTree.Get(dentry)
+		item = mp.dentryTree.Get(denParm)
 		if item != nil {
 			item = delVerFuc(item.(*Dentry))
 		}
@@ -176,9 +188,9 @@ func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
 		resp.Status = proto.OpNotExistErr
 		return
 	} else {
-		mp.inodeTree.CopyFind(NewInode(dentry.ParentId, 0),
+		mp.inodeTree.CopyFind(NewInode(denParm.ParentId, 0),
 			func(item BtreeItem) {
-				if item != nil {
+				if item != nil { // no matter
 					ino := item.(*Inode)
 					if !ino.ShouldDelete() {
 						item.(*Inode).DecNLink()
