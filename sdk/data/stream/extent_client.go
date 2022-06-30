@@ -191,7 +191,9 @@ retry:
 
 	return
 }
-
+func (client *ExtentClient) GetVolumeName() string {
+	return client.volumeName
+}
 func (client *ExtentClient) UpdateLatestVer(verSeq uint64) (err error) {
 	if verSeq == 0 || verSeq == client.multiVerMgr.latestVerSeq {
 		return

@@ -396,6 +396,7 @@ type GetExtentsResponse struct {
 	Generation uint64      `json:"gen"`
 	Size       uint64      `json:"sz"`
 	Extents    []ExtentKey `json:"eks"`
+	Status     int
 }
 
 // TruncateRequest defines the request to truncate.

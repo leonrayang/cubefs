@@ -682,6 +682,7 @@ func (s *DataNode) handleRandomWritePacket(p *repl.Packet) {
 		}
 		if p.Opcode == proto.OpRandomWriteVer || p.Opcode == proto.OpSyncRandomWriteVer {
 			if partition.verSeq > p.VerSeq {
+				p.ResultCode = proto.ErrCodeVersionOpError
 				err = fmt.Errorf("client verSeq[%v] small than dataPartiton ver[%v]", p.VerSeq, partition.verSeq)
 				log.LogErrorf("action[handleRandomWritePacket] error %v", err)
 				return
