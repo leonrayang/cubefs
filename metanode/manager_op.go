@@ -1627,7 +1627,7 @@ func (m *metadataManager) checkMultiVersionStatus(volName string) (err error) {
 			ver2Phase.Lock() // here trylock may be better after go1.18 adapted to compile
 			defer ver2Phase.Unlock()
 
-			// check again in case of sth already happened during be blocked by lock
+			// check again in case of sth already happened by other goroutine during be blocked by lock
 			if atomic.LoadUint32(&ver2Phase.status) == proto.VersionWorkingAbnormal ||
 				atomic.LoadUint32(&ver2Phase.step) != proto.CreateVersionPrepare {
 				return
@@ -1637,7 +1637,7 @@ func (m *metadataManager) checkMultiVersionStatus(volName string) (err error) {
 				return
 			}
 			if info.VerSeqPrepare != ver2Phase.verPrepare {
-				ver2Phase.status = proto.VersionWorkingAbnormal
+			 	atomic.StoreUint32(&ver2Phase.status, proto.VersionWorkingAbnormal)
 				return
 			}
 			if info.VerPrepareStatus == proto.CreateVersionCommit {

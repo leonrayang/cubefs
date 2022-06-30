@@ -285,7 +285,10 @@ func (s *Streamer) handleRequest(request interface{}) {
 }
 
 func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err error) {
-	var direct bool
+	var (
+		direct bool
+		retryTimes int8
+	)
 
 	if flags&proto.FlagsSyncWrite != 0 {
 		direct = true
@@ -339,14 +342,26 @@ begin:
 			if req.ExtentKey.VerSeq == s.extents.verSeq {
 				writeSize, err = s.doOverwrite(req, direct)
 				if err == proto.ErrCodeVersionOp {
+					var verAdmin *proto.VolVersionInfo
+					verAdmin, err = s.client.dataWrapper.GetMasterClient().AdminAPI().GetLatestVer(s.client.GetVolumeName())
+					if err != nil {
+						return
+					}
+					if s.verSeq == verAdmin.Ver {
+						err = proto.ErrCodeVersionOp
+						return
+					}
+					s.verSeq = verAdmin.Ver
 					if err = s.GetExtents(); err != nil {
 						return
 					}
-					ver, err := s.client.dataWrapper.GetMasterClient().AdminAPI().GetLatestVer(s.client.GetVolumeName())
-					if err != nil {
-						return total, err
+					if retryTimes > 3 {
+						err = proto.ErrCodeVersionOp
+						return
 					}
-					s.verSeq = ver.Ver
+					time.Sleep(time.Millisecond * 100)
+					retryTimes++
+
 					goto begin
 				}
 			} else {
