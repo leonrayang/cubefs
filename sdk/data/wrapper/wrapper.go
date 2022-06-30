@@ -71,6 +71,11 @@ type Wrapper struct {
 	client      *SimpleClientInfo
 }
 
+func (w *Wrapper) GetMasterClient() *masterSDK.MasterClient {
+	return w.mc
+}
+
+
 // NewDataPartitionWrapper returns a new data partition wrapper.
 func NewDataPartitionWrapper(client SimpleClientInfo, volName string, masters []string, preload bool, verReadSeq uint64) (w *Wrapper, err error) {
 	log.LogInfof("action[NewDataPartitionWrapper] verReadSeq %v", verReadSeq)

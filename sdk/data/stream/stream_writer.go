@@ -290,7 +290,7 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 	if flags&proto.FlagsSyncWrite != 0 {
 		direct = true
 	}
-
+begin:
 	if flags&proto.FlagsAppend != 0 {
 		filesize, _ := s.extents.Size()
 		offset = filesize
@@ -338,6 +338,17 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 			}
 			if req.ExtentKey.VerSeq == s.extents.verSeq {
 				writeSize, err = s.doOverwrite(req, direct)
+				if err == proto.ErrCodeVersionOp {
+					if err = s.GetExtents(); err != nil {
+						return
+					}
+					ver, err := s.client.dataWrapper.GetMasterClient().AdminAPI().GetLatestVer(s.client.GetVolumeName())
+					if err != nil {
+						return total, err
+					}
+					s.verSeq = ver.Ver
+					goto begin
+				}
 			} else {
 				writeSize, err = s.doOverwriteByAppend(req, direct)
 			}
@@ -534,6 +545,11 @@ func (s *Streamer) doOverwrite(req *ExtentRequest, direct bool) (total int, err 
 			if replyPacket.ResultCode == proto.OpTryOtherAddr {
 				e = TryOtherAddrError
 			}
+
+			if replyPacket.ResultCode == proto.ErrCodeVersionOpError {
+				e = proto.ErrCodeVersionOp
+			}
+
 			return e, false
 		})
 

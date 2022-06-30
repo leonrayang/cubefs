@@ -539,7 +539,7 @@ func (mw *MetaWrapper) ReadDir_ll(parentID uint64) ([]proto.Dentry, error) {
 		return nil, syscall.ENOENT
 	}
 
-	status, children, err := mw.readdir(parentMP, parentID)
+	status, children, err := mw.readDir(parentMP, parentID)
 	if err != nil || status != statusOK {
 		return nil, statusToErrno(status)
 	}
@@ -553,7 +553,7 @@ func (mw *MetaWrapper) ReadDirLimit_ll(parentID uint64, from string, limit uint6
 		return nil, syscall.ENOENT
 	}
 
-	status, children, err := mw.readdirlimit(parentMP, parentID, from, limit)
+	status, children, err := mw.readDirLimit(parentMP, parentID, from, limit)
 	if err != nil || status != statusOK {
 		return nil, statusToErrno(status)
 	}
@@ -587,6 +587,7 @@ func (mw *MetaWrapper) DentryUpdate_ll(parentID uint64, name string, inode uint6
 	}
 	return
 }
+
 func (mw *MetaWrapper) SplitExtentKey(parentInode, inode uint64, ek proto.ExtentKey) error {
 	mp := mw.getPartitionByInode(inode)
 	if mp == nil {
@@ -617,6 +618,7 @@ func (mw *MetaWrapper) SplitExtentKey(parentInode, inode uint64, ek proto.Extent
 
 	return nil
 }
+
 // Used as a callback by stream sdk
 func (mw *MetaWrapper) AppendExtentKey(parentInode, inode uint64, ek proto.ExtentKey, discard []proto.ExtentKey) error {
 	mp := mw.getPartitionByInode(inode)
@@ -687,10 +689,10 @@ func (mw *MetaWrapper) GetExtents(inode uint64) (gen uint64, size uint64, extent
 		return 0, 0, nil, syscall.ENOENT
 	}
 
-	status, gen, size, extents, err := mw.getExtents(mp, inode)
-	if err != nil || status != statusOK {
-		log.LogErrorf("GetExtents: ino(%v) err(%v) status(%v)", inode, err, status)
-		return 0, 0, nil, statusToErrno(status)
+	resp, err := mw.getExtents(mp, inode)
+	if err != nil  {
+		log.LogErrorf("GetExtents: ino(%v) err(%v) status(%v)", inode, err, resp.Status)
+		return 0, 0, nil, statusToErrno(resp.Status)
 	}
 	// log.LogDebugf("GetObjExtents stack[%v]", string(debug.Stack()))
 	log.LogDebugf("GetExtents: ino(%v) gen(%v) size(%v) extents(%v)", inode, gen, size, extents)

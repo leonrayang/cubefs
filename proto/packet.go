@@ -245,7 +245,7 @@ type Packet struct {
 	StartT             int64
 	mesg               string
 	HasPrepare         bool
-	VerSeq             uint64  // change too much to use
+	VerSeq             uint64  // only used in mod request to datanode
 }
 
 // NewPacket returns a new packet.

@@ -308,7 +308,9 @@ func (client *ExtentClient) SetClientID(id uint64) (err error) {
 	client.LimitManager.ID = id
 	return
 }
-
+func (client *ExtentClient) GetVolumeName() string {
+	return client.volumeName
+}
 func (client *ExtentClient) UpdateLatestVer(verSeq uint64) (err error) {
 	if verSeq == 0 || verSeq == client.multiVerMgr.latestVerSeq {
 		return
