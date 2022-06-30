@@ -329,9 +329,13 @@ func (eh *ExtentHandler) processReply(packet *Packet) {
 	log.LogDebugf("processReply: get reply, eh(%v) packet(%v) reply(%v)", eh, packet, reply)
 
 	if reply.ResultCode != proto.OpOk {
-		errmsg := fmt.Sprintf("reply NOK: reply(%v)", reply)
-		eh.processReplyError(packet, errmsg)
-		return
+		if reply.ResultCode != proto.ErrCodeVersionOpError {
+			errmsg := fmt.Sprintf("reply NOK: reply(%v)", reply)
+			eh.processReplyError(packet, errmsg)
+			return
+		}
+		// todo(leonchang) need check safety
+		eh.stream.GetExtents()
 	}
 
 	if !packet.isValidWriteReply(reply) {
