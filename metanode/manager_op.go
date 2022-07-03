@@ -537,6 +537,17 @@ func (m *metadataManager) opMetaInodeGet(conn net.Conn, p *Packet,
 	m.respondToClient(conn, p)
 	log.LogDebugf("%s [opMetaInodeGet] req: %d - %v; resp: %v, body: %s",
 		remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data)
+
+	if value, ok := m.volUpdating.Load(req.VolName); ok {
+		ver2Phase := value.(*verOp2Phase)
+		if ver2Phase.verSeq > req.VerSeq {
+			//reuse ExtentType to identify flag of version inconsistent between metanode and client
+			//will resp to client and make client update all streamer's extent and it's verSeq
+			p.ExtentType |= proto.MultiVersionFlagRspFromMeta
+			p.VerSeq = ver2Phase.verSeq
+		}
+	}
+
 	return
 }
 

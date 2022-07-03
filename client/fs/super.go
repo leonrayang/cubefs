@@ -188,6 +188,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 			return nil, errors.Trace(err, "NewEbsClient failed!")
 		}
 	}
+	s.mw.Client = s.ec
 
 	if s.rootIno, err = s.mw.GetRootIno(opt.SubDir); err != nil {
 		return nil, err

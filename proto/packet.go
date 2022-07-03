@@ -186,6 +186,7 @@ const (
 	BatchDeleteExtentReadDeadLineTime         = 120
 	GetAllWatermarksDeadLineTime              = 60
 	DefaultClusterLoadFactor          float64 = 10
+	MultiVersionFlagRspFromMeta               = 0x80
 )
 
 // multi version operation
@@ -227,7 +228,7 @@ const (
 // Packet defines the packet structure.
 type Packet struct {
 	Magic              uint8
-	ExtentType         uint8
+	ExtentType         uint8  // the highest bit be set while rsp to client if version not consistent then Verseq be valid
 	Opcode             uint8
 	ResultCode         uint8
 	RemainingFollowers uint8
@@ -607,6 +608,63 @@ func ReadFull(c net.Conn, buf *[]byte, readSize int) (err error) {
 	*buf = make([]byte, readSize)
 	_, err = io.ReadFull(c, (*buf)[:readSize])
 	return
+}
+
+
+// ReadFromConn reads the data from the given connection.
+// Recognize the version bit and parse out version
+func (p *Packet) ReadFromConnWithVer(c net.Conn, timeoutSec int) (err error) {
+	if timeoutSec != NoReadDeadlineTime {
+		c.SetReadDeadline(time.Now().Add(time.Second * time.Duration(timeoutSec)))
+	} else {
+		c.SetReadDeadline(time.Time{})
+	}
+	header, err := Buffers.Get(util.PacketHeaderSize)
+	if err != nil {
+		header = make([]byte, util.PacketHeaderSize)
+	}
+	defer Buffers.Put(header)
+	var n int
+	if n, err = io.ReadFull(c, header); err != nil {
+		return
+	}
+	if n != util.PacketHeaderSize {
+		return syscall.EBADMSG
+	}
+	if err = p.UnmarshalHeader(header); err != nil {
+		return
+	}
+
+	if p.ExtentType & MultiVersionFlagRspFromMeta > 0 {
+		ver := make([]byte, 8)
+		if _, err = io.ReadFull(c, ver); err != nil {
+			return
+		}
+		p.VerSeq =  binary.BigEndian.Uint64(ver)
+	}
+
+	if p.ArgLen > 0 {
+		p.Arg = make([]byte, int(p.ArgLen))
+		if _, err = io.ReadFull(c, p.Arg[:int(p.ArgLen)]); err != nil {
+			return err
+		}
+	}
+
+	if p.Size < 0 {
+		return syscall.EBADMSG
+	}
+	size := p.Size
+	if (p.Opcode == OpRead || p.Opcode == OpStreamRead || p.Opcode == OpExtentRepairRead || p.Opcode == OpStreamFollowerRead) && p.ResultCode == OpInitResultCode {
+		size = 0
+	}
+	p.Data = make([]byte, size)
+	if n, err = io.ReadFull(c, p.Data[:size]); err != nil {
+		return err
+	}
+	if n != int(size) {
+		return syscall.EBADMSG
+	}
+	return nil
 }
 
 // ReadFromConn reads the data from the given connection.
