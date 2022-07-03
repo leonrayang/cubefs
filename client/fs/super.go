@@ -220,6 +220,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 			return nil, errors.Trace(err, "NewEbsClient failed!")
 		}
 	}
+	s.mw.Client = s.ec
 
 	if !opt.EnablePosixACL {
 		opt.EnablePosixACL = s.ec.GetEnablePosixAcl()

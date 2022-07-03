@@ -122,6 +122,8 @@ type MultiVerMgr struct {
 	latestVerSeq uint64   // newest verSeq from master for datanode write to check
 }
 
+
+
 // ExtentClient defines the struct of the extent client.
 type ExtentClient struct {
 	streamers        map[uint64]*Streamer
@@ -308,9 +310,11 @@ func (client *ExtentClient) SetClientID(id uint64) (err error) {
 	client.LimitManager.ID = id
 	return
 }
+
 func (client *ExtentClient) GetVolumeName() string {
 	return client.volumeName
 }
+
 func (client *ExtentClient) UpdateLatestVer(verSeq uint64) (err error) {
 	if verSeq == 0 || verSeq == client.multiVerMgr.latestVerSeq {
 		return
@@ -328,13 +332,10 @@ func (client *ExtentClient) UpdateLatestVer(verSeq uint64) (err error) {
 	for _, streamer := range client.streamers {
 		if streamer.verSeq != verSeq {
 			log.LogDebugf("action[ExtentClient.UpdateLatestVer] stream inode %v ver %v try update to %v", streamer.inode, streamer.verSeq, verSeq)
-			//request := &VerUpdateRequest {
-			//	verSeq: verSeq,
-			//	done: make(chan struct{}, 1),
-			//}
-			//streamer.request<-request
-			//<-request.done
+
 			streamer.verSeq = verSeq
+			streamer.flush()
+			streamer.GetExtents()
 			log.LogDebugf("action[ExtentClient.UpdateLatestVer] finhsed stream inode %v ver update to %v", streamer.inode, verSeq)
 		}
 	}

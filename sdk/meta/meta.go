@@ -16,6 +16,7 @@ package meta
 
 import (
 	"fmt"
+	"github.com/cubefs/cubefs/sdk/data/wrapper"
 	"sync"
 	"syscall"
 	"time"
@@ -135,6 +136,8 @@ type MetaWrapper struct {
 	metaSendTimeout  int64
 	VerReadSeq	uint64
 	LastVerSeq  uint64
+
+	Client  wrapper.SimpleClientInfo
 }
 
 //the ticket from authnode

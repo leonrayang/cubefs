@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/cubefs/cubefs/util/errors"
 	"github.com/cubefs/cubefs/util/stat"
@@ -1716,4 +1717,13 @@ func (mw *MetaWrapper) updateXAttrs(mp *MetaPartition, inode uint64, filesInc in
 
 	log.LogDebugf("updateXAttrs: packet(%v) mp(%v) req(%v) result(%v)", packet, mp, *req, packet.GetResultMsg())
 	return nil
+}
+
+func (mw *MetaWrapper) checkVerFromMeta(packet *proto.Packet) {
+	if packet.VerSeq > atomic.LoadUint64(&mw.LastVerSeq) {
+		mw.LastVerSeq = packet.VerSeq
+		if mw.Client != nil {
+			mw.Client.UpdateLatestVer(mw.LastVerSeq)
+		}
+	}
 }
