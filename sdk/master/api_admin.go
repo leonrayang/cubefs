@@ -524,6 +524,30 @@ func (api *AdminAPI) CreatePreLoadDataPartition(volName string, count int, capac
 	return
 }
 
+
+func (api *AdminAPI) DeleteVersion(volName string) (err error) {
+	var request = newAPIRequest(http.MethodGet, proto.AdminDelVersion)
+	request.addParam("name", volName)
+	if _, err = api.mc.serveRequest(request); err != nil {
+		return
+	}
+	return
+}
+
+func (api *AdminAPI) CreateVersion(volName string) (ver *proto.VolVersionInfo, err error) {
+	var buf []byte
+	var request = newAPIRequest(http.MethodGet, proto.AdminCreateVersion)
+	request.addParam("name", volName)
+	if buf, err = api.mc.serveRequest(request); err != nil {
+		return
+	}
+	ver = &proto.VolVersionInfo{}
+	if err = json.Unmarshal(buf, ver); err != nil {
+		return
+	}
+	return
+}
+
 func (api *AdminAPI) GetLatestVer(volName string) (ver *proto.VolVersionInfo, err error) {
 	var buf []byte
 	var request = newAPIRequest(http.MethodGet, proto.AdminGetVersionInfo)
