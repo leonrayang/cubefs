@@ -77,10 +77,17 @@ func (verMgr *VolVersionManager) commitVer() (ver *proto.VolVersionInfo){
 	return
 }
 
-func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (){
+func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error){
 	verMgr.Lock()
 	defer verMgr.Unlock()
 	tm := time.Now()
+
+	if len(verMgr.multiVersionList) > MaxSnapshotCount {
+		err =  fmt.Errorf("too much version exceed %v in list", MaxSnapshotCount)
+		log.LogErrorf("action[GenerateVer] err %v", err)
+		return
+	}
+
 
 	verMgr.prepareCommit.prepareInfo =  &proto.VolVersionInfo{
 		Ver:	verSeq,
@@ -114,7 +121,9 @@ func (verMgr *VolVersionManager) DelVer(verDel uint64) (err error){
 const (
 	TypeNoReply = 0
 	TypeReply   = 1
+	MaxSnapshotCount = 30
 )
+
 func (verMgr *VolVersionManager)  handleTaskRsp(resp *proto.MultiVersionOpResponse, partitionType uint32) {
 	if resp.Op != verMgr.prepareCommit.op {
 		return
@@ -156,7 +165,9 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 
 	verMgr.prepareCommit.stage = op
 	if op == proto.CreateVersion {
-		verMgr.GenerateVer(verSeq, op)
+		if err = verMgr.GenerateVer(verSeq, op); err != nil {
+			return
+		}
 	}
 
 	if _, err = verMgr.createTask(cluster, verSeq, proto.CreateVersionPrepare, force); err != nil {
