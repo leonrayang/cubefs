@@ -3,7 +3,7 @@
         {
             "volname":"hot_s3",
             "addr":"10.177.69.105:17010,10.177.69.106:17010,10.177.117.108:17010",
-            "owner":"console_vol",
+            "owner":"console_volt",
             "ak":"9rAXjgo9Nlyk7rOO",
             "sk":"N6F7huAf6L6jH4jxtZ3jDVKldb4ZBXt1",
             "idc": "bjht",

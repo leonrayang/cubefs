@@ -14,6 +14,7 @@ import (
 	"bazil.org/fuse"
 	cfs "github.com/chubaofs/chubaofs/client/fs"
 	"github.com/chubaofs/chubaofs/proto"
+	"github.com/chubaofs/chubaofs/sdk/master"
 	"github.com/chubaofs/chubaofs/sdk/meta"
 	clog "github.com/chubaofs/chubaofs/util/log"
 )
@@ -58,15 +59,52 @@ const (
 	CubeFsTyp FsType = 1
 )
 
+func checkPermission(opt *proto.MountOptions) (err error) {
+	var mc = master.NewMasterClientFromString(opt.Master, false)
+
+	// Check user access policy is enabled
+	if opt.AccessKey != "" {
+		var userInfo *proto.UserInfo
+		if userInfo, err = mc.UserAPI().GetAKInfo(opt.AccessKey); err != nil {
+			return
+		}
+		if userInfo.SecretKey != opt.SecretKey {
+			err = proto.ErrNoPermission
+			return
+		}
+		var policy = userInfo.Policy
+		if policy.IsOwn(opt.Volname) {
+			return
+		}
+		if policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXWriteAction) &&
+			policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXReadAction) {
+			return
+		}
+		if policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXReadAction) &&
+			!policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXWriteAction) {
+			opt.Rdonly = true
+			return
+		}
+		err = proto.ErrNoPermission
+		return
+	}
+	return
+}
+
 func initFs(cfg *pathCfg) (api FsApi) {
 	if cfg.tp == OsTyp {
 		return &OsFs{}
 	}
 
 	opt := cfg.option
+	err := checkPermission(opt)
+	if err != nil {
+		log.Fatalf("check cubefs perm failed, check your ak&sk&owner err %s", err.Error())
+	}
+
 	super, err := cfs.NewSuper(opt)
 	if err != nil {
-		log.Fatalf("config illegal, new super failed, err %s option %v", err.Error(), *cfg.option)
+		log.Fatalf("config illegal, new super failed, err %s", err.Error())
 	}
 
 	var masters = strings.Split(opt.Master, meta.HostsSeparator)
