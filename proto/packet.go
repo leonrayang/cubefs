@@ -215,7 +215,6 @@ const (
 	VersionDeleting = 3
 )
 
-
 const (
 	TinyExtentType   = 0
 	NormalExtentType = 1

@@ -374,6 +374,7 @@ func (p *Packet) IsMasterCommand() bool {
 	switch p.Opcode {
 	case
 		proto.OpDataNodeHeartbeat,
+		proto.OpVersionOperation,
 		proto.OpLoadDataPartition,
 		proto.OpCreateDataPartition,
 		proto.OpDeleteDataPartition,

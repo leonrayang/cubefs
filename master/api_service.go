@@ -3114,6 +3114,7 @@ func (m *Server) CreateVersion(w http.ResponseWriter, r *http.Request) {
 
 	if ver, err = vol.VersionMgr.createVer2PhaseTask(m.cluster, uint64(time.Now().Unix()),  proto.CreateVersion, force); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVersionOpError, Msg: err.Error()})
+		return
 	}
 
 	sendOkReply(w, r, newSuccessHTTPReply(ver))
