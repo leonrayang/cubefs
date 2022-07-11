@@ -251,6 +251,7 @@ func (m *DataNode) prepareCreateVersion(req *proto.MultiVersionOpRequest) (err e
 	var (
 		ver2Phase *verOp2Phase
 	)
+	log.LogInfof("action[prepareCreateVersion] volume %v req verseq %v op %v", req.VolumeID, req.VerSeq, req.VerSeq)
 	if value, ok := m.volUpdating.Load(req.VolumeID); ok {
 		ver2Phase = value.(*verOp2Phase)
 		if req.VerSeq < ver2Phase.verSeq {
@@ -328,43 +329,54 @@ func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 		}
 	}()
 	if err != nil {
+		log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
 		return
 	}
 
 	go func() {
 		request := &proto.MultiVersionOpRequest{}
 		response := &proto.MultiVersionOpResponse{}
-		response.Status = proto.TaskSucceeds
+		response.Op = task.OpCode
+		response.Status = proto.TaskFailed
 
 		if task.OpCode == proto.OpVersionOperation {
 			marshaled, _ := json.Marshal(task.Request)
 			if err = json.Unmarshal(marshaled, request); err != nil {
 				log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
-				response.Status = proto.TaskFailed
+				goto end
 			}
 
 			if request.Op == proto.CreateVersionPrepare {
-				s.prepareCreateVersion(request)
+				if err, _ = s.prepareCreateVersion(request); err == nil {
+					response.Status = proto.TaskSucceeds
+				}
 			} else {
 				for _, dp := range s.space.partitions {
 					if dp.volumeID != request.VolumeID {
 						continue
 					}
 					dp.UpdateVersion(request)
-					response.VerSeq = request.VerSeq
-					response.Op = request.Op
-					response.Addr = request.Addr
+					response.Status = proto.TaskSucceeds
 				}
 				log.LogInfof("action[handleUpdateVerPacket] handle master version reqeust %v", request)
 			}
+
+			response.VerSeq = request.VerSeq
+			response.Op = request.Op
+			response.Addr = request.Addr
+			response.VolumeID = request.VolumeID
+
 		} else {
-			response.Status = proto.TaskFailed
 			err = fmt.Errorf("illegal opcode")
 			response.Result = err.Error()
+			goto end
 		}
+end:
 		task.Response = response
+
+		log.LogInfof("action[handleUpdateVerPacket] rsp to client,req vol %v, verseq %v, op %v", request.VolumeID, request.VerSeq, request.Op)
 		if err = MasterClient.NodeAPI().ResponseDataNodeTask(task); err != nil {
-			err = errors.Trace(err, "heartbeat to master failed.")
+			err = errors.Trace(err, "handleUpdateVerPacket to master failed.")
 			log.LogErrorf(err.Error())
 			return
 		}

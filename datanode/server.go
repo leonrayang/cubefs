@@ -130,7 +130,7 @@ type DataNode struct {
 	metrics        *DataNodeMetrics
 	metricsDegrade int64
 	metricsCnt     uint64
-	volUpdating        *sync.Map //map[string]*verOp2Phase
+	volUpdating    sync.Map //map[string]*verOp2Phase
 
 	control common.Control
 }
