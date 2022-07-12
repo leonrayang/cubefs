@@ -459,6 +459,9 @@ func (mw *MetaWrapper) iget(mp *MetaPartition, inode uint64) (status int, info *
 	packet := proto.NewPacketReqID()
 	packet.Opcode = proto.OpMetaInodeGet
 	packet.PartitionID = mp.PartitionID
+
+	log.LogDebugf("action[iget] pack mp id %v, req vol name %v inode %v", mp.PartitionID, req.VolName, req.Inode)
+
 	err = packet.MarshalData(req)
 	if err != nil {
 		log.LogErrorf("iget: req(%v) err(%v)", *req, err)

@@ -373,8 +373,9 @@ func (api *AdminAPI) GetClusterInfo() (ci *proto.ClusterInfo, err error) {
 	return
 }
 
-func (api *AdminAPI) GetVerInfo() (ci *proto.VolumeVerInfo, err error) {
+func (api *AdminAPI) GetVerInfo(volName string) (ci *proto.VolumeVerInfo, err error) {
 	var request = newAPIRequest(http.MethodGet, proto.AdminGetVolVer)
+	request.addParam("name", volName)
 	var buf []byte
 	if buf, err = api.mc.serveRequest(request); err != nil {
 		return

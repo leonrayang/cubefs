@@ -238,6 +238,7 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error
 	bgTime := stat.BeginStat()
 	defer func() {
 		stat.EndStat("Release", err, bgTime, 1)
+		log.LogInfof("action[Release] %v", f.fWriter)
 		f.fWriter.FreeCache()
 	}()
 

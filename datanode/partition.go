@@ -328,14 +328,14 @@ func (dp *DataPartition) replicasInit() {
 	}
 }
 
-func (dp *DataPartition) UpdateVersion(req *proto.MultiVersionOpRequest) (err error) {
-	log.LogInfof("action[UpdateVersion] update seq from [%v] to [%v]", dp.verSeq, req.VerSeq)
-	if req.VerSeq < dp.verSeq {
-		err = fmt.Errorf("error.seq [%v] less than exist [%v]", req.VerSeq, dp.verSeq)
+func (dp *DataPartition) UpdateVersion(verSeq uint64) (err error) {
+	log.LogInfof("action[UpdateVersion] update seq from [%v] to [%v]", dp.verSeq, verSeq)
+	if verSeq < dp.verSeq {
+		err = fmt.Errorf("error.seq [%v] less than exist [%v]", verSeq, dp.verSeq)
 		log.LogErrorf("action[UpdateVersion] %v", err)
 		return
 	}
-	dp.verSeq = req.VerSeq
+	dp.verSeq = verSeq
 	return
 }
 
