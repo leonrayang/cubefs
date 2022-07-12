@@ -1624,31 +1624,65 @@ func (m *metadataManager) prepareCreateVersion(req *proto.MultiVersionOpRequest)
 
 	m.volUpdating.Store(req.VolumeID, ver2Phase)
 
-	log.LogWarnf("action[prepareCreateVersion] update to step %v ver %v step %")
+	log.LogWarnf("action[prepareCreateVersion] volume %v update to step %v ver %v step %",
+		req.VolumeID, uint32(req.Op), req.VerSeq, ver2Phase.step)
 	return
 }
 
-func (m *metadataManager) commitCreateVersion(req *proto.MultiVersionOpRequest) (err error){
-	if value, ok := m.volUpdating.Load(req.VolumeID); ok {
+func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op uint8) (err error){
+
+	log.LogWarnf("action[opMultiVersionOp] volume %v seq %v", VolumeID, VerSeq)
+	m.Range(func(id uint64, partition MetaPartition) bool {
+		if partition.GetVolName() == VolumeID {
+			if _, ok := partition.IsLeader(); !ok {
+				return true
+			}
+			log.LogInfof("action[opMultiVersionOp] volume %v mp  %v do MultiVersionOp verseq %v", VolumeID, id, VerSeq)
+			if err = partition.MultiVersionOp(Op, VerSeq); err != nil {
+				return false
+			}
+			return true
+		}
+		return true
+	})
+	if err != nil {
+		log.LogErrorf("action[opMultiVersionOp] %v mp  err %v do Decoder", VolumeID, err.Error())
+		return err
+	}
+
+	if value, ok := m.volUpdating.Load(VolumeID); ok {
 		ver2Phase := value.(*verOp2Phase)
-		if req.VerSeq < ver2Phase.verSeq {
-			err = fmt.Errorf("vol %v seq %v create less than loal %v", req.VolumeID, req.VerSeq, ver2Phase.verSeq)
+		log.LogWarnf("action[commitCreateVersion] try commit volume %v prepare seq %v with commit seq %v",
+			VolumeID, ver2Phase.verPrepare, VerSeq)
+		if VerSeq < ver2Phase.verSeq {
+			err = fmt.Errorf("vol %v seq %v create less than loal %v", VolumeID, VerSeq, ver2Phase.verSeq)
+			log.LogErrorf("action[commitCreateVersion] err %v", err)
 			return
 		}
 		if ver2Phase.step != proto.CreateVersionPrepare {
-			err = fmt.Errorf("vol %v seq %v step not prepare", req.VolumeID)
+			err = fmt.Errorf("vol %v seq %v step not prepare", VolumeID)
+			log.LogErrorf("action[commitCreateVersion] err %v", err)
 			return
 		}
-		ver2Phase.verSeq = req.VerSeq
-		return
+		ver2Phase.verSeq = VerSeq
+		ver2Phase.step = proto.CreateVersionCommit
+		ver2Phase.status = proto.VersionWorkingFinished
+		log.LogWarnf("action[commitCreateVersion] commit volume %v prepare seq %v with commit seq %v",
+			VolumeID, ver2Phase.verPrepare, VerSeq)
 	}
-	return fmt.Errorf("vol %v not found", req.VolumeID)
+
+	err = fmt.Errorf("vol %v not found", VolumeID)
+	log.LogErrorf("action[commitCreateVersion] err %v", err)
+
+	return
 }
 
 func (m *metadataManager) checkMultiVersionStatus(volName string) (err error) {
+	log.LogInfof("action[checkMultiVersionStatus] volumeName %v", volName)
 	var info *proto.VolumeVerInfo
 	if value, ok := m.volUpdating.Load(volName); ok {
 		ver2Phase := value.(*verOp2Phase)
+
 		if atomic.LoadUint32(&ver2Phase.status) != proto.VersionWorkingAbnormal  &&
 			atomic.LoadUint32(&ver2Phase.step) == proto.CreateVersionPrepare {
 
@@ -1658,29 +1692,33 @@ func (m *metadataManager) checkMultiVersionStatus(volName string) (err error) {
 			// check again in case of sth already happened by other goroutine during be blocked by lock
 			if atomic.LoadUint32(&ver2Phase.status) == proto.VersionWorkingAbnormal ||
 				atomic.LoadUint32(&ver2Phase.step) != proto.CreateVersionPrepare {
+				err = fmt.Errorf("volumeName %v status %v step %v",
+					volName, atomic.LoadUint32(&ver2Phase.status), atomic.LoadUint32(&ver2Phase.step))
+				log.LogErrorf("action[checkMultiVersionStatus] err %v", err)
 				return
 			}
 
-			if info, err = masterClient.AdminAPI().GetVerInfo(); err != nil {
+			if info, err = masterClient.AdminAPI().GetVerInfo(volName); err != nil {
+				log.LogErrorf("action[checkMultiVersionStatus] volumeName %v status %v step %v err %v",
+					volName, atomic.LoadUint32(&ver2Phase.status), atomic.LoadUint32(&ver2Phase.step), err)
 				return
 			}
 			if info.VerSeqPrepare != ver2Phase.verPrepare {
 			 	atomic.StoreUint32(&ver2Phase.status, proto.VersionWorkingAbnormal)
+				err = fmt.Errorf("volumeName %v status %v step %v",
+					volName, atomic.LoadUint32(&ver2Phase.status), atomic.LoadUint32(&ver2Phase.step))
+				log.LogErrorf("action[checkMultiVersionStatus] err %v", err)
 				return
 			}
 			if info.VerPrepareStatus == proto.CreateVersionCommit {
-				ver2Phase.step = proto.CreateVersionCommit
-				m.Range(func(id uint64, partition MetaPartition) bool {
-					if _, ok := partition.IsLeader(); !ok {
-						return true
-					}
-					log.LogInfof("action[checkMultiVersionStatus] volume %v mp  %v do MultiVersionOp", volName, ver2Phase.verSeq)
-					partition.MultiVersionOp(proto.CreateVersionCommit, info.VerSeqPrepare)
-					return true
-
-				})
+				if err = m.commitCreateVersion(volName, info.VerSeqPrepare, proto.CreateVersionCommit); err != nil {
+					log.LogErrorf("action[checkMultiVersionStatus] err %v", err)
+					return
+				}
 			}
 		}
+	} else {
+		log.LogErrorf("action[checkMultiVersionStatus] volumeName %v not found", volName)
 	}
 	return
 }
@@ -1719,27 +1757,14 @@ func (m *metadataManager) opMultiVersionOp(conn net.Conn, p *Packet,
 
 		if req.Op == proto.CreateVersionPrepare {
 			if err, opAgain = m.prepareCreateVersion(req); err != nil || opAgain {
+				log.LogErrorf("action[opMultiVersionOp] %v mp  err %v do Decoder", req.VolumeID, err.Error())
 				goto end
 			}
 		} else {
-			log.LogWarnf("action[opMultiVersionOp] volume %v seq %v", req.VolumeID, req.VerSeq)
-			m.Range(func(id uint64, partition MetaPartition) bool {
-				if partition.GetVolName() == req.VolumeID {
-					if _, ok := partition.IsLeader(); !ok {
-						return true
-					}
-					log.LogInfof("action[opMultiVersionOp] volume %v mp  %v do MultiVersionOp verseq %v", req.VolumeID, id, req.VerSeq)
-					if err = partition.MultiVersionOp(req.Op, req.VerSeq); err != nil {
-						return false
-					}
-					return true
-				}
-				return true
-			})
-			if err != nil {
+			if err = m.commitCreateVersion(req.VolumeID, req.VerSeq, req.Op); err != nil {
+				log.LogErrorf("action[opMultiVersionOp] %v mp  err %v do Decoder", req.VolumeID, err.Error())
 				goto end
 			}
-			err = m.commitCreateVersion(req)
 		}
 	end:
 		if err != nil {

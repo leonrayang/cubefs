@@ -248,17 +248,54 @@ func (s *DataNode) handlePacketToCreateDataPartition(p *repl.Packet) {
 	return
 }
 
+func (s *DataNode) commitCreateVersion(volumeID string, verSeq uint64) (err error){
+
+	for _, dp := range s.space.partitions {
+		if dp.volumeID != volumeID {
+			continue
+		}
+		dp.UpdateVersion(verSeq)
+	}
+	log.LogInfof("action[handleUpdateVerPacket] handle master version reqeust seq%v", verSeq)
+
+	if value, ok := s.volUpdating.Load(volumeID); ok {
+		ver2Phase := value.(*verOp2Phase)
+		log.LogWarnf("action[commitCreateVersion] try commit volume %v prepare seq %v with commit seq %v",
+			volumeID, ver2Phase.verPrepare, verSeq)
+		if verSeq < ver2Phase.verSeq {
+			err = fmt.Errorf("vol %v seq %v create less than loal %v", volumeID, verSeq, ver2Phase.verSeq)
+			log.LogErrorf("action[commitCreateVersion] err %v", err)
+			return
+		}
+		if ver2Phase.step != proto.CreateVersionPrepare {
+			err = fmt.Errorf("vol %v seq %v step not prepare", volumeID)
+			log.LogErrorf("action[commitCreateVersion] err %v", err)
+			return
+		}
+		ver2Phase.verSeq = verSeq
+		ver2Phase.step = proto.CreateVersionCommit
+		ver2Phase.status = proto.VersionWorkingFinished
+		log.LogWarnf("action[commitCreateVersion] commit volume %v prepare seq %v with commit seq %v",
+			volumeID, ver2Phase.verPrepare, verSeq)
+		return
+	}
+
+	err = fmt.Errorf("vol %v not found", volumeID)
+	log.LogErrorf("action[commitCreateVersion] err %v", err)
+	return
+}
 
 
-func (m *DataNode) prepareCreateVersion(req *proto.MultiVersionOpRequest) (err error, opAagin bool) {
+func (s *DataNode) prepareCreateVersion(req *proto.MultiVersionOpRequest) (err error, opAagin bool) {
 	var (
 		ver2Phase *verOp2Phase
 	)
-	log.LogInfof("action[prepareCreateVersion] volume %v req verseq %v op %v", req.VolumeID, req.VerSeq, req.VerSeq)
-	if value, ok := m.volUpdating.Load(req.VolumeID); ok {
+	if value, ok := s.volUpdating.Load(req.VolumeID); ok {
 		ver2Phase = value.(*verOp2Phase)
 		if req.VerSeq < ver2Phase.verSeq {
 			err = fmt.Errorf("seq %v create less than loal %v", req.VerSeq, ver2Phase.verSeq)
+			log.LogErrorf("action[prepareCreateVersion] volume %v update to step %v ver %v step %",
+				req.VolumeID, uint32(req.Op), req.VerSeq, ver2Phase.step)
 			return
 		} else if req.VerSeq == ver2Phase.verPrepare {
 			if ver2Phase.step == proto.VersionWorking {
@@ -266,64 +303,68 @@ func (m *DataNode) prepareCreateVersion(req *proto.MultiVersionOpRequest) (err e
 				return
 			}
 		}
-	} else {
-		ver2Phase = &verOp2Phase{}
-		ver2Phase.op = req.Op
-		m.volUpdating.Store(req.VolumeID, ver2Phase)
 	}
-
-	ver2Phase.step = proto.VersionWorking
+	ver2Phase = &verOp2Phase{}
+	ver2Phase.step = uint32(req.Op)
+	ver2Phase.status = proto.VersionWorking
 	ver2Phase.verPrepare = req.VerSeq
-	ver2Phase.step = proto.CreateVersionPrepare
+
+	s.volUpdating.Store(req.VolumeID, ver2Phase)
+
+	log.LogWarnf("action[prepareCreateVersion] volume %v update to step %v ver %v step %",
+		req.VolumeID, uint32(req.Op), req.VerSeq, ver2Phase.step)
 	return
 }
 
-func (m *DataNode) checkMultiVersionStatus(volName string) (err error) {
+func (s *DataNode) checkMultiVersionStatus(volName string) (err error) {
+	log.LogInfof("action[checkMultiVersionStatus] volumeName %v", volName)
 	var info *proto.VolumeVerInfo
-	if value, ok := m.volUpdating.Load(volName); ok {
+	if value, ok := s.volUpdating.Load(volName); ok {
 		ver2Phase := value.(*verOp2Phase)
+
 		if atomic.LoadUint32(&ver2Phase.status) != proto.VersionWorkingAbnormal  &&
 			atomic.LoadUint32(&ver2Phase.step) == proto.CreateVersionPrepare {
 
 			ver2Phase.Lock() // here trylock may be better after go1.18 adapted to compile
 			defer ver2Phase.Unlock()
 
-			// check again in case of sth already happened during be blocked by lock
+			// check again in case of sth already happened by other goroutine during be blocked by lock
 			if atomic.LoadUint32(&ver2Phase.status) == proto.VersionWorkingAbnormal ||
 				atomic.LoadUint32(&ver2Phase.step) != proto.CreateVersionPrepare {
+				err = fmt.Errorf("volumeName %v status %v step %v",
+					volName, atomic.LoadUint32(&ver2Phase.status), atomic.LoadUint32(&ver2Phase.step))
+				log.LogErrorf("action[checkMultiVersionStatus] err %v", err)
 				return
 			}
 
-			if info, err = MasterClient.AdminAPI().GetVerInfo(); err != nil {
+			if info, err = MasterClient.AdminAPI().GetVerInfo(volName); err != nil {
+				log.LogErrorf("action[checkMultiVersionStatus] volumeName %v status %v step %v err %v",
+					volName, atomic.LoadUint32(&ver2Phase.status), atomic.LoadUint32(&ver2Phase.step), err)
 				return
 			}
 			if info.VerSeqPrepare != ver2Phase.verPrepare {
-				ver2Phase.status = proto.VersionWorkingAbnormal
+				atomic.StoreUint32(&ver2Phase.status, proto.VersionWorkingAbnormal)
+				err = fmt.Errorf("volumeName %v status %v step %v",
+					volName, atomic.LoadUint32(&ver2Phase.status), atomic.LoadUint32(&ver2Phase.step))
+				log.LogErrorf("action[checkMultiVersionStatus] err %v", err)
 				return
 			}
 			if info.VerPrepareStatus == proto.CreateVersionCommit {
-				ver2Phase.step = proto.CreateVersionCommit
-				for _, dp := range m.space.partitions {
-					if ver2Phase.verSeq < dp.verSeq {
-						err = fmt.Errorf("error.seq [%v] less than exist [%v]", ver2Phase.verSeq, dp.verSeq)
-						log.LogErrorf("action[UpdateVersion] %v", err)
-						return
-					}
-					dp.verSeq = ver2Phase.verSeq
+				if err = s.commitCreateVersion(info.Name, info.VerSeq); err != nil {
+					log.LogErrorf("action[checkMultiVersionStatus] err %v", err)
+					return
 				}
 			}
 		}
+	} else {
+		log.LogErrorf("action[checkMultiVersionStatus] volumeName %v not found", volName)
 	}
 	return
 }
-
 // Handle OpHeartbeat packet.
 func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 	log.LogInfof("action[handleUpdateVerPacket] enter in")
 	var err error
-	task := &proto.AdminTask{}
-	err = json.Unmarshal(p.Data, task)
-
 	defer func() {
 		if err != nil {
 			p.PackErrorBody(ActionUpdateVersion, err.Error())
@@ -331,6 +372,9 @@ func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 			p.PacketOkReply()
 		}
 	}()
+
+	task := &proto.AdminTask{}
+	err = json.Unmarshal(p.Data, task)
 	if err != nil {
 		log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
 		return
@@ -340,28 +384,26 @@ func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 		request := &proto.MultiVersionOpRequest{}
 		response := &proto.MultiVersionOpResponse{}
 		response.Op = task.OpCode
-		response.Status = proto.TaskFailed
+		response.Status = proto.TaskSucceeds
 
 		if task.OpCode == proto.OpVersionOperation {
 			marshaled, _ := json.Marshal(task.Request)
 			if err = json.Unmarshal(marshaled, request); err != nil {
 				log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
+				response.Status = proto.TaskFailed
 				goto end
 			}
 
 			if request.Op == proto.CreateVersionPrepare {
-				if err, _ = s.prepareCreateVersion(request); err == nil {
-					response.Status = proto.TaskSucceeds
+				if err, _ = s.prepareCreateVersion(request); err != nil {
+					log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
+					goto end
 				}
 			} else {
-				for _, dp := range s.space.partitions {
-					if dp.volumeID != request.VolumeID {
-						continue
-					}
-					dp.UpdateVersion(request)
-					response.Status = proto.TaskSucceeds
+				if err = s.commitCreateVersion(request.VolumeID, request.VerSeq); err != nil {
+					log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
+					goto end
 				}
-				log.LogInfof("action[handleUpdateVerPacket] handle master version reqeust %v", request)
 			}
 
 			response.VerSeq = request.VerSeq
@@ -371,6 +413,7 @@ func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 
 		} else {
 			err = fmt.Errorf("illegal opcode")
+			log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
 			goto end
 		}
 end:

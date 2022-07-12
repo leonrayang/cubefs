@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"github.com/cubefs/cubefs/util/log"
 	"io"
-	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -389,7 +388,7 @@ func (i *Inode) MarshalValue() (val []byte) {
 	buff.Grow(64)
 	i.RLock()
 
-	log.LogInfof("action[MarshalValue] inode %v current verseq %v, stack (%v)", i.Inode, i.verSeq, string(debug.Stack()))
+	// log.LogInfof("action[MarshalValue] inode %v current verseq %v, stack (%v)", i.Inode, i.verSeq, string(debug.Stack()))
 	i.MarshalInodeValue(buff)
 	if err = binary.Write(buff, binary.BigEndian,int32(len(i.multiVersions))); err != nil {
 		panic(err)

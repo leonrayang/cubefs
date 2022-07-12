@@ -70,10 +70,11 @@ func newVersionMgr(vol *Vol) *VolVersionManager {
 	}
 }
 
-func (verMgr *VolVersionManager) commitVer() (ver *proto.VolVersionInfo){
-	log.LogInfof("action[commitVer] enter")
+func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo){
+	log.LogInfof("action[CommitVer] enter")
 
 	if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
+		ver = verMgr.prepareCommit.prepareInfo
 		verMgr.multiVersionList = append(verMgr.multiVersionList, ver)
 		verMgr.wait<-nil
 	} else {
@@ -83,7 +84,7 @@ func (verMgr *VolVersionManager) commitVer() (ver *proto.VolVersionInfo){
 			}
 		}
 	}
-	log.LogInfof("action[commitVer] exit")
+	log.LogInfof("action[CommitVer] exit")
 	return
 }
 
@@ -193,13 +194,13 @@ func (verMgr *VolVersionManager)  handleTaskRsp(resp *proto.MultiVersionOpRespon
 
 	if atomic.LoadUint32(&verMgr.prepareCommit.commitCnt) == verMgr.prepareCommit.nodeCnt {
 		if verMgr.prepareCommit.op == proto.DeleteVersion {
-			verMgr.commitVer()
+			verMgr.CommitVer()
 			verMgr.prepareCommit.reset()
 			verMgr.status = proto.VersionWorkingFinished
 		} else if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
 			log.LogInfof("action[handleTaskRsp] ver update prepare sucess. op %v, verseq %v,commit cnt %v",
 				resp.Op, resp.VerSeq, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt))
-			verMgr.commitVer()
+			verMgr.CommitVer()
 		} else if verMgr.prepareCommit.op == proto.CreateVersionCommit {
 			log.LogWarnf("action[handleTaskRsp] ver already update all node now! op %v, verseq %v,commit cnt %v",
 				resp.Op, resp.VerSeq, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt))
@@ -236,7 +237,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 				if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
 					verMgr.prepareCommit.reset()
 					verMgr.prepareCommit.op = proto.CreateVersionCommit
-					log.LogInfof("action[createVer2PhaseTask]")
+					log.LogInfof("action[createVer2PhaseTask] prepare fin.start commit")
 					return verMgr.createTask(cluster, verSeq, verMgr.prepareCommit.op, force)
 				}
 				return
@@ -400,6 +401,7 @@ func (verMgr *VolVersionManager) getLatestVer() (ver uint64) {
 	if size == 0 {
 		return 0
 	}
+	log.LogInfof("action[getLatestVer] ver len %v verMgr %v", size, verMgr)
 	return verMgr.multiVersionList[size-1].Ver
 }
 
