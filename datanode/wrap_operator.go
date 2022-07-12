@@ -368,12 +368,13 @@ func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 
 		} else {
 			err = fmt.Errorf("illegal opcode")
-			response.Result = err.Error()
 			goto end
 		}
 end:
+		if err != nil {
+			response.Result = err.Error()
+		}
 		task.Response = response
-
 		log.LogInfof("action[handleUpdateVerPacket] rsp to client,req vol %v, verseq %v, op %v", request.VolumeID, request.VerSeq, request.Op)
 		if err = MasterClient.NodeAPI().ResponseDataNodeTask(task); err != nil {
 			err = errors.Trace(err, "handleUpdateVerPacket to master failed.")
