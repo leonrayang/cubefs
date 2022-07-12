@@ -61,7 +61,6 @@ type verOp2Phase struct {
 	verPrepare  uint64
 	status      uint32
 	step        uint32
-	op          uint8
 	sync.Mutex
 }
 

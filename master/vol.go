@@ -159,9 +159,9 @@ func (verMgr *VolVersionManager)  handleTaskRsp(resp *proto.MultiVersionOpRespon
 					resp.Addr, partitionType, resp.Op, verMgr.prepareCommit.op)
 				atomic.AddUint32(&verMgr.prepareCommit.commitCnt, 1)
 				array.Store(resp.Addr, TypeReply)
-				if resp.Status != proto.TaskSucceeds {
-					log.LogErrorf("action[handleTaskRsp] type %v node %v rsp sucess. op %v, verseq %v,commit cnt %v, rsp status %v mgr status %v",
-						pType, resp.Addr, resp.Op, resp.VerSeq, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt), resp.Status, verMgr.status)
+				if resp.Status != proto.TaskSucceeds || resp.Result != "" {
+					log.LogErrorf("action[handleTaskRsp] type %v node %v rsp sucess. op %v, verseq %v,commit cnt %v, rsp status %v mgr status %v result %v",
+						pType, resp.Addr, resp.Op, resp.VerSeq, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt), resp.Status, verMgr.status, resp.Result)
 
 					if verMgr.status == proto.VersionWorking {
 						verMgr.status = proto.VersionWorkingAbnormal

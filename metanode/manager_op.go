@@ -1616,16 +1616,33 @@ func (m *metadataManager) prepareCreateVersion(req *proto.MultiVersionOpRequest)
 				return
 			}
 		}
-	} else {
-		ver2Phase = &verOp2Phase{}
-		ver2Phase.op = req.Op
-		m.volUpdating.Store(req.VolumeID, ver2Phase)
 	}
-
-	ver2Phase.step = proto.VersionWorking
+	ver2Phase = &verOp2Phase{}
+	ver2Phase.step = uint32(req.Op)
+	ver2Phase.status = proto.VersionWorking
 	ver2Phase.verPrepare = req.VerSeq
-	ver2Phase.step = proto.CreateVersionPrepare
+
+	m.volUpdating.Store(req.VolumeID, ver2Phase)
+
+	log.LogWarnf("action[prepareCreateVersion] update to step %v ver %v step %")
 	return
+}
+
+func (m *metadataManager) commitCreateVersion(req *proto.MultiVersionOpRequest) (err error){
+	if value, ok := m.volUpdating.Load(req.VolumeID); ok {
+		ver2Phase := value.(*verOp2Phase)
+		if req.VerSeq < ver2Phase.verSeq {
+			err = fmt.Errorf("vol %v seq %v create less than loal %v", req.VolumeID, req.VerSeq, ver2Phase.verSeq)
+			return
+		}
+		if ver2Phase.step != proto.CreateVersionPrepare {
+			err = fmt.Errorf("vol %v seq %v step not prepare", req.VolumeID)
+			return
+		}
+		ver2Phase.verSeq = req.VerSeq
+		return
+	}
+	return fmt.Errorf("vol %v not found", req.VolumeID)
 }
 
 func (m *metadataManager) checkMultiVersionStatus(volName string) (err error) {
@@ -1711,15 +1728,23 @@ func (m *metadataManager) opMultiVersionOp(conn net.Conn, p *Packet,
 					if _, ok := partition.IsLeader(); !ok {
 						return true
 					}
-					log.LogInfof("action[opMultiVersionOp] volume %v mp  %v do MultiVersionOp", req.VolumeID, req.VerSeq)
-					partition.MultiVersionOp(req.Op, req.VerSeq)
+					log.LogInfof("action[opMultiVersionOp] volume %v mp  %v do MultiVersionOp verseq %v", req.VolumeID, id, req.VerSeq)
+					if err = partition.MultiVersionOp(req.Op, req.VerSeq); err != nil {
+						return false
+					}
 					return true
 				}
 				return true
 			})
+			if err != nil {
+				goto end
+			}
+			err = m.commitCreateVersion(req)
 		}
-
 	end:
+		if err != nil {
+			resp.Result = err.Error()
+		}
 		adminTask.Request = nil
 		adminTask.Response = resp
 		m.respondToMaster(adminTask)
