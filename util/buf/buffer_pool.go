@@ -2,6 +2,7 @@ package buf
 
 import (
 	"fmt"
+	"github.com/cubefs/cubefs/util/log"
 	"golang.org/x/net/context"
 	"golang.org/x/time/rate"
 	"sync"
@@ -15,17 +16,26 @@ const (
 	InvalidLimit         = 0
 )
 
+const (
+	BufferTypeHeader = 0
+	BufferTypeNormal = 1
+	BufferTypeHeaderVer = 2
+)
+
 var tinyBuffersTotalLimit int64 = 4096
 var NormalBuffersTotalLimit int64
 var HeadBuffersTotalLimit int64
+var HeadVerBuffersTotalLimit int64
 
 var tinyBuffersCount int64
 var normalBuffersCount int64
 var headBuffersCount int64
+var headVerBuffersCount int64
 
 var buffersRateLimit = rate.NewLimiter(rate.Limit(16), 16)
 var normalBuffersRateLimit = rate.NewLimiter(rate.Limit(16), 16)
 var headBuffersRateLimit = rate.NewLimiter(rate.Limit(16), 16)
+var headVerBuffersRateLimit = rate.NewLimiter(rate.Limit(16), 16)
 
 func NewTinyBufferPool() *sync.Pool {
 	return &sync.Pool{
@@ -35,6 +45,18 @@ func NewTinyBufferPool() *sync.Pool {
 				buffersRateLimit.Wait(ctx)
 			}
 			return make([]byte, util.DefaultTinySizeLimit)
+		},
+	}
+}
+
+func NewHeadVerBufferPool() *sync.Pool {
+	return &sync.Pool{
+		New: func() interface{} {
+			if HeadVerBuffersTotalLimit != InvalidLimit && atomic.LoadInt64(&headVerBuffersCount) >= HeadVerBuffersTotalLimit {
+				ctx := context.Background()
+				headVerBuffersRateLimit.Wait(ctx)
+			}
+			return make([]byte, util.PacketHeaderVerSize)
 		},
 	}
 }
@@ -65,9 +87,10 @@ func NewNormalBufferPool() *sync.Pool {
 
 // BufferPool defines the struct of a buffered pool with 4 objects.
 type BufferPool struct {
-	pools      [2]chan []byte
+	pools      [3]chan []byte
 	tinyPool   *sync.Pool
 	headPool   *sync.Pool
+	headVerPool   *sync.Pool
 	normalPool *sync.Pool
 }
 
@@ -76,8 +99,10 @@ func NewBufferPool() (bufferP *BufferPool) {
 	bufferP = &BufferPool{}
 	bufferP.pools[0] = make(chan []byte, HeaderBufferPoolSize)
 	bufferP.pools[1] = make(chan []byte, HeaderBufferPoolSize)
+	bufferP.pools[2] = make(chan []byte, HeaderBufferPoolSize)
 	bufferP.tinyPool = NewTinyBufferPool()
 	bufferP.headPool = NewHeadBufferPool()
+	bufferP.headVerPool = NewHeadVerBufferPool()
 	bufferP.normalPool = NewNormalBufferPool()
 	return bufferP
 }
@@ -87,10 +112,15 @@ func (bufferP *BufferPool) get(index int, size int) (data []byte) {
 	case data = <-bufferP.pools[index]:
 		return
 	default:
-		if index == 0 {
+		if index == BufferTypeHeader {
 			return bufferP.headPool.Get().([]byte)
-		} else {
+		} else if index == BufferTypeNormal {
 			return bufferP.normalPool.Get().([]byte)
+		} else if index == BufferTypeHeaderVer {
+			return bufferP.headVerPool.Get().([]byte)
+		} else {
+			log.LogInfof("action[bufferPool.get] index %v not found", index)
+			return nil
 		}
 	}
 }
@@ -99,10 +129,13 @@ func (bufferP *BufferPool) get(index int, size int) (data []byte) {
 func (bufferP *BufferPool) Get(size int) (data []byte, err error) {
 	if size == util.PacketHeaderSize {
 		atomic.AddInt64(&headBuffersCount, 1)
-		return bufferP.get(0, size), nil
+		return bufferP.get(BufferTypeHeader, size), nil
+	} else if size == util.PacketHeaderVerSize {
+		atomic.AddInt64(&headVerBuffersCount, 1)
+		return bufferP.get(BufferTypeHeaderVer, size), nil
 	} else if size == util.BlockSize {
 		atomic.AddInt64(&normalBuffersCount, 1)
-		return bufferP.get(1, size), nil
+		return bufferP.get(BufferTypeNormal, size), nil
 	} else if size == util.DefaultTinySizeLimit {
 		atomic.AddInt64(&tinyBuffersCount, 1)
 		return bufferP.tinyPool.Get().([]byte), nil
@@ -115,10 +148,12 @@ func (bufferP *BufferPool) put(index int, data []byte) {
 	case bufferP.pools[index] <- data:
 		return
 	default:
-		if index == 0 {
+		if index == BufferTypeHeader {
 			bufferP.headPool.Put(data)
-		} else {
+		} else if index == BufferTypeNormal{
 			bufferP.normalPool.Put(data)
+		} else if index == BufferTypeHeaderVer {
+			bufferP.headVerPool.Put(data)
 		}
 	}
 }
@@ -130,10 +165,13 @@ func (bufferP *BufferPool) Put(data []byte) {
 	}
 	size := len(data)
 	if size == util.PacketHeaderSize {
-		bufferP.put(0, data)
+		bufferP.put(BufferTypeHeader, data)
 		atomic.AddInt64(&headBuffersCount, -1)
-	} else if size == util.BlockSize {
-		bufferP.put(1, data)
+	} else if size == util.PacketHeaderVerSize {
+		bufferP.put(BufferTypeHeaderVer, data)
+		atomic.AddInt64(&headVerBuffersCount, -1)
+	}else if size == util.BlockSize {
+		bufferP.put(BufferTypeNormal, data)
 		atomic.AddInt64(&normalBuffersCount, -1)
 	} else if size == util.DefaultTinySizeLimit {
 		bufferP.tinyPool.Put(data)

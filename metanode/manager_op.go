@@ -518,23 +518,27 @@ func (m *metadataManager) opMetaInodeGet(conn net.Conn, p *Packet,
 	if err = json.Unmarshal(p.Data, req); err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
 		m.respondToClient(conn, p)
-		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
+		err = errors.NewErrorf("Unmarshal [%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
 	mp, err := m.getPartition(req.PartitionID)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
 		m.respondToClient(conn, p)
-		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
+		err = errors.NewErrorf("getPartition [%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
 	if !m.serveProxy(conn, mp, p) {
 		return
 	}
 	if err = mp.InodeGet(req, p); err != nil {
-		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
+		err = errors.NewErrorf("InodeGet [%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 	}
-	m.respondToClient(conn, p)
+
+	if err = m.respondToClient(conn, p); err != nil {
+		log.LogDebugf("%s [opMetaInodeGet] err [%v] req: %d - %v; resp: %v, body: %s",
+			remoteAddr, err, p.GetReqID(), req, p.GetResultMsg(), p.Data)
+	}
 	log.LogDebugf("%s [opMetaInodeGet] req: %d - %v; resp: %v, body: %s",
 		remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data)
 
@@ -1624,8 +1628,8 @@ func (m *metadataManager) prepareCreateVersion(req *proto.MultiVersionOpRequest)
 
 	m.volUpdating.Store(req.VolumeID, ver2Phase)
 
-	log.LogWarnf("action[prepareCreateVersion] volume %v update to step %v ver %v step %",
-		req.VolumeID, uint32(req.Op), req.VerSeq, ver2Phase.step)
+	log.LogWarnf("action[prepareCreateVersion] volume %v update to ver %v step %v",
+		req.VolumeID, req.VerSeq, ver2Phase.step)
 	return
 }
 
@@ -1660,7 +1664,7 @@ func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op
 			return
 		}
 		if ver2Phase.step != proto.CreateVersionPrepare {
-			err = fmt.Errorf("vol %v seq %v step not prepare", VolumeID)
+			err = fmt.Errorf("vol %v step not prepare", VolumeID)
 			log.LogErrorf("action[commitCreateVersion] err %v", err)
 			return
 		}

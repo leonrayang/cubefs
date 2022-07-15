@@ -692,6 +692,10 @@ func (mw *MetaWrapper) GetExtents(inode uint64) (gen uint64, size uint64, extent
 		log.LogErrorf("GetExtents: ino(%v) err(%v) status(%v)", inode, err, resp.Status)
 		return 0, 0, nil, statusToErrno(resp.Status)
 	}
+	extents = resp.Extents
+	gen = resp.Generation
+	size = resp.Size
+
 	// log.LogDebugf("GetObjExtents stack[%v]", string(debug.Stack()))
 	log.LogDebugf("GetExtents: ino(%v) gen(%v) size(%v) extents(%v)", inode, gen, size, extents)
 	return gen, size, extents, nil
