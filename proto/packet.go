@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/cubefs/cubefs/util/log"
 	"io"
 	"net"
 	"strconv"
@@ -147,7 +148,7 @@ const (
 	OpRandomWriteVer                 uint8 = 0xA3
 	OpSyncRandomWriteVer             uint8 = 0xA4
 	OpMetaLinkInodeVer     			 uint8 = 0xA5
-
+	OpSyncRandomWriteVerRsp          uint8 = 0xA4
 	// Commons
 	OpConflictExtentsErr uint8 = 0xF2
 	OpIntraGroupNetErr   uint8 = 0xF3
@@ -585,10 +586,17 @@ func (p *Packet) WriteToNoDeadLineConn(c net.Conn) (err error) {
 
 // WriteToConn writes through the given connection.
 func (p *Packet) WriteToConn(c net.Conn) (err error) {
-	header, err := Buffers.Get(util.PacketHeaderSize)
-	if err != nil {
-		header = make([]byte, util.PacketHeaderSize)
+	headSize := util.PacketHeaderSize
+	if p.Opcode == OpRandomWriteVer {
+		headSize = util.PacketHeaderVerSize
 	}
+	header, err := Buffers.Get(headSize)
+	if err != nil {
+		header = make([]byte, headSize)
+	}
+
+	log.LogErrorf("action[WriteToConn] buffer get nil,opcode %v head len [%v]", p.Opcode, len(header))
+
 	defer Buffers.Put(header)
 	c.SetWriteDeadline(time.Now().Add(WriteDeadlineTime * time.Second))
 	p.MarshalHeader(header)
@@ -612,13 +620,15 @@ func ReadFull(c net.Conn, buf *[]byte, readSize int) (err error) {
 
 
 // ReadFromConn reads the data from the given connection.
-// Recognize the version bit and parse out version
+// Recognize the version bit and parse out version,
+// to avoid version field rsp back , the rsp of random write from datanode with replace OpRandomWriteVer to OpRandomWriteVerRsp
 func (p *Packet) ReadFromConnWithVer(c net.Conn, timeoutSec int) (err error) {
 	if timeoutSec != NoReadDeadlineTime {
 		c.SetReadDeadline(time.Now().Add(time.Second * time.Duration(timeoutSec)))
 	} else {
 		c.SetReadDeadline(time.Time{})
 	}
+
 	header, err := Buffers.Get(util.PacketHeaderSize)
 	if err != nil {
 		header = make([]byte, util.PacketHeaderSize)
@@ -853,5 +863,7 @@ func (p *Packet) IsBatchDeleteExtents() bool {
 func InitBufferPool(bufLimit int64) {
 	buf.NormalBuffersTotalLimit = bufLimit
 	buf.HeadBuffersTotalLimit = bufLimit
+	buf.HeadVerBuffersTotalLimit = bufLimit
+
 	Buffers = buf.NewBufferPool()
 }

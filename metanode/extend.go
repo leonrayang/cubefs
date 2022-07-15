@@ -74,9 +74,9 @@ func NewExtendFromBytes(raw []byte) (*Extend, error) {
 		ext.Put(k, v, 0)
 	}
 	var verSeq uint64
-	if verSeq, err = binary.ReadUvarint(buffer); err != nil {
-		return nil, nil
-	}
+	//if verSeq, err = binary.ReadUvarint(buffer); err != nil {
+	//	return nil, nil
+	//}
 	ext.verSeq = verSeq
 	return ext, nil
 }
@@ -178,11 +178,11 @@ func (e *Extend) Bytes() ([]byte, error) {
 		}
 	}
 
-	if e.verSeq > 0 {
-		n = binary.PutUvarint(tmp, e.verSeq)
-		if _, err = buffer.Write(tmp[:n]); err != nil {
-			return nil, err
-		}
-	}
+	//if e.verSeq > 0 {
+	//	n = binary.PutUvarint(tmp, e.verSeq)
+	//	if _, err = buffer.Write(tmp[:n]); err != nil {
+	//		return nil, err
+	//	}
+	//}
 	return buffer.Bytes(), nil
 }

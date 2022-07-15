@@ -221,7 +221,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 	verMgr.prepareCommit.op = proto.CreateVersionPrepare
 	log.LogInfof("action[createVer2PhaseTask] CreateVersionPrepare")
 	if _, err = verMgr.createTask(cluster, verSeq, verMgr.prepareCommit.op, force); err != nil {
-		log.LogInfof("action[createVer2PhaseTask] CreateVersionPrepare err", err)
+		log.LogInfof("action[createVer2PhaseTask] CreateVersionPrepare err %v", err)
 		return
 	}
 	ticker := time.NewTicker(time.Second)

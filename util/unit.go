@@ -40,6 +40,7 @@ const (
 	PacketHeaderSize   = 57
 	BlockHeaderSize    = 4096
 	SyscallTryMaxTimes = 3
+	PacketHeaderVerSize = 65
 )
 
 const (

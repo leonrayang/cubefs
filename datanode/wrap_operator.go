@@ -268,7 +268,7 @@ func (s *DataNode) commitCreateVersion(volumeID string, verSeq uint64) (err erro
 			return
 		}
 		if ver2Phase.step != proto.CreateVersionPrepare {
-			err = fmt.Errorf("vol %v seq %v step not prepare", volumeID)
+			err = fmt.Errorf("vol %v seq %v step not prepare", volumeID, ver2Phase.step)
 			log.LogErrorf("action[commitCreateVersion] err %v", err)
 			return
 		}
@@ -294,8 +294,7 @@ func (s *DataNode) prepareCreateVersion(req *proto.MultiVersionOpRequest) (err e
 		ver2Phase = value.(*verOp2Phase)
 		if req.VerSeq < ver2Phase.verSeq {
 			err = fmt.Errorf("seq %v create less than loal %v", req.VerSeq, ver2Phase.verSeq)
-			log.LogErrorf("action[prepareCreateVersion] volume %v update to step %v ver %v step %",
-				req.VolumeID, uint32(req.Op), req.VerSeq, ver2Phase.step)
+			log.LogInfof("action[prepareCreateVersion] volume %v update to ver %v step %v",	req.VolumeID, req.VerSeq, ver2Phase.step)
 			return
 		} else if req.VerSeq == ver2Phase.verPrepare {
 			if ver2Phase.step == proto.VersionWorking {
@@ -311,8 +310,8 @@ func (s *DataNode) prepareCreateVersion(req *proto.MultiVersionOpRequest) (err e
 
 	s.volUpdating.Store(req.VolumeID, ver2Phase)
 
-	log.LogWarnf("action[prepareCreateVersion] volume %v update to step %v ver %v step %",
-		req.VolumeID, uint32(req.Op), req.VerSeq, ver2Phase.step)
+	log.LogWarnf("action[prepareCreateVersion] volume %v update to step %v step %v",
+		req.VolumeID, req.VerSeq, ver2Phase.step)
 	return
 }
 
@@ -759,6 +758,10 @@ func (s *DataNode) handleRandomWritePacket(p *repl.Packet) {
 		if err != nil {
 			p.PackErrorBody(ActionWrite, err.Error())
 		} else {
+			// avoid rsp pack ver info into package which client need do more work to read buffer
+			if p.Opcode == proto.OpRandomWriteVer || p.Opcode == proto.OpSyncRandomWriteVer {
+				p.Opcode = proto.OpSyncRandomWriteVerRsp
+			}
 			p.PacketOkReply()
 		}
 	}()

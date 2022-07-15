@@ -185,8 +185,8 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 
 	if status == proto.OpOk {
 		resp := &proto.GetExtentsResponse{}
-		log.LogInfof("action[ExtentsList] verseq %v", req.VerSeq)
-
+		log.LogInfof("action[ExtentsList] inode %v request verseq %v ino ver %v extent size %v ino.Size %v",
+			req.Inode, req.VerSeq, ino.verSeq, len(ino.Extents.eks), ino.Size)
 
 		if req.VerSeq > 0 && ino.verSeq > 0 {
 			mp.GetExtentByVer(ino, req, resp)
@@ -196,6 +196,7 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 				resp.Size = ino.Size
 				ino.Extents.Range(func(ek proto.ExtentKey) bool {
 					resp.Extents = append(resp.Extents, ek)
+					log.LogInfof("action[ExtentsList] append ek %v", ek)
 					return true
 				})
 			})
