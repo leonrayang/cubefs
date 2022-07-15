@@ -347,6 +347,7 @@ func (p *Packet) ReadFromConnFromCli(c net.Conn, deadlineTime time.Duration) (er
 		return
 	}
 	if p.Opcode == proto.OpRandomWriteVer {
+		log.LogInfof("action[ReadFromConnFromCli] option OpRandomWriteVer [%v]", p.Opcode)
 		ver := make([]byte, 8)
 		if _, err = io.ReadFull(c, ver); err != nil {
 			return
