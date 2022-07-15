@@ -110,7 +110,10 @@ func (s *DataNode) OperatePacket(p *repl.Packet, c net.Conn) (err error) {
 			case proto.OpStreamRead, proto.OpRead, proto.OpExtentRepairRead, proto.OpStreamFollowerRead:
 			case proto.OpReadTinyDeleteRecord:
 				log.LogRead(logContent)
-			case proto.OpWrite, proto.OpRandomWrite, proto.OpSyncRandomWrite, proto.OpSyncWrite, proto.OpMarkDelete:
+			case proto.OpWrite, proto.OpRandomWrite,
+				 proto.OpRandomWriteVer, proto.OpSyncRandomWriteVer,
+				 proto.OpRandomWriteAppend, proto.OpSyncRandomWriteAppend,
+				 proto.OpSyncRandomWrite, proto.OpSyncWrite, proto.OpMarkDelete:
 				log.LogWrite(logContent)
 			default:
 				log.LogInfo(logContent)
@@ -138,7 +141,9 @@ func (s *DataNode) OperatePacket(p *repl.Packet, c net.Conn) (err error) {
 		s.handleMarkDeletePacket(p, c)
 	case proto.OpBatchDeleteExtent:
 		s.handleBatchMarkDeletePacket(p, c)
-	case proto.OpRandomWrite, proto.OpSyncRandomWrite, proto.OpRandomWriteAppend, proto.OpSyncRandomWriteAppend:
+	case proto.OpRandomWrite, proto.OpSyncRandomWrite,
+		 proto.OpRandomWriteAppend, proto.OpSyncRandomWriteAppend,
+		 proto.OpRandomWriteVer, proto.OpSyncRandomWriteVer:
 		s.handleRandomWritePacket(p)
 	case proto.OpNotifyReplicasToRepair:
 		s.handlePacketToNotifyExtentRepair(p)
