@@ -47,38 +47,44 @@ func getUser() *User {
 	return u
 }
 
-func PrintUsage() {
-	fmt.Printf("use-age: %s cp localpath cid://path\n", os.Args[0])
-	fmt.Printf("use-age: %s cp cid://path localpath\n", os.Args[0])
-	fmt.Printf("use-age: %s sync localpath cid://path\n", os.Args[0])
-	fmt.Printf("use-age: %s sync cid://path localpath\n", os.Args[0])
+func PrintUsageArgs(args []string) {
+	fmt.Printf("use-age: %s cp localpath cid://path\n", args[0])
+	fmt.Printf("use-age: %s cp cid://path localpath\n", args[0])
+	fmt.Printf("use-age: %s sync localpath cid://path\n", args[0])
+	fmt.Printf("use-age: %s sync cid://path localpath\n", args[0])
 
-	fmt.Printf("use-age: %s del cid://path\n", os.Args[0])
+	fmt.Printf("use-age: %s del cid://path\n", args[0])
 
-	fmt.Printf("use-age: %s show all\n", os.Args[0])
-	fmt.Printf("use-age: %s show idc idc-name\n", os.Args[0])
-	fmt.Printf("use-age: %s show cluster cluster-name\n", os.Args[0])
+	fmt.Printf("use-age: %s show all\n", args[0])
+	fmt.Printf("use-age: %s show idc idc-name\n", args[0])
+	fmt.Printf("use-age: %s show cluster cluster-name\n", args[0])
 
-	fmt.Printf("use-age: %s ls cid://path\n", os.Args[0])
+	fmt.Printf("use-age: %s ls cid://path\n", args[0])
 
-	fmt.Printf("use-age: %s mkdir cid://path\n", os.Args[0])
+	fmt.Printf("use-age: %s mkdir cid://path\n", args[0])
+
+	fmt.Printf("use-age: %s file $filepath op(cp/sync)\n", args[0])
 }
 
-func (w *Walker) ExecuteCmd() {
-	switch os.Args[1] {
+func PrintUsage() {
+	PrintUsageArgs(os.Args)
+}
+
+func (w *Walker) ExecuteCmd(args []string) {
+	switch args[1] {
 	case "show":
-		w.showCmd()
+		w.showCmd(args)
 	case "ls":
-		w.lsCmd()
+		w.lsCmd(args)
 	case "mkdir":
-		w.mkdir()
+		w.mkdir(args)
 	default:
 		PrintUsage()
 	}
 }
 
-func (w *Walker) mkdir() {
-	if os.Args[2] == "" {
+func (w *Walker) mkdir(args []string) {
+	if args[2] == "" {
 		PrintUsage()
 		os.Exit(1)
 	}
@@ -91,7 +97,7 @@ func (w *Walker) mkdir() {
 
 }
 
-func (w *Walker) showCmd() {
+func (w *Walker) showCmd(args []string) {
 	cfg := &config{}
 	err := loadConfig(cfg, getCfgPath())
 	if err != nil {
@@ -99,21 +105,21 @@ func (w *Walker) showCmd() {
 	}
 
 	cfgs := make([]clusterCfg, 0)
-	if os.Args[2] == "idc" && os.Args[3] != "" {
-		idc := os.Args[3]
+	if args[2] == "idc" && args[3] != "" {
+		idc := args[3]
 		for _, c := range cfg.ClusterCfg {
 			if strings.Contains(c.Idc, idc) {
 				cfgs = append(cfgs, c)
 			}
 		}
-	} else if os.Args[2] == "cluster" && os.Args[3] != "" {
-		cluster := os.Args[3]
+	} else if args[2] == "cluster" && args[3] != "" {
+		cluster := args[3]
 		for _, c := range cfg.ClusterCfg {
 			if strings.Contains(c.Cluster, cluster) {
 				cfgs = append(cfgs, c)
 			}
 		}
-	} else if os.Args[2] == "all" {
+	} else if args[2] == "all" {
 		cfgs = cfg.ClusterCfg
 	} else {
 		PrintUsage()
@@ -147,8 +153,8 @@ func (w *Walker) showCmd() {
 	}
 }
 
-func (w *Walker) lsCmd() {
-	if os.Args[2] == "" {
+func (w *Walker) lsCmd(args []string) {
+	if args[2] == "" {
 		PrintUsage()
 		os.Exit(1)
 	}

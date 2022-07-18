@@ -103,7 +103,7 @@ func (w *Walker) Execute() {
 
 	err = checkMode(destParentStat, write)
 	if err != nil {
-		log.Fatalf("dest dir %s, err %s", srcCfg.dir, err.Error())
+		log.Fatalf("dest dir %s, err %s", destCfg.dir, err.Error())
 	}
 
 	srcStat, err := w.srcApi.statFile(srcCfg.dir, srcInode)
@@ -145,9 +145,6 @@ func (w *Walker) getDestPath(src string) string {
 }
 
 func (w *Walker) createDir(src, dest string, srcParentIno, destParentIno uint64) {
-	// if w.DestDir.dir == dest {
-	// 	clog.LogDebugf("[createDir] dest dir %s is baseDestDir, no need create again", dest)
-	// }
 
 	err := w.destApi.mkdir(dest, destParentIno)
 	if err != nil {

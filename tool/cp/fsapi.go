@@ -461,6 +461,11 @@ func checkMode(stat *syscall.Stat_t, op modeOp) error {
 	return fmt.Errorf("permission not allowed")
 }
 
+func getUint32(id string) uint32 {
+	uid, _ := strconv.Atoi(u.Uid)
+	return uint32(uid)
+}
+
 func (f *CubeFs) updateStat(dir string, srcStat *syscall.Stat_t, parentIno uint64) error {
 	clog.LogDebugf("start cfs.updateStat, dir %s", dir)
 	if isRootDIr(dir) {
@@ -473,8 +478,18 @@ func (f *CubeFs) updateStat(dir string, srcStat *syscall.Stat_t, parentIno uint6
 		return err
 	}
 
+	// in case dest dir can't visist
+	uid := getUint32(u.Uid)
+	gid := getUint32(u.Gid)
+	if uid == 0 {
+		uid = srcStat.Uid
+	}
+	if gid == 0 {
+		gid = srcStat.Gid
+	}
+
 	mode := fileMode(srcStat.Mode)
-	err = f.mw.Setattr(ino, valid, proto.Mode(mode), srcStat.Uid, srcStat.Gid, srcStat.Atim.Sec, srcStat.Mtim.Sec)
+	err = f.mw.Setattr(ino, valid, proto.Mode(mode), uid, gid, srcStat.Atim.Sec, srcStat.Mtim.Sec)
 	if err != nil {
 		return err
 	}
