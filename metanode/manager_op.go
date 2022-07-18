@@ -547,7 +547,7 @@ func (m *metadataManager) opMetaInodeGet(conn net.Conn, p *Packet,
 		if ver2Phase.verSeq > req.VerSeq {
 			//reuse ExtentType to identify flag of version inconsistent between metanode and client
 			//will resp to client and make client update all streamer's extent and it's verSeq
-			p.ExtentType |= proto.MultiVersionFlagRspFromMeta
+			p.ExtentType |= proto.MultiVersionFlag
 			p.VerSeq = ver2Phase.verSeq
 		}
 	}
@@ -1635,13 +1635,13 @@ func (m *metadataManager) prepareCreateVersion(req *proto.MultiVersionOpRequest)
 
 func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op uint8) (err error){
 
-	log.LogWarnf("action[opMultiVersionOp] volume %v seq %v", VolumeID, VerSeq)
+	log.LogWarnf("action[commitCreateVersion] volume %v seq %v", VolumeID, VerSeq)
 	m.Range(func(id uint64, partition MetaPartition) bool {
 		if partition.GetVolName() == VolumeID {
 			if _, ok := partition.IsLeader(); !ok {
 				return true
 			}
-			log.LogInfof("action[opMultiVersionOp] volume %v mp  %v do MultiVersionOp verseq %v", VolumeID, id, VerSeq)
+			log.LogInfof("action[commitCreateVersion] volume %v mp  %v do MultiVersionOp verseq %v", VolumeID, id, VerSeq)
 			if err = partition.MultiVersionOp(Op, VerSeq); err != nil {
 				return false
 			}
@@ -1650,7 +1650,7 @@ func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op
 		return true
 	})
 	if err != nil {
-		log.LogErrorf("action[opMultiVersionOp] %v mp  err %v do Decoder", VolumeID, err.Error())
+		log.LogErrorf("action[commitCreateVersion] %v mp  err %v do Decoder", VolumeID, err.Error())
 		return err
 	}
 
@@ -1673,6 +1673,7 @@ func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op
 		ver2Phase.status = proto.VersionWorkingFinished
 		log.LogWarnf("action[commitCreateVersion] commit volume %v prepare seq %v with commit seq %v",
 			VolumeID, ver2Phase.verPrepare, VerSeq)
+		return
 	}
 
 	err = fmt.Errorf("vol %v not found", VolumeID)
@@ -1766,7 +1767,7 @@ func (m *metadataManager) opMultiVersionOp(conn net.Conn, p *Packet,
 			}
 		} else {
 			if err = m.commitCreateVersion(req.VolumeID, req.VerSeq, req.Op); err != nil {
-				log.LogErrorf("action[opMultiVersionOp] %v mp  err %v do Decoder", req.VolumeID, err.Error())
+				log.LogErrorf("action[opMultiVersionOp] %v mp  err %v do commitCreateVersion", req.VolumeID, err.Error())
 				goto end
 			}
 		}

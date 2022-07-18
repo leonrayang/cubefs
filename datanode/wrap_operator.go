@@ -258,7 +258,7 @@ func (s *DataNode) commitCreateVersion(volumeID string, verSeq uint64) (err erro
 		}
 		dp.UpdateVersion(verSeq)
 	}
-	log.LogInfof("action[handleUpdateVerPacket] handle master version reqeust seq%v", verSeq)
+	log.LogInfof("action[commitCreateVersion] handle master version reqeust seq %v", verSeq)
 
 	if value, ok := s.volUpdating.Load(volumeID); ok {
 		ver2Phase := value.(*verOp2Phase)
@@ -318,7 +318,7 @@ func (s *DataNode) prepareCreateVersion(req *proto.MultiVersionOpRequest) (err e
 }
 
 func (s *DataNode) checkMultiVersionStatus(volName string) (err error) {
-	log.LogInfof("action[checkMultiVersionStatus] volumeName %v", volName)
+	log.LogDebugf("action[checkMultiVersionStatus] volumeName %v", volName)
 	var info *proto.VolumeVerInfo
 	if value, ok := s.volUpdating.Load(volName); ok {
 		ver2Phase := value.(*verOp2Phase)
@@ -358,7 +358,7 @@ func (s *DataNode) checkMultiVersionStatus(volName string) (err error) {
 			}
 		}
 	} else {
-		log.LogErrorf("action[checkMultiVersionStatus] volumeName %v not found", volName)
+		log.LogDebugf("action[checkMultiVersionStatus] volumeName %v not found", volName)
 	}
 	return
 }
@@ -708,6 +708,7 @@ func (s *DataNode) handleRandomWritePacket(p *repl.Packet) {
 		metricPartitionIOLabels map[string]string
 		partitionIOMetric       *exporter.TimePointCount
 	)
+
 	defer func() {
 		if err != nil {
 			p.PackErrorBody(ActionWrite, err.Error())
@@ -719,7 +720,9 @@ func (s *DataNode) handleRandomWritePacket(p *repl.Packet) {
 			p.PacketOkReply()
 		}
 	}()
+
 	partition := p.Object.(*DataPartition)
+	log.LogDebugf("action[handleRandomWritePacket opcod %v seq %v dpid %v dpseq %v extid %v", p.Opcode, p.VerSeq, p.PartitionID, partition.verSeq, p.ExtentID)
 
 	// cache or preload partition not support raft and repair.
 	if !partition.isNormalType() {
@@ -739,18 +742,18 @@ func (s *DataNode) handleRandomWritePacket(p *repl.Packet) {
 	}
 
 	if partition.verSeq > 0 {
+		log.LogDebugf("action[handleRandomWritePacket opcod %v seq %v dpid %v dpseq %v extid %v", p.Opcode, p.VerSeq, p.PartitionID, partition.verSeq, p.ExtentID)
 		if p.Opcode == proto.OpSyncRandomWrite || p.Opcode == proto.OpRandomWrite {
 			err = fmt.Errorf("volume enable mulit version")
 			log.LogErrorf("action[handleRandomWritePacket] error %v", err)
 			return
 		}
-		if p.Opcode == proto.OpRandomWriteVer || p.Opcode == proto.OpSyncRandomWriteVer {
-			if partition.verSeq > p.VerSeq {
-				p.ResultCode = proto.ErrCodeVersionOpError
-				err = fmt.Errorf("client verSeq[%v] small than dataPartiton ver[%v]", p.VerSeq, partition.verSeq)
-				log.LogErrorf("action[handleRandomWritePacket] error %v", err)
-				return
-			}
+		if p.VerSeq < partition.verSeq && (p.Opcode == proto.OpRandomWriteVer || p.Opcode == proto.OpSyncRandomWriteVer) {
+			p.ExtentType |= proto.MultiVersionFlag
+			err = storage.VerNotConsistentError
+			log.LogErrorf("action[handleRandomWritePacket] client verSeq[%v] small than dataPartiton ver[%v]", p.VerSeq, partition.verSeq)
+			p.VerSeq = partition.verSeq
+			return
 		}
 	}
 

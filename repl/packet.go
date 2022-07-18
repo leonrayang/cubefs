@@ -20,6 +20,7 @@ import (
 	"github.com/cubefs/cubefs/util/log"
 	"io"
 	"net"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -307,6 +308,9 @@ func (p *Packet) identificationErrorResultCode(errLog string, errMsg string) {
 		p.ResultCode = proto.OpAgain
 	} else if strings.Contains(errMsg, raft.ErrNotLeader.Error()) {
 		p.ResultCode = proto.OpTryOtherAddr
+	} else if strings.Contains(errMsg, storage.VerNotConsistentError.Error()) {
+		p.ResultCode = proto.ErrCodeVersionOpError
+		log.LogErrorf("action[identificationErrorResultCode] not change ver erro code, (%v)", string(debug.Stack()))
 	} else {
 		p.ResultCode = proto.OpIntraGroupNetErr
 	}

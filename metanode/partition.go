@@ -260,9 +260,6 @@ type metaPartition struct {
 	xattrLock              sync.Mutex
 	//snapshot
 	verSeq                  uint64
-	verPrePare              uint64
-	verPrePareTime          time.Time
-	verPreParestatus        uint8
 	multiVersionList 		[]*MetaMultiSnapshotInfo
 	versionLock             sync.Mutex
 }

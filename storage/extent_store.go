@@ -54,7 +54,8 @@ const (
 	RepairInterval               = 60
 	RandomWriteType              = 2
 	AppendWriteType              = 1
-	AppendWriteBySnapshotMode    = 3
+	AppendWriteVerType           = 3
+	AppendRandomWriteType        = 4
 	NormalExtentDeleteRetainTime = 3600 * 4
 )
 
@@ -328,7 +329,7 @@ func (s *ExtentStore) Write(extentID uint64, offset, size int64, data []byte, cr
 	// update access time
 	atomic.StoreInt64(&ei.AccessTime, time.Now().Unix())
 
-	if err = s.checkOffsetAndSize(extentID, offset, size); err != nil {
+	if err = s.checkOffsetAndSize(extentID, offset, size, writeType); err != nil {
 		return err
 	}
 	err = e.Write(data, offset, size, crc, writeType, isSync, s.PersistenceBlockCrc, ei)
@@ -340,8 +341,14 @@ func (s *ExtentStore) Write(extentID uint64, offset, size int64, data []byte, cr
 	return nil
 }
 
-func (s *ExtentStore) checkOffsetAndSize(extentID uint64, offset, size int64) error {
+func (s *ExtentStore) checkOffsetAndSize(extentID uint64, offset, size int64, writeType int) error {
 	if IsTinyExtent(extentID) {
+		return nil
+	}
+	if writeType == AppendRandomWriteType {
+		if offset < util.ExtentSize {
+			return NewParameterMismatchErr(fmt.Sprintf("writeType=%v offset=%v size=%v", writeType, offset, size))
+		}
 		return nil
 	}
 	if offset+size > util.BlockSize*util.BlockCount {
@@ -518,7 +525,9 @@ func (s *ExtentStore) GetExtentSnapshotModOffset(extentID uint64) (watermark int
 	if err != nil {
 		return
 	}
-	watermark = int64(einfo.SnapshotDataSize)
+	log.LogDebug("action[ExtentStore.GetExtentSnapshotModOffset] extId %v SnapshotDataSize %v", extentID, einfo.SnapshotDataSize)
+
+	watermark = einfo.SnapshotDataSize
 	if watermark%PageSize != 0 {
 		watermark = watermark + (PageSize - watermark%PageSize)
 	}

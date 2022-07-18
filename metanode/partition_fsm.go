@@ -252,17 +252,9 @@ func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
 	defer mp.versionLock.Unlock()
 	log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v", mp.config.PartitionId, opData.VerSeq, opData.Op)
 
-	if opData.Op == proto.CreateVersionPrepare {
-		mp.verPrePare = opData.VerSeq
-		mp.verPrePareTime = time.Now()
-		mp.verPreParestatus = proto.CreateVersionPrepare
-	} else if opData.Op == proto.CreateVersionCommit {
-		if mp.verPreParestatus != proto.CreateVersionPrepare || opData.VerSeq != mp.verPrePare {
-			err = fmt.Errorf("mp[%v] status to be commit but consistent", mp.config.PartitionId)
-			return
-		}
+	if opData.Op == proto.CreateVersionCommit {
 		cnt := len(mp.multiVersionList)
-		if cnt > 0 && uint64(mp.multiVersionList[cnt-1].VerSeq) >= opData.VerSeq {
+		if cnt > 0 && mp.multiVersionList[cnt-1].VerSeq >= opData.VerSeq {
 			log.LogErrorf("action[MultiVersionOp] reqeust seq %v lessOrEqual last exist snapshot seq %v",
 				mp.multiVersionList[cnt-1].VerSeq, opData.VerSeq)
 			return
@@ -272,10 +264,9 @@ func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
 			Ctime: time.Now(),
 			VerSeq: opData.VerSeq,
 		}
-		mp.multiVersionList = append(mp.multiVersionList, newVer)
 		mp.verSeq = opData.VerSeq
-		mp.verPreParestatus = proto.CreateVersionCommit
-		mp.verPrePare = 0
+		mp.multiVersionList = append(mp.multiVersionList, newVer)
+
 		log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v, seqArray size %v", mp.config.PartitionId, opData.VerSeq, opData.Op, len(mp.multiVersionList))
 	} else 	if opData.Op == proto.DeleteVersion {
 		for i, ver := range mp.multiVersionList {
@@ -286,6 +277,9 @@ func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
 				break
 			}
 		}
+	} else {
+		log.LogErrorf("action[fsmVersionOp] mp %v with seq %v process op type %v seq %v not found",
+			mp.config.PartitionId, mp.verSeq, opData.Op, opData.VerSeq)
 	}
 	return
 }

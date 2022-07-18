@@ -585,7 +585,7 @@ func (i *Inode) PrintAllVersionInfo() {
 
 // restore ext info to older version or deleted if no right version
 func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExtents []proto.ExtentKey, err error){
-	log.LogInfof("action[RestoreMultiSnapExts] delExtents size [%v]", len(delExtents))
+	log.LogInfof("action[RestoreMultiSnapExts] delExtents size [%v]", len(delExtentsOrigin))
 	// no version left.all old versions be deleted
 	if len(i.multiVersions) == 0 {
 		log.LogWarnf("action[RestoreMultiSnapExts] restore have no old version left")
@@ -597,6 +597,8 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExt
 	for _, delExt := range delExtentsOrigin {
 		// curr deleting delExt with a seq larger than the next version's seq, it doesn't belong to any
 		// versions,so try to delete it
+		log.LogDebugf("action[RestoreMultiSnapExts] ext split [%v] with seq[%v] try to del.the last seq [%], ek details[%v]",
+			delExt.IsSplit, delExt.VerSeq, lastSeq, delExt)
 		if delExt.VerSeq > lastSeq {
 			// split need check the reference count, delete it when it's reference is 0
 			if delExt.IsSplit { // todo:optimize the algorithm
@@ -700,31 +702,36 @@ func (i *Inode) CreateVer(ver uint64) {
 }
 
 func (i *Inode) SplitExtentWithCheck(ver uint64, ek proto.ExtentKey) (delExtents []proto.ExtentKey, status uint8) {
+	var err error
 	ek.VerSeq = ver
-	log.LogInfof("action[AppendExtentWithCheck] inode %v,ver %v,ek %v", i.Inode, ver, ek.String())
+	log.LogDebugf("action[SplitExtentWithCheck] inode %v,ver %v,ek %v", i.Inode, ver, ek)
 	if ver != i.verSeq {
-		log.LogInfof("action[AppendExtentWithCheck]")
+		log.LogDebugf("action[SplitExtentWithCheck] CreateVer ver", ver)
 		i.CreateVer(ver)
-		log.LogInfof("action[AppendExtentWithCheck]")
 	}
 
 	i.Lock()
 	defer i.Unlock()
-	status = i.Extents.SplitWithCheck(ek)
+	delExtents, status = i.Extents.SplitWithCheck(ek)
 	if status != proto.OpOk {
-		log.LogInfof("action[AppendExtentWithCheck] status %v", status)
+		log.LogErrorf("action[SplitExtentWithCheck] status %v", status)
 		return
 	}
+
+	if delExtents, err = i.RestoreMultiSnapExts(delExtents); err != nil {
+		log.LogErrorf("action[fsmAppendExtentWithCheck] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
+		return
+	}
+
 	return
 }
 
 func (i *Inode) AppendExtentWithCheck(ver uint64, ek proto.ExtentKey, ct int64, discardExtents []proto.ExtentKey, volType int) (delExtents []proto.ExtentKey, status uint8) {
 	ek.VerSeq = ver
-	log.LogInfof("action[AppendExtentWithCheck] inode %v,ver %v,ek %v", i.Inode, ver, ek.String())
+	log.LogDebugf("action[AppendExtentWithCheck] inode %v,ver %v,ek %v", i.Inode, ver, ek)
 	if ver != i.verSeq {
-		log.LogInfof("action[AppendExtentWithCheck]")
+		log.LogDebugf("action[AppendExtentWithCheck] ver %v inode ver %v", ver, i.verSeq)
 		i.CreateVer(ver)
-		log.LogInfof("action[AppendExtentWithCheck]")
 	}
 
 	i.Lock()
@@ -732,18 +739,21 @@ func (i *Inode) AppendExtentWithCheck(ver uint64, ek proto.ExtentKey, ct int64, 
 
 	delExtents, status = i.Extents.AppendWithCheck(ek, discardExtents)
 	if status != proto.OpOk {
-		log.LogInfof("action[AppendExtentWithCheck] status %v", status)
+		log.LogErrorf("action[AppendExtentWithCheck] status %v", status)
 		return
 	}
 	for _, ek = range i.Extents.eks {
-		log.LogInfof("action[AppendExtentWithCheck] inode %v extent %v", i.Inode, ek.String())
+		log.LogDebugf("action[AppendExtentWithCheck] inode %v extent %v", i.Inode, ek.String())
 	}
-	log.LogInfof("action[AppendExtentWithCheck]")
 	// multi version take effect
 	if i.verSeq > 0 {
-		delExtents, _ = i.RestoreMultiSnapExts(delExtents)
+		var err error
+		if delExtents, err = i.RestoreMultiSnapExts(delExtents); err != nil {
+			log.LogErrorf("action[AppendExtentWithCheck] RestoreMultiSnapExts err %v", err)
+			return nil, proto.OpErr
+		}
 	}
-	log.LogInfof("action[AppendExtentWithCheck]")
+
 	if proto.IsHot(volType) {
 		size := i.Extents.Size()
 		if i.Size < size {
@@ -752,7 +762,6 @@ func (i *Inode) AppendExtentWithCheck(ver uint64, ek proto.ExtentKey, ct int64, 
 		i.Generation++
 		i.ModifyTime = ct
 	}
-	log.LogInfof("action[AppendExtentWithCheck]")
 	return
 }
 
