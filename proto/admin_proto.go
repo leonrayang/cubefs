@@ -51,7 +51,6 @@ const (
 	AdminUpdateZoneExcludeRatio     = "/admin/updateZoneExcludeRatio"
 	AdminSetNodeRdOnly              = "/admin/setNodeRdOnly"
 	AdminSetDpRdOnly                = "/admin/setDpRdOnly"
-	AdminGetVolVer                  = "/vol/getVer"
 
 	//graphql master api
 	AdminClusterAPI = "/api/cluster"
@@ -114,7 +113,7 @@ const (
 	AdminDelVersion                = "/multiVer/del"
 	AdminGetVersionInfo            = "/multiVer/get"
 	AdminGetAllVersionInfo         = "/multiVer/getAll"
-
+	AdminGetVolVer                  = "/vol/getVer"
 
 	// Operation response
 	GetMetaNodeTaskResponse = "/metaNode/response" // Method: 'POST', ContentType: 'application/json'

@@ -72,6 +72,7 @@ func NewStreamer(client *ExtentClient, inode uint64) *Streamer {
 	s.dirtylist = NewDirtyExtentList()
 	s.isOpen = true
 	s.verSeq = client.multiVerMgr.latestVerSeq
+	s.extents.verSeq = client.multiVerMgr.latestVerSeq
 	go s.server()
 	return s
 }

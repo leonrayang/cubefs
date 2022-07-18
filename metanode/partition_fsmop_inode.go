@@ -255,7 +255,9 @@ func (mp *metaPartition) fsmAppendExtents(ino *Inode) (status uint8) {
 }
 
 func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (status uint8) {
-	var delExtents []proto.ExtentKey
+	var (
+		delExtents []proto.ExtentKey
+	)
 	status = proto.OpOk
 	item := mp.inodeTree.CopyGet(ino)
 	if item == nil {
@@ -278,22 +280,27 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		discardExtentKey = eks[1:]
 	}
 
+	log.LogDebugf("action[fsmAppendExtentWithCheck] ino %v isSplit %v ek %v", ino2, isSplit, eks[0])
 	if !isSplit {
 		delExtents, status = ino2.AppendExtentWithCheck(ino.verSeq, eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
 		if status == proto.OpOk {
 			log.LogInfof("action[fsmAppendExtentWithCheck] delExtents [%v]", delExtents)
 			mp.extDelCh <- delExtents
 		}
-		// confict need delete eks[0], to clear garbage data
+		// conflict need delete eks[0], to clear garbage data
 		if status == proto.OpConflictExtentsErr {
 			log.LogInfof("action[fsmAppendExtentWithCheck] OpConflictExtentsErr [%v]", eks[:1])
 			mp.extDelCh <- eks[:1]
 		}
 	} else {
-		_, status = ino2.SplitExtentWithCheck(ino.verSeq, eks[0])
+		// only the ek itself will be moved to level before
+		// ino verseq be set with mp ver before submit
+		delExtents, status = ino2.SplitExtentWithCheck(ino.verSeq, eks[0])
+		mp.extDelCh <- delExtents
 	}
 
-	log.LogInfof("fsmAppendExtentWithCheck inode(%v) ek(%v) deleteExtents(%v) discardExtents(%v) status(%v)", ino2.Inode, eks[0], delExtents, discardExtentKey, status)
+	log.LogInfof("fsmAppendExtentWithCheck inode(%v) ek(%v) deleteExtents(%v) discardExtents(%v) status(%v) isSplit(%v), extents(%v)",
+		ino2.Inode, eks[0], delExtents, discardExtentKey, status, isSplit, ino2.Extents.eks)
 	return
 }
 

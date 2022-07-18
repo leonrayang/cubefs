@@ -71,11 +71,12 @@ func newVersionMgr(vol *Vol) *VolVersionManager {
 }
 
 func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo){
-	log.LogInfof("action[CommitVer] enter")
+	log.LogInfof("action[CommitVer] enter.op now [%v]", verMgr.prepareCommit.op)
 
 	if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
 		ver = verMgr.prepareCommit.prepareInfo
 		verMgr.multiVersionList = append(verMgr.multiVersionList, ver)
+		log.LogInfof("action[CommitVer] ask mgr do commit in next step verseq %v", ver.Ver)
 		verMgr.wait<-nil
 	} else {
 		for _, ele := range verMgr.multiVersionList {
@@ -84,12 +85,12 @@ func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo){
 			}
 		}
 	}
-	log.LogInfof("action[CommitVer] exit")
+	log.LogInfof("action[CommitVer] verseq %v exit")
 	return
 }
 
 func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error){
-	log.LogInfof("action[GenerateVer] enter")
+	log.LogInfof("action[GenerateVer] enter verseq %v", verSeq)
 	verMgr.Lock()
 	defer verMgr.Unlock()
 	tm := time.Now()
@@ -111,6 +112,7 @@ func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error
 	if size > 0 && tm.Before(verMgr.multiVersionList[size-1].Ctime) {
 		verMgr.prepareCommit.prepareInfo.Ctime = verMgr.multiVersionList[size-1].Ctime.Add(1)
 		verMgr.prepareCommit.prepareInfo.Ver = uint64(verMgr.multiVersionList[size-1].Ctime.Unix() + 1)
+		log.LogDebugf("action[GenerateVer] use ver %v", verMgr.prepareCommit.prepareInfo.Ver)
 	}
 	log.LogInfof("action[GenerateVer] exit")
 	return
@@ -135,7 +137,7 @@ const (
 	MaxSnapshotCount = 30
 )
 
-func (verMgr *VolVersionManager)  handleTaskRsp(resp *proto.MultiVersionOpResponse, partitionType uint32) {
+func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpResponse, partitionType uint32) {
 
 	verMgr.RLock()
 	defer verMgr.RUnlock()
@@ -158,19 +160,22 @@ func (verMgr *VolVersionManager)  handleTaskRsp(resp *proto.MultiVersionOpRespon
 			if rType,rok := val.(int); rok && rType == TypeNoReply {
 				log.LogInfof("action[handleTaskRsp] node %v partitionType %v,op %v, inner op %v",
 					resp.Addr, partitionType, resp.Op, verMgr.prepareCommit.op)
-				atomic.AddUint32(&verMgr.prepareCommit.commitCnt, 1)
 				array.Store(resp.Addr, TypeReply)
+
 				if resp.Status != proto.TaskSucceeds || resp.Result != "" {
 					log.LogErrorf("action[handleTaskRsp] type %v node %v rsp sucess. op %v, verseq %v,commit cnt %v, rsp status %v mgr status %v result %v",
 						pType, resp.Addr, resp.Op, resp.VerSeq, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt), resp.Status, verMgr.status, resp.Result)
 
 					if verMgr.status == proto.VersionWorking {
 						verMgr.status = proto.VersionWorkingAbnormal
-						verMgr.wait<-fmt.Errorf("error %v", resp.Status)
+						verMgr.wait<-fmt.Errorf("pType %v node %v error %v", pType, resp.Addr, resp.Status)
+						log.LogErrorf("action[handleTaskRsp] type %v commit cnt %v, rsp status %v mgr status %v result %v",
+							pType, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt), resp.Status, verMgr.status, resp.Result)
 						return
 					}
 					return
 				}
+				atomic.AddUint32(&verMgr.prepareCommit.commitCnt, 1)
 				log.LogInfof("action[handleTaskRsp] type %v node %v rsp sucess. op %v, verseq %v,commit cnt %v",
 					pType, resp.Addr, resp.Op, resp.VerSeq, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt))
 			} else {
@@ -230,15 +235,15 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 		select {
 			case err = <-verMgr.wait:
 				log.LogInfof("action[createVer2PhaseTask] verseq %v op %v get err %v", verSeq, verMgr.prepareCommit.op, err)
-				if err != nil {
+				if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
+					if err == nil {
+						verMgr.prepareCommit.reset()
+						verMgr.prepareCommit.op = proto.CreateVersionCommit
+						log.LogInfof("action[createVer2PhaseTask] prepare fin.start commit")
+						return verMgr.createTask(cluster, verSeq, verMgr.prepareCommit.op, force)
+					}
 					verMgr.status = proto.VersionWorkingAbnormal
 					return
-				}
-				if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
-					verMgr.prepareCommit.reset()
-					verMgr.prepareCommit.op = proto.CreateVersionCommit
-					log.LogInfof("action[createVer2PhaseTask] prepare fin.start commit")
-					return verMgr.createTask(cluster, verSeq, verMgr.prepareCommit.op, force)
 				}
 				return
 			case <-verMgr.cancel:
@@ -249,6 +254,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 				cnt++
 				if cnt > 10 {
 					verMgr.status = proto.VersionWorkingTimeOut
+					log.LogInfof("action[createVer2PhaseTask] verseq %v op %v be set timeout", verSeq, verMgr.prepareCommit.op)
 					return
 				}
 		}

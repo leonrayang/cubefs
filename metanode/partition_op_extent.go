@@ -105,7 +105,7 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 	if mp.verSeq > req.VerSeq {
 		//reuse ExtentType to identify flag of version inconsistent between metanode and client
 		//will resp to client and make client update all streamer's extent and it's verSeq
-		p.ExtentType |= proto.MultiVersionFlagRspFromMeta
+		p.ExtentType |= proto.MultiVersionFlag
 		p.VerSeq = mp.verSeq
 	}
 	p.PacketErrorWithBody(resp.(uint8), nil)

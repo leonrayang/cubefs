@@ -188,7 +188,7 @@ const (
 	BatchDeleteExtentReadDeadLineTime         = 120
 	GetAllWatermarksDeadLineTime              = 60
 	DefaultClusterLoadFactor          float64 = 10
-	MultiVersionFlagRspFromMeta               = 0x80
+	MultiVersionFlag                          = 0x80
 )
 
 // multi version operation
@@ -265,7 +265,8 @@ func NewPacketReqID() *Packet {
 }
 
 func (p *Packet) String() string {
-	return fmt.Sprintf("ReqID(%v)Op(%v)PartitionID(%v)ResultCode(%v)", p.ReqID, p.GetOpMsg(), p.PartitionID, p.GetResultMsg())
+	return fmt.Sprintf("ReqID(%v)Op(%v)PartitionID(%v)ResultCode(%v)ExtOffset(%v)KernelOff(%v)",
+		p.ReqID, p.GetOpMsg(), p.PartitionID, p.GetResultMsg(), p.ExtentOffset, p.KernelOffset)
 }
 
 // GetStoreType returns the store type.
@@ -594,9 +595,7 @@ func (p *Packet) WriteToConn(c net.Conn) (err error) {
 	if err != nil {
 		header = make([]byte, headSize)
 	}
-
-	log.LogErrorf("action[WriteToConn] buffer get nil,opcode %v head len [%v]", p.Opcode, len(header))
-
+	// log.LogErrorf("action[WriteToConn] buffer get nil,opcode %v head len [%v]", p.Opcode, len(header))
 	defer Buffers.Put(header)
 	c.SetWriteDeadline(time.Now().Add(WriteDeadlineTime * time.Second))
 	p.MarshalHeader(header)
@@ -645,12 +644,13 @@ func (p *Packet) ReadFromConnWithVer(c net.Conn, timeoutSec int) (err error) {
 		return
 	}
 
-	if p.ExtentType & MultiVersionFlagRspFromMeta > 0 {
+	if p.ExtentType & MultiVersionFlag > 0 {
 		ver := make([]byte, 8)
 		if _, err = io.ReadFull(c, ver); err != nil {
 			return
 		}
 		p.VerSeq =  binary.BigEndian.Uint64(ver)
+		log.LogDebug("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
 	}
 
 	if p.ArgLen > 0 {

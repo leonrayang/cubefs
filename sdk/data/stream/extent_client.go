@@ -334,6 +334,7 @@ func (client *ExtentClient) UpdateLatestVer(verSeq uint64) (err error) {
 			log.LogDebugf("action[ExtentClient.UpdateLatestVer] stream inode %v ver %v try update to %v", streamer.inode, streamer.verSeq, verSeq)
 
 			streamer.verSeq = verSeq
+			streamer.extents.verSeq = verSeq
 			streamer.flush()
 			streamer.GetExtents()
 			log.LogDebugf("action[ExtentClient.UpdateLatestVer] finhsed stream inode %v ver update to %v", streamer.inode, verSeq)

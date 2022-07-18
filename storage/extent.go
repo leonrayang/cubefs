@@ -97,7 +97,7 @@ func NewExtentInCore(name string, extentID uint64) *Extent {
 	e := new(Extent)
 	e.extentID = extentID
 	e.filePath = name
-
+	e.snapshotDataSize = util.ExtentSize
 	return e
 }
 
@@ -236,10 +236,13 @@ func IsAppendWrite(writeType int) bool {
 	return writeType == AppendWriteType
 }
 
-func IsAppendWriteBySnapshotMod(writeType int) bool {
-	return writeType == AppendWriteBySnapshotMode
+func IsAppendWriteByVer(writeType int) bool {
+	return writeType == AppendWriteVerType
 }
 
+func IsRandomAppendWrite(writeType int) bool {
+	return writeType == AppendRandomWriteType
+}
 // WriteTiny performs write on a tiny extent.
 func (e *Extent) WriteTiny(data []byte, offset, size int64, crc uint32, writeType int, isSync bool) (err error) {
 	e.Lock()
@@ -275,12 +278,15 @@ func (e *Extent) WriteTiny(data []byte, offset, size int64, crc uint32, writeTyp
 
 // Write writes data to an extent.
 func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType int, isSync bool, crcFunc UpdateCrcFunc, ei *ExtentInfo) (err error) {
+	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	if IsTinyExtent(e.extentID) {
 		err = e.WriteTiny(data, offset, size, crc, writeType, isSync)
 		return
 	}
 
-	if err = e.checkOffsetAndSize(offset, size); err != nil {
+	if err = e.checkWriteOffsetAndSize(writeType, offset, size); err != nil {
+		log.LogErrorf("action[Extent.Write] checkWriteOffsetAndSize offset %v size %v writeType %v err %v",
+			offset, size, writeType, err)
 		return
 	}
 
@@ -290,9 +296,13 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 	defer e.Unlock()
 	if IsAppendWrite(writeType) && e.dataSize != offset {
 		err = NewParameterMismatchErr(fmt.Sprintf("extent current size = %v write offset=%v write size=%v", e.dataSize, offset, size))
+		log.LogErrorf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
+			offset, size, writeType, err)
 		return
-	} else if IsAppendWriteBySnapshotMod(writeType) && e.snapshotDataSize != offset {
+	} else if IsRandomAppendWrite(writeType) && e.snapshotDataSize != offset {
 		err = NewParameterMismatchErr(fmt.Sprintf("extent current snapshot size = %v write offset=%v write size=%v", e.snapshotDataSize, offset, size))
+		log.LogErrorf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
+			offset, size, writeType, err)
 		return
 	}
 
@@ -305,7 +315,7 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 		if IsAppendWrite(writeType) {
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
 			e.dataSize = int64(math.Max(float64(e.dataSize), float64(offset+size)))
-		} else if IsAppendWriteBySnapshotMod(writeType) {
+		} else if IsAppendWriteByVer(writeType) {
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
 			e.snapshotDataSize = int64(math.Max(float64(e.snapshotDataSize), float64(offset+size)))
 		}
@@ -318,10 +328,14 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 	}
 	if offsetInBlock == 0 && size == util.BlockSize {
 		err = crcFunc(e, int(blockNo), crc)
+		log.LogDebugf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
+			offset, size, writeType, err)
 		return
 	}
 	if offsetInBlock+size <= util.BlockSize {
 		err = crcFunc(e, int(blockNo), 0)
+		log.LogDebugf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
+			offset, size, writeType, err)
 		return
 	}
 	if err = crcFunc(e, int(blockNo), 0); err == nil {
@@ -333,13 +347,18 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 
 // Read reads data from an extent.
 func (e *Extent) Read(data []byte, offset, size int64, isRepairRead bool) (crc uint32, err error) {
+	log.LogDebugf("action[Extent.read] offset %v size %v", offset, size)
 	if IsTinyExtent(e.extentID) {
 		return e.ReadTiny(data, offset, size, isRepairRead)
 	}
-	if err = e.checkOffsetAndSize(offset, size); err != nil {
+	if err = e.checkReadOffsetAndSize(offset, size); err != nil {
+		log.LogErrorf("action[Extent.Read] NewParameterMismatchErr offset %v size %v err %v",
+			offset, size, err)
 		return
 	}
 	if _, err = e.file.ReadAt(data[:size], offset); err != nil {
+		log.LogErrorf("action[Extent.Read] NewParameterMismatchErr offset %v size %v err %v",
+			offset, size, err)
 		return
 	}
 	crc = crc32.ChecksumIEEE(data)
@@ -357,16 +376,31 @@ func (e *Extent) ReadTiny(data []byte, offset, size int64, isRepairRead bool) (c
 	return
 }
 
-func (e *Extent) checkOffsetAndSize(offset, size int64) error {
-	if offset+size > util.BlockSize*util.BlockCount {
-		return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v", offset, size))
-	}
-	if offset >= util.BlockCount*util.BlockSize || size == 0 {
-		return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v", offset, size))
-	}
 
-	if size > util.BlockSize {
+func (e *Extent) checkReadOffsetAndSize(offset, size int64) error {
+	if offset > e.Size() {
 		return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v", offset, size))
+	}
+	return nil
+}
+
+func (e *Extent) checkWriteOffsetAndSize(writeType int, offset, size int64) error {
+	if writeType == AppendWriteType || writeType == AppendWriteVerType{
+		if offset+size > util.BlockSize*util.BlockCount {
+			return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v", offset, size))
+		}
+		if offset >= util.BlockCount*util.BlockSize || size == 0 {
+			return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v", offset, size))
+		}
+
+		if size > util.BlockSize {
+			return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v", offset, size))
+		}
+	} else if writeType == AppendRandomWriteType {
+		log.LogInfof("action[checkOffsetAndSize] offset %v size %v", offset, size)
+		if offset < util.BlockCount*util.BlockSize || size == 0 {
+			return NewParameterMismatchErr(fmt.Sprintf("writeType=%v offset=%v size=%v", writeType, offset, size))
+		}
 	}
 	return nil
 }

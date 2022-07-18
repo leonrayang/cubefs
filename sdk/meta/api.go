@@ -600,10 +600,10 @@ func (mw *MetaWrapper) SplitExtentKey(parentInode, inode uint64, ek proto.Extent
 
 	status, err := mw.appendExtentKey(mp, inode, ek, nil, true)
 	if err != nil || status != statusOK {
-		log.LogErrorf("AppendExtentKey: inode(%v) ek(%v) err(%v) status(%v)", inode, ek, err, status)
+		log.LogErrorf("SplitExtentKey: inode(%v) ek(%v) err(%v) status(%v)", inode, ek, err, status)
 		return statusToErrno(status)
 	}
-	log.LogDebugf("AppendExtentKey: ino(%v) ek(%v)", inode, ek)
+	log.LogDebugf("SplitExtentKey: ino(%v) ek(%v)", inode, ek)
 
 	if mw.EnableSummary {
 		go func() {

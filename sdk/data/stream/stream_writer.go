@@ -293,6 +293,7 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 	if flags&proto.FlagsSyncWrite != 0 {
 		direct = true
 	}
+	log.LogDebugf("action[steamer.write] inode %v offset %v size %v", s.inode, offset, size)
 begin:
 	if flags&proto.FlagsAppend != 0 {
 		filesize, _ := s.extents.Size()
@@ -339,32 +340,31 @@ begin:
 					s.inflightEvictL1cache.Delete(cacheKey)
 				}(cacheKey)
 			}
-			if req.ExtentKey.VerSeq == s.extents.verSeq {
+
+			log.LogDebugf("action[streamer.write] inode [%v] latest seq [%v] extentkey seq [%v]  info [%v]",
+				s.inode, s.verSeq, req.ExtentKey.VerSeq, req.ExtentKey)
+
+			if req.ExtentKey.VerSeq == s.verSeq {
 				writeSize, err = s.doOverwrite(req, direct)
 				if err == proto.ErrCodeVersionOp {
-					var verAdmin *proto.VolVersionInfo
-					verAdmin, err = s.client.dataWrapper.GetMasterClient().AdminAPI().GetLatestVer(s.client.GetVolumeName())
-					if err != nil {
-						return
-					}
-					if s.verSeq == verAdmin.Ver {
-						err = proto.ErrCodeVersionOp
-						return
-					}
-					s.verSeq = verAdmin.Ver
+					log.LogDebugf("action[streamer.write] write need version update")
 					if err = s.GetExtents(); err != nil {
+						log.LogErrorf("action[streamer.write] err %v", err)
 						return
 					}
 					if retryTimes > 3 {
 						err = proto.ErrCodeVersionOp
+						log.LogWarnf("action[streamer.write] err %v", err)
 						return
 					}
 					time.Sleep(time.Millisecond * 100)
 					retryTimes++
-
+					log.LogDebugf("action[streamer.write] err %v retryTimes %v", err, retryTimes)
 					goto begin
 				}
+				log.LogDebugf("action[streamer.write] err %v retryTimes %v", err, retryTimes)
 			} else {
+				log.LogDebugf("action[streamer.write] doOverwriteByAppend")
 				writeSize, err = s.doOverwriteByAppend(req, direct)
 			}
 			if s.client.bcacheEnable {
@@ -394,6 +394,8 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		verOff int64
 		dp *wrapper.DataPartition
 	)
+
+	log.LogDebugf("action[doOverwriteByAppend] enter in req %v", req)
 
 	err = s.flush()
 	if err != nil {
@@ -433,15 +435,13 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 			reqPacket.Opcode = proto.OpSyncRandomWriteAppend
 		}
 
-
-
 		packSize := util.Min(size-total, util.BlockSize)
 		copy(reqPacket.Data[:packSize], req.Data[total:total+packSize])
 		reqPacket.Size = uint32(packSize)
 		reqPacket.CRC = crc32.ChecksumIEEE(reqPacket.Data[:packSize])
 
 		replyPacket := new(Packet)
-		err = sc.Send(retry, reqPacket, func(conn *net.TCPConn) (error, bool) {
+		err = sc.Send(&retry, reqPacket, func(conn *net.TCPConn) (error, bool) {
 			e := replyPacket.ReadFromConn(conn, proto.ReadDeadlineTime)
 			if e != nil {
 				log.LogWarnf("Stream Writer doOverwrite: ino(%v) failed to read from connect, req(%v) err(%v)", s.inode, reqPacket, e)
@@ -534,8 +534,8 @@ func (s *Streamer) doOverwrite(req *ExtentRequest, direct bool) (total int, err 
 
 	for total < size {
 		reqPacket := NewOverwritePacket(dp, req.ExtentKey.ExtentId, offset-ekFileOffset+total+ekExtOffset, s.inode, offset)
-		log.LogInfof("action[doOverwrite] inode %v extentid %v,extentOffset %v(%v,%v,%v,%v) offset %v", s.inode, req.ExtentKey.ExtentId, reqPacket.ExtentOffset,
-			offset, ekFileOffset, total, ekExtOffset, offset)
+		log.LogDebugf("action[doOverwrite] inode %v extentid %v,extentOffset %v(%v,%v,%v,%v) offset %v, seq %v", s.inode, req.ExtentKey.ExtentId, reqPacket.ExtentOffset,
+			offset, ekFileOffset, total, ekExtOffset, offset, s.verSeq)
 		if direct {
 			reqPacket.Opcode = proto.OpSyncRandomWrite
 		}
@@ -543,16 +543,17 @@ func (s *Streamer) doOverwrite(req *ExtentRequest, direct bool) (total int, err 
 		copy(reqPacket.Data[:packSize], req.Data[total:total+packSize])
 		reqPacket.Size = uint32(packSize)
 		reqPacket.CRC = crc32.ChecksumIEEE(reqPacket.Data[:packSize])
+		reqPacket.VerSeq = s.verSeq
 
 		replyPacket := new(Packet)
-		err = sc.Send(retry, reqPacket, func(conn *net.TCPConn) (error, bool) {
+		err = sc.Send(&retry, reqPacket, func(conn *net.TCPConn) (error, bool) {
 			e := replyPacket.ReadFromConnWithVer(conn, proto.ReadDeadlineTime)
 			if e != nil {
 				log.LogWarnf("Stream Writer doOverwrite: ino(%v) failed to read from connect, req(%v) err(%v)", s.inode, reqPacket, e)
 				// Upon receiving TryOtherAddrError, other hosts will be retried.
 				return TryOtherAddrError, false
 			}
-
+			log.LogDebugf("action[doOverwrite] verseq (%v) datanode rsp seq (%v) code(%v)", s.verSeq, replyPacket.VerSeq, replyPacket.ResultCode)
 			if replyPacket.ResultCode == proto.OpAgain {
 				return nil, true
 			}
@@ -563,6 +564,10 @@ func (s *Streamer) doOverwrite(req *ExtentRequest, direct bool) (total int, err 
 
 			if replyPacket.ResultCode == proto.ErrCodeVersionOpError {
 				e = proto.ErrCodeVersionOp
+				log.LogWarnf("action[doOverwrite] verseq (%v) be updated to (%v) by datanode rsp", s.verSeq, replyPacket.VerSeq)
+				s.verSeq = replyPacket.VerSeq
+				s.extents.verSeq = s.verSeq
+				return e, false
 			}
 
 			return e, false
@@ -573,6 +578,11 @@ func (s *Streamer) doOverwrite(req *ExtentRequest, direct bool) (total int, err 
 		log.LogDebugf("doOverwrite: ino(%v) req(%v) reqPacket(%v) err(%v) replyPacket(%v)", s.inode, req, reqPacket, err, replyPacket)
 
 		if err != nil || replyPacket.ResultCode != proto.OpOk {
+			if replyPacket.ResultCode == proto.ErrCodeVersionOpError {
+				err = proto.ErrCodeVersionOp
+				log.LogWarnf("doOverwrite: need retry.ino(%v) req(%v) reqPacket(%v) err(%v) replyPacket(%v)", s.inode, req, reqPacket, err, replyPacket)
+				return
+			}
 			err = errors.New(fmt.Sprintf("doOverwrite: failed or reply NOK: err(%v) ino(%v) req(%v) replyPacket(%v)", err, s.inode, req, replyPacket))
 			break
 		}
@@ -858,6 +868,7 @@ func (s *Streamer) updateVer(verSeq uint64) (err error) {
 		//}
 		log.LogInfof("action[stream.updateVer] ver %v update to %v", s.verSeq, verSeq)
 		s.verSeq = verSeq
+		s.extents.verSeq = verSeq
 	}
 	return
 }
