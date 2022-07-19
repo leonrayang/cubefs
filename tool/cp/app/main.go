@@ -13,6 +13,9 @@ import (
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/tool/cp"
 	clog "github.com/chubaofs/chubaofs/util/log"
+
+	"net/http"
+	_ "net/http/pprof"
 )
 
 var (
@@ -34,6 +37,10 @@ func main() {
 		cp.PrintUsage()
 		os.Exit(1)
 	}
+
+	go func() {
+		http.ListenAndServe(":18710", nil)
+	}()
 
 	argLen, ok := opMap[os.Args[1]]
 	if !ok || len(os.Args) < argLen {

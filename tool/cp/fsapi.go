@@ -462,7 +462,7 @@ func checkMode(stat *syscall.Stat_t, op modeOp) error {
 }
 
 func getUint32(id string) uint32 {
-	uid, _ := strconv.Atoi(u.Uid)
+	uid, _ := strconv.Atoi(id)
 	return uint32(uid)
 }
 

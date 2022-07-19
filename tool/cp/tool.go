@@ -20,6 +20,10 @@ type User struct {
 	groupIds []string
 }
 
+func init() {
+	getUser()
+}
+
 var u *User
 
 func getUser() *User {
