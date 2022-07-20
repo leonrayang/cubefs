@@ -265,16 +265,25 @@ func (w *Walker) consumeTask() {
 }
 
 func (w *Walker) copyFile(task opTask) {
+	start := time.Now()
+	defer func() {
+		clog.LogWarnf("finish cp file after close %s, cost %s", task.src, time.Since(start).String())
+	}()
+
 	srcFd, err := w.srcApi.openFile(task.src, false, task.srcParentIno)
 	if err != nil {
 		log.Fatalf("open src path %s failed %s", task.src, err.Error())
 	}
 	defer srcFd.Close()
 
+	clog.LogWarnf("open src file %s, cost %s", task.src, time.Since(start).String())
+
 	destFd, err := w.destApi.openFile(task.dest, true, task.destParentIno)
 	if err != nil {
 		log.Fatalf("create dest path %s failed %s", task.dest, err.Error())
 	}
+
+	clog.LogWarnf("open dest file %s, cost %s", task.src, time.Since(start).String())
 
 	defer destFd.Close()
 
@@ -295,12 +304,15 @@ func (w *Walker) copyFile(task opTask) {
 			log.Fatalf("write data to %s failed, err %s", task.dest, err.Error())
 		}
 
+		offset += int64(size)
+
 		if size < len(data) || err == io.EOF {
 			break
 		}
 
-		offset += int64(size)
 	}
+
+	clog.LogWarnf("finish cp file %s, size %d, cost %s", task.src, offset, time.Since(start).String())
 }
 
 func (w *Walker) copyLink(task opTask) {
@@ -316,21 +328,28 @@ func (w *Walker) copyLink(task opTask) {
 }
 
 func (w *Walker) copyTask(task opTask) {
+	start := time.Now()
 	if task.mode&os.ModeSymlink != 0 {
 		w.copyLink(task)
 	} else {
 		w.copyFile(task)
 	}
 
+	clog.LogWarnf("finish cp file after cp %s, cost %s", task.src, time.Since(start).String())
+
 	srcStat, err := w.srcApi.statFile(task.src, task.srcParentIno)
 	if err != nil {
 		log.Fatalf("stat src %s failed, err %s", task.src, err.Error())
 	}
 
+	clog.LogWarnf("finish cp file after stat src %s, cost %s", task.src, time.Since(start).String())
+
 	err = w.destApi.updateStat(task.dest, srcStat, task.destParentIno)
 	if err != nil {
 		log.Fatalf("update dest stat error, path %s, err %s", task.dest, err.Error())
 	}
+
+	clog.LogWarnf("finish cp file after updateStat %s, cost %s", task.src, time.Since(start).String())
 }
 
 func (w *Walker) syncTask(task opTask) {
