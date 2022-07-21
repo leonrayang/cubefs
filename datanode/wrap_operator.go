@@ -113,7 +113,7 @@ func (s *DataNode) OperatePacket(p *repl.Packet, c net.Conn) (err error) {
 			case proto.OpWrite, proto.OpRandomWrite,
 				 proto.OpRandomWriteVer, proto.OpSyncRandomWriteVer,
 				 proto.OpRandomWriteAppend, proto.OpSyncRandomWriteAppend,
-				 proto.OpSyncRandomWrite, proto.OpSyncWrite, proto.OpMarkDelete:
+				 proto.OpSyncRandomWrite, proto.OpSyncWrite, proto.OpMarkDelete, proto.OpSplitMarkDelete:
 				log.LogWrite(logContent)
 			default:
 				log.LogInfo(logContent)
@@ -137,7 +137,7 @@ func (s *DataNode) OperatePacket(p *repl.Packet, c net.Conn) (err error) {
 		s.handleExtentRepairReadPacket(p, c, RepairRead)
 	case proto.OpTinyExtentRepairRead:
 		s.handleTinyExtentRepairReadPacket(p, c)
-	case proto.OpMarkDelete:
+	case proto.OpMarkDelete, proto.OpSplitMarkDelete:
 		s.handleMarkDeletePacket(p, c)
 	case proto.OpBatchDeleteExtent:
 		s.handleBatchMarkDeletePacket(p, c)
@@ -571,7 +571,7 @@ func (s *DataNode) handleMarkDeletePacket(p *repl.Packet, c net.Conn) {
 		}
 	}()
 	partition := p.Object.(*DataPartition)
-	if p.ExtentType == proto.TinyExtentType {
+	if p.ExtentType == proto.TinyExtentType || p.Opcode == proto.OpSplitMarkDelete || len(p.Data) > 0 {
 		ext := new(proto.TinyExtentDeleteRecord)
 		err = json.Unmarshal(p.Data, ext)
 		if err == nil {
@@ -742,7 +742,7 @@ func (s *DataNode) handleRandomWritePacket(p *repl.Packet) {
 	}
 
 	if partition.verSeq > 0 {
-		log.LogDebugf("action[handleRandomWritePacket opcod %v seq %v dpid %v dpseq %v extid %v", p.Opcode, p.VerSeq, p.PartitionID, partition.verSeq, p.ExtentID)
+		log.LogDebugf("action[handleRandomWritePacket] opcod %v seq %v dpid %v dpseq %v extid %v", p.Opcode, p.VerSeq, p.PartitionID, partition.verSeq, p.ExtentID)
 		if p.Opcode == proto.OpSyncRandomWrite || p.Opcode == proto.OpRandomWrite {
 			err = fmt.Errorf("volume enable mulit version")
 			log.LogErrorf("action[handleRandomWritePacket] error %v", err)
@@ -756,22 +756,26 @@ func (s *DataNode) handleRandomWritePacket(p *repl.Packet) {
 			return
 		}
 	}
-
+	log.LogDebugf("action[handleRandomWritePacket] opcod %v seq %v dpid %v dpseq %v before raft submit", p.Opcode, p.VerSeq, p.PartitionID, partition.verSeq)
 	err = partition.RandomWriteSubmit(p)
 	if !shallDegrade {
 		s.metrics.MetricIOBytes.AddWithLabels(int64(p.Size), metricPartitionIOLabels)
 		partitionIOMetric.SetWithLabels(err, metricPartitionIOLabels)
 	}
+	log.LogDebugf("action[handleRandomWritePacket] opcod %v seq %v dpid %v dpseq %v extid %v", p.Opcode, p.VerSeq, p.PartitionID, partition.verSeq, p.ExtentID)
 	if err != nil && strings.Contains(err.Error(), raft.ErrNotLeader.Error()) {
 		err = raft.ErrNotLeader
+		log.LogErrorf("action[handleRandomWritePacket] opcod %v seq %v dpid %v dpseq %v extid %v err %v", p.Opcode, p.VerSeq, p.PartitionID, partition.verSeq, p.ExtentID, err)
 		return
 	}
 
 	if err == nil && p.ResultCode != proto.OpOk {
+		log.LogErrorf("action[handleRandomWritePacket] opcod %v seq %v dpid %v dpseq %v extid %v ResultCode %v",
+			p.Opcode, p.VerSeq, p.PartitionID, partition.verSeq, p.ExtentID, p.ResultCode)
 		err = storage.TryAgainError
 		return
 	}
-
+	log.LogDebugf("action[handleRandomWritePacket] opcod %v seq %v dpid %v dpseq %v after raft submit err %v", p.Opcode, p.VerSeq, p.PartitionID, partition.verSeq, err)
 }
 
 func (s *DataNode) handleStreamReadPacket(p *repl.Packet, connect net.Conn, isRepairRead bool) {

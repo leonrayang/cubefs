@@ -177,6 +177,7 @@ const (
 
 	// multiVersion to dp/mp
 	OpVersionOperation       uint8 = 0xD5
+	OpSplitMarkDelete        uint8 = 0xD6
 )
 
 const (
@@ -291,6 +292,8 @@ func (p *Packet) GetOpMsg() (m string) {
 	case OpCreateExtent:
 		m = "OpCreateExtent"
 	case OpMarkDelete:
+		m = "OpMarkDelete"
+	case OpSplitMarkDelete:
 		m = "OpMarkDelete"
 	case OpWrite:
 		m = "OpWrite"
@@ -772,7 +775,7 @@ func (p *Packet) GetUniqueLogId() (m string) {
 		return
 	}
 	m = fmt.Sprintf("Req(%v)_Partition(%v)_", p.ReqID, p.PartitionID)
-	if p.ExtentType == TinyExtentType && p.Opcode == OpMarkDelete && len(p.Data) > 0 {
+	if (p.Opcode == OpSplitMarkDelete || (p.ExtentType == TinyExtentType && p.Opcode == OpMarkDelete)) && len(p.Data) > 0 {
 		ext := new(TinyExtentDeleteRecord)
 		err := json.Unmarshal(p.Data, ext)
 		if err == nil {
@@ -803,7 +806,7 @@ func (p *Packet) GetUniqueLogId() (m string) {
 
 func (p *Packet) setPacketPrefix() {
 	p.mesg = fmt.Sprintf("Req(%v)_Partition(%v)_", p.ReqID, p.PartitionID)
-	if p.ExtentType == TinyExtentType && p.Opcode == OpMarkDelete && len(p.Data) > 0 {
+	if (p.Opcode == OpSplitMarkDelete || (p.ExtentType == TinyExtentType && p.Opcode == OpMarkDelete)) && len(p.Data) > 0 {
 		ext := new(TinyExtentDeleteRecord)
 		err := json.Unmarshal(p.Data, ext)
 		if err == nil {

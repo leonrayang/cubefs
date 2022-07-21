@@ -218,8 +218,10 @@ func (dp *DataPartition) ApplyRandomWrite(command []byte, raftApplyID uint64) (r
 		if err == nil {
 			resp = proto.OpOk
 			dp.uploadApplyID(raftApplyID)
+			log.LogDebug("action[ApplyRandomWrite] success!")
 		} else {
 			err = fmt.Errorf("[ApplyRandomWrite] ApplyID(%v) Partition(%v)_Extent(%v)_ExtentOffset(%v)_Size(%v) apply err(%v) retry[20]", raftApplyID, dp.partitionID, opItem.extentID, opItem.offset, opItem.size, err)
+			log.LogErrorf("action[ApplyRandomWrite] failed err %v", err)
 			exporter.Warning(err.Error())
 			resp = proto.OpDiskErr
 			panic(newRaftApplyError(err))
@@ -275,18 +277,21 @@ func (dp *DataPartition) ApplyRandomWrite(command []byte, raftApplyID uint64) (r
 func (dp *DataPartition) RandomWriteSubmit(pkg *repl.Packet) (err error) {
 	val, err := MarshalRandWriteRaftLog(pkg.Opcode, pkg.ExtentID, pkg.ExtentOffset, int64(pkg.Size), pkg.Data, pkg.CRC)
 	if err != nil {
+		log.LogErrorf("action[RandomWriteSubmit] [%v] marshal error %v", dp.partitionID, err)
 		return
 	}
 	var (
 		resp interface{}
 	)
+	log.LogDebugf("action[RandomWriteSubmit] [%v] before submit", dp.partitionID)
 	if resp, err = dp.Put(nil, val); err != nil {
+		log.LogErrorf("action[RandomWriteSubmit] submit error %v", err)
 		return
 	}
 
 	pkg.ResultCode = resp.(uint8)
 
-	log.LogDebugf("[RandomWrite] SubmitRaft: %v", pkg.GetUniqueLogId())
+	log.LogDebugf("[RandomWrite] SubmitRaft: %v", pkg.ResultCode)
 
 	return
 }

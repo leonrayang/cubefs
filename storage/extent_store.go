@@ -387,9 +387,9 @@ func (s *ExtentStore) Read(extentID uint64, offset, size int64, nbuf []byte, isR
 		return
 	}
 
-	if err = s.checkOffsetAndSize(extentID, offset, size); err != nil {
-		return
-	}
+	//if err = s.checkOffsetAndSize(extentID, offset, size); err != nil {
+	//	return
+	//}
 	crc, err = e.Read(nbuf, offset, size, isRepairRead)
 
 	return
@@ -432,17 +432,24 @@ func (s *ExtentStore) MarkDelete(extentID uint64, offset, size int64) (err error
 	var (
 		ei *ExtentInfo
 	)
-
-	if IsTinyExtent(extentID) {
-		return s.tinyDelete(extentID, offset, size)
-	}
-
 	s.eiMutex.RLock()
 	ei = s.extentInfoMap[extentID]
 	s.eiMutex.RUnlock()
 	if ei == nil || ei.IsDeleted {
 		return
 	}
+	log.LogDebugf("action[MarkDelete] extentID %v offset %v size %v ei(size %v snapshotSize %v)",
+		extentID, offset, size, ei.Size, ei.SnapshotDataSize)
+
+	funcNeedPunchDel := func() bool {
+		return  offset != 0 || (ei.Size != uint64(size) && ei.SnapshotDataSize == util.ExtentSize) ||
+			(ei.Size != uint64(ei.SnapshotDataSize) && ei.SnapshotDataSize > util.ExtentSize)
+	}
+
+	if IsTinyExtent(extentID) || funcNeedPunchDel() {
+		return s.tinyDelete(extentID, offset, size)
+	}
+
 	extentFilePath := path.Join(s.dataPath, strconv.FormatUint(extentID, 10))
 	if err = os.Remove(extentFilePath); err != nil {
 		return
@@ -525,7 +532,7 @@ func (s *ExtentStore) GetExtentSnapshotModOffset(extentID uint64) (watermark int
 	if err != nil {
 		return
 	}
-	log.LogDebug("action[ExtentStore.GetExtentSnapshotModOffset] extId %v SnapshotDataSize %v", extentID, einfo.SnapshotDataSize)
+	log.LogDebugf("action[ExtentStore.GetExtentSnapshotModOffset] extId %v SnapshotDataSize %v", extentID, einfo.SnapshotDataSize)
 
 	watermark = einfo.SnapshotDataSize
 	if watermark%PageSize != 0 {

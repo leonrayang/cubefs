@@ -135,7 +135,7 @@ func (s *DataNode) addExtentInfo(p *repl.Packet) error {
 		if err != nil {
 			return fmt.Errorf("addExtentInfo partition %v alloc NextExtentId error %v", p.PartitionID, err)
 		}
-	} else if p.IsLeaderPacket() && p.IsMarkDeleteExtentOperation() && p.IsTinyExtentType() {
+	} else if p.IsLeaderPacket() && p.IsMarkDeleteExtentOperation() {
 		record := new(proto.TinyExtentDeleteRecord)
 		if err := json.Unmarshal(p.Data[:p.Size], record); err != nil {
 			return fmt.Errorf("addExtentInfo failed %v", err.Error())

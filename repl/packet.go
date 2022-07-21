@@ -429,7 +429,7 @@ func (p *Packet) IsCreateExtentOperation() bool {
 }
 
 func (p *Packet) IsMarkDeleteExtentOperation() bool {
-	return p.Opcode == proto.OpMarkDelete
+	return p.Opcode == proto.OpMarkDelete || p.Opcode == proto.OpSplitMarkDelete
 }
 
 func (p *Packet) IsBatchDeleteExtents() bool {
