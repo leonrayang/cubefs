@@ -425,7 +425,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 	if proto.IsCold(s.client.volumeType) {
 		retry = false
 	}
-
+	log.LogDebugf("action[doOverwriteByAppend] data process")
 	sc := NewStreamConn(dp, false)
 	for total < size {
 		// right position in extent:offset-ekFileOffset+total+ekExtOffset .
@@ -455,6 +455,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 
 			if replyPacket.ResultCode == proto.OpTryOtherAddr {
 				e = TryOtherAddrError
+				log.LogDebugf("action[doOverwriteByAppend] data process err %v", e)
 			}
 			return e, false
 		})
@@ -465,16 +466,19 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 
 		if err != nil || replyPacket.ResultCode != proto.OpOk {
 			err = errors.New(fmt.Sprintf("doOverwrite: failed or reply NOK: err(%v) ino(%v) req(%v) replyPacket(%v)", err, s.inode, req, replyPacket))
+			log.LogErrorf("action[doOverwriteByAppend] data process err %v", err)
 			break
 		}
 
 		if !reqPacket.isValidWriteReply(replyPacket) || reqPacket.CRC != replyPacket.CRC {
 			err = errors.New(fmt.Sprintf("doOverwrite: is not the corresponding reply, ino(%v) req(%v) replyPacket(%v)", s.inode, req, replyPacket))
+			log.LogErrorf("action[doOverwriteByAppend] data process err %v", err)
 			break
 		}
 
 		once.Do(func() {
 			verOff = replyPacket.ExtentOffset
+			log.LogWarnf("action[doOverwriteByAppend] data process verOff be set %v", verOff)
 		})
 
 		total += packSize
@@ -489,12 +493,17 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		VerSeq:       s.verSeq,
 		ModGen:       req.ExtentKey.ModGen,
 	}
-
-	if nil != s.extents.SplitExtentKey(extKey) {
+	log.LogDebugf("action[doOverwriteByAppend] local cache process start")
+	if err = s.extents.SplitExtentKey(extKey); err != nil {
+		log.LogErrorf("action[doOverwriteByAppend] local cache process err %v", err)
 		return
 	}
-
-	err = s.client.splitExtentKey(s.parentInode, s.inode, *extKey)
+	log.LogDebugf("action[doOverwriteByAppend] meta extent split process start")
+	if err = s.client.splitExtentKey(s.parentInode, s.inode, *extKey); err != nil {
+		log.LogErrorf("action[doOverwriteByAppend] lmeta extent split process err %v", err)
+		return
+	}
+	log.LogDebugf("action[doOverwriteByAppend] process over!")
 	return
 }
 

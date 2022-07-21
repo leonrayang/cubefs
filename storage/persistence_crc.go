@@ -45,7 +45,12 @@ func (s *ExtentStore) PersistenceBlockCrc(e *Extent, blockNo int, blockCrc uint3
 	if !proto.IsNormalDp(s.partitionType) {
 		return
 	}
-
+	if blockNo >= len(e.header)/util.PerBlockCrcSize {
+		e.Lock()
+		defer e.Lock()
+		exp := make([]byte, util.BlockHeaderSize)
+		e.header = append(e.header, exp...)
+	}
 	startIdx := blockNo * util.PerBlockCrcSize
 	endIdx := startIdx + util.PerBlockCrcSize
 	binary.BigEndian.PutUint32(e.header[startIdx:endIdx], blockCrc)

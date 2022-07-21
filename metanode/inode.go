@@ -600,34 +600,7 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExt
 		log.LogDebugf("action[RestoreMultiSnapExts] ext split [%v] with seq[%v] try to del.the last seq [%], ek details[%v]",
 			delExt.IsSplit, delExt.VerSeq, lastSeq, delExt)
 		if delExt.VerSeq > lastSeq {
-			// split need check the reference count, delete it when it's reference is 0
-			if delExt.IsSplit { // todo:optimize the algorithm
-				i.PrintAllSplitInfo()
-				for id, info := range i.SplitExtents {
-					log.LogInfof("action[RestoreMultiSnapExts] inode [%v] index [%v] extent be splited with info [dp:%v,extid:%v,refcnt:%v]",
-						i.Inode, id, info.PartitionId, info.ExtentId, info.refCnt)
-
-					if info.PartitionId == delExt.PartitionId && info.ExtentId == delExt.ExtentId {
-						log.LogErrorf("action[RestoreMultiSnapExts] inode [%v] refcnt [%v]", i.Inode, info.refCnt)
-						if info.refCnt > 0 {
-							info.refCnt--
-							if info.refCnt == 0 {
-								delExtents = append(delExtents, delExt)
-								exts := i.SplitExtents[id+1:]
-								i.SplitExtents = i.SplitExtents[:id]
-								i.SplitExtents = append(i.SplitExtents, exts...)
-
-								i.PrintAllSplitInfo()
-							}
-						} else {
-							log.LogErrorf("action[RestoreMultiSnapExts] inode [%v] refcnt should not be zero", i.Inode)
-						}
-						break
-					}
-				}
-			} else {
-				delExtents = append(delExtents, delExt)
-			}
+			delExtents = append(delExtents, delExt)
 		} else {
 			log.LogInfof("action[RestoreMultiSnapExts] move to level 1 delExt [%v] specSnapExtent size [%v]", delExt, len(specSnapExtent))
 			specSnapExtent = append(specSnapExtent, delExt)

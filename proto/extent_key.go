@@ -166,6 +166,9 @@ func (k *ExtentKey) MarshalBinaryWithCheckSum() ([]byte, error) {
 	if err := binary.Write(buf, binary.BigEndian, k.CheckSum()); err != nil {
 		return nil, err
 	}
+	if err := binary.Write(buf, binary.BigEndian, k.IsSplit); err != nil {
+		return nil, err
+	}
 	return buf.Bytes(), nil
 }
 
@@ -199,6 +202,9 @@ func (k *ExtentKey) UnmarshalBinaryWithCheckSum(buf *bytes.Buffer) (err error) {
 		return
 	}
 	if err = binary.Read(buf, binary.BigEndian, &checksum); err != nil {
+		return
+	}
+	if err = binary.Read(buf, binary.BigEndian, &k.IsSplit); err != nil {
 		return
 	}
 	if k.CheckSum() != checksum {
