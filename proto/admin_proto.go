@@ -153,6 +153,7 @@ type VolumeVerInfo struct {
 	VerSeq				uint64
 	VerSeqPrepare		uint64
 	VerPrepareStatus    uint8
+	Enabled             bool
 }
 
 // ClusterInfo defines the cluster infomation.

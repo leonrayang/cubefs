@@ -83,7 +83,7 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 	// use inode verSeq instead
 	ino.verSeq = mp.verSeq
 	ino.Extents.Append(ext)
-	log.LogInfof("ExtentAppendWithCheck: ino(%v) mp(%v) verSeq (%v)", req.Inode, req.PartitionID, mp.verSeq)
+	log.LogDebugf("ExtentAppendWithCheck: ino(%v) mp(%v) verSeq (%v)", req.Inode, req.PartitionID, mp.verSeq)
 	// Store discard extents right after the append extent key.
 	if len(req.DiscardExtents) != 0 {
 		ino.Extents.eks = append(ino.Extents.eks, req.DiscardExtents...)
@@ -102,6 +102,9 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))
 		return
 	}
+
+	log.LogDebugf("ExtentAppendWithCheck: ino(%v) mp(%v) verSeq (%v) req.VerSeq(%v)", req.Inode, req.PartitionID, mp.verSeq, req.VerSeq)
+
 	if mp.verSeq > req.VerSeq {
 		//reuse ExtentType to identify flag of version inconsistent between metanode and client
 		//will resp to client and make client update all streamer's extent and it's verSeq

@@ -692,7 +692,6 @@ func (m *Server) getVolVer(w http.ResponseWriter, r *http.Request) {
 		err error
 		name string
 		info *proto.VolumeVerInfo
-		verRsp []byte
 	)
 	if name, err = parseVolName(r); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
@@ -703,11 +702,8 @@ func (m *Server) getVolVer(w http.ResponseWriter, r *http.Request) {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVolNotExists, Msg: err.Error()})
 		return
 	}
-	if verRsp, err = json.Marshal(info); err != nil {
-		err = fmt.Errorf("json marshal for response failed %s", err.Error())
-		return
-	}
-	sendOkReply(w, r, newSuccessHTTPReply(verRsp))
+
+	sendOkReply(w, r, newSuccessHTTPReply(info))
 }
 
 func (m *Server) updateVol(w http.ResponseWriter, r *http.Request) {

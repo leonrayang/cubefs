@@ -76,6 +76,7 @@ func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo){
 	if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
 		ver = verMgr.prepareCommit.prepareInfo
 		verMgr.multiVersionList = append(verMgr.multiVersionList, ver)
+		verMgr.verSeq = ver.Ver
 		log.LogInfof("action[CommitVer] ask mgr do commit in next step verseq %v", ver.Ver)
 		verMgr.wait<-nil
 	} else {
@@ -94,7 +95,7 @@ func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error
 	verMgr.Lock()
 	defer verMgr.Unlock()
 	tm := time.Now()
-
+	verMgr.enabled = true
 	if len(verMgr.multiVersionList) > MaxSnapshotCount {
 		err =  fmt.Errorf("too much version exceed %v in list", MaxSnapshotCount)
 		log.LogErrorf("action[GenerateVer] err %v", err)
@@ -237,6 +238,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 				log.LogInfof("action[createVer2PhaseTask] verseq %v op %v get err %v", verSeq, verMgr.prepareCommit.op, err)
 				if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
 					if err == nil {
+						verMgr.verSeq = verSeq
 						verMgr.prepareCommit.reset()
 						verMgr.prepareCommit.op = proto.CreateVersionCommit
 						log.LogInfof("action[createVer2PhaseTask] prepare fin.start commit")

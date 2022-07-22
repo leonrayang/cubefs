@@ -290,10 +290,12 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 		return
 	}
 
+	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	// Check if extent file size matches the write offset just in case
 	// multiple clients are writing concurrently.
 	e.Lock()
 	defer e.Unlock()
+	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	if IsAppendWrite(writeType) && e.dataSize != offset {
 		err = NewParameterMismatchErr(fmt.Sprintf("extent current size = %v write offset=%v write size=%v", e.dataSize, offset, size))
 		log.LogErrorf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
@@ -305,13 +307,16 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 			offset, size, writeType, err)
 		return
 	}
-
+	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	if _, err = e.file.WriteAt(data[:size], int64(offset)); err != nil {
+		log.LogErrorf("action[Extent.Write] offset %v size %v writeType %v err %v", offset, size, writeType, err)
 		return
 	}
+	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	blockNo := offset / util.BlockSize
 	offsetInBlock := offset % util.BlockSize
 	defer func() {
+		log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 		if IsAppendWrite(writeType) {
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
 			e.dataSize = int64(math.Max(float64(e.dataSize), float64(offset+size)))
@@ -321,8 +326,11 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 		}
 
 	}()
+	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	if isSync {
 		if err = e.file.Sync(); err != nil {
+			log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v err %v",
+				offset, size, writeType, err)
 			return
 		}
 	}
@@ -332,16 +340,19 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 			offset, size, writeType, err)
 		return
 	}
+	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	if offsetInBlock+size <= util.BlockSize {
+		log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 		err = crcFunc(e, int(blockNo), 0)
 		log.LogDebugf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
 			offset, size, writeType, err)
 		return
 	}
+	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	if err = crcFunc(e, int(blockNo), 0); err == nil {
 		err = crcFunc(e, int(blockNo+1), 0)
 	}
-
+	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	return
 }
 
@@ -397,7 +408,7 @@ func (e *Extent) checkWriteOffsetAndSize(writeType int, offset, size int64) erro
 			return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v", offset, size))
 		}
 	} else if writeType == AppendRandomWriteType {
-		log.LogInfof("action[checkOffsetAndSize] offset %v size %v", offset, size)
+		log.LogDebug("action[checkOffsetAndSize] offset %v size %v", offset, size)
 		if offset < util.BlockCount*util.BlockSize || size == 0 {
 			return NewParameterMismatchErr(fmt.Sprintf("writeType=%v offset=%v size=%v", writeType, offset, size))
 		}
