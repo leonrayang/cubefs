@@ -729,9 +729,11 @@ func (m *metadataManager) opMetaExtentAddWithCheck(conn net.Conn, p *Packet,
 	if err = m.checkMultiVersionStatus(mp.GetVolName()); err != nil {
 		return
 	}
-	err = mp.ExtentAppendWithCheck(req, p)
-	m.respondToClient(conn, p)
-	if err != nil {
+
+	if err = mp.ExtentAppendWithCheck(req, p); err != nil {
+		log.LogErrorf("%s [opMetaExtentAddWithCheck] ExtentAppendWithCheck: %s", remoteAddr, err.Error())
+	}
+	if err = m.respondToClient(conn, p); err != nil {
 		log.LogErrorf("%s [opMetaExtentAddWithCheck] ExtentAppendWithCheck: %s, "+
 			"response to client: %s", remoteAddr, err.Error(), p.GetResultMsg())
 	}

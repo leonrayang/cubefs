@@ -133,7 +133,7 @@ func (se *SortedExtents) Append(ek proto.ExtentKey) (deleteExtents []proto.Exten
 func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []proto.ExtentKey, status uint8) {
 	status = proto.OpOk
 	endOffset := ekSplit.FileOffset + uint64(ekSplit.Size)
-	log.LogDebugf("action[SplitWithCheck] ek %v", ekSplit)
+	log.LogDebugf("action[SplitWithCheck] ekSplit ek %v", ekSplit)
 	se.Lock()
 	defer se.Unlock()
 
@@ -205,12 +205,42 @@ func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []p
 
 	log.LogDebugf("action[SplitWithCheck] eks [%v]", se.eks)
 
-	if key.FileOffset < ekSplit.FileOffset { // in the middle
-		key.Size = uint32(ekSplit.FileOffset - key.FileOffset)
-		eks := make([]proto.ExtentKey, len(se.eks[startIndex+1:]))
-		copy(eks, se.eks[startIndex+1:])
+	if key.FileOffset == ekSplit.FileOffset { // at the begin
+		eks := make([]proto.ExtentKey, len(se.eks)-startIndex)
+		copy(eks, se.eks[startIndex:])
+		se.eks = se.eks[:startIndex-1]
+		se.eks =  append(se.eks, ekSplit)
 
-		se.eks = se.eks[:startIndex+1]
+		log.LogDebugf("action[SplitWithCheck] se.eks [%v], eks [%v]", se.eks, eks)
+		key.FileOffset = key.FileOffset+uint64(ekSplit.Size)
+		key.ExtentOffset = key.ExtentOffset+uint64(ekSplit.Size)
+		key.Size = keySize-ekSplit.Size
+		se.eks = append(se.eks, key)
+
+		log.LogDebugf("action[SplitWithCheck] se.eks [%v] eks [%v]", se.eks, eks)
+
+		se.eks = append(se.eks, eks...)
+		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks)
+
+	} else if key.FileOffset+uint64(key.Size) == ekSplit.FileOffset+uint64(ekSplit.Size) { // in the end
+		key.Size = keySize-ekSplit.Size
+
+		eks := make([]proto.ExtentKey, len(se.eks[startIndex:]))
+		copy(eks, se.eks[startIndex:])
+		log.LogDebugf("action[SplitWithCheck] eks [%v]", eks)
+
+		se.eks = se.eks[:startIndex]
+		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks)
+		se.eks = append(se.eks, ekSplit)
+		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks)
+		se.eks = append(se.eks, eks...)
+		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks)
+	} else { // in the middle
+		key.Size = uint32(ekSplit.FileOffset - key.FileOffset)
+		eks := make([]proto.ExtentKey, len(se.eks[startIndex:]))
+		copy(eks, se.eks[startIndex:])
+
+		se.eks = se.eks[:startIndex]
 		log.LogDebugf("action[SplitWithCheck] eks [%v]", se.eks)
 
 		se.eks = append(se.eks, ekSplit)
@@ -229,36 +259,6 @@ func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []p
 		log.LogDebugf("action[SplitWithCheck] eks [%v]", se.eks)
 		se.eks = append(se.eks, eks...)
 		log.LogDebugf("action[SplitWithCheck] eks [%v]", se.eks)
-	} else if key.FileOffset == ekSplit.FileOffset { // at the begin
-		eks := make([]proto.ExtentKey, len(se.eks)-startIndex)
-		copy(eks, se.eks[startIndex:])
-		se.eks = se.eks[:0]
-		se.eks =  append(se.eks, ekSplit)
-
-		log.LogDebugf("action[SplitWithCheck] se.eks [%v], eks [%v]", se.eks, eks)
-		key.FileOffset = key.FileOffset+uint64(ekSplit.Size)
-		key.ExtentOffset = key.ExtentOffset+uint64(ekSplit.Size)
-		key.Size = keySize-ekSplit.Size
-		se.eks = append(se.eks, key)
-
-		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks, eks)
-
-		se.eks = append(se.eks, eks...)
-		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks)
-
-	} else if key.FileOffset+uint64(key.Size) == ekSplit.FileOffset+uint64(ekSplit.Size) { // in the end
-		key.Size = keySize-ekSplit.Size
-
-		eks := make([]proto.ExtentKey, len(se.eks[startIndex+1:]))
-		copy(eks, se.eks[startIndex+1:])
-		log.LogDebugf("action[SplitWithCheck] eks [%v]", eks)
-
-		se.eks = se.eks[:startIndex+1]
-		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks)
-		se.eks = append(se.eks, ekSplit)
-		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks)
-		se.eks = append(se.eks, eks...)
-		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks)
 	}
 	return
 }

@@ -520,7 +520,7 @@ func (p *Packet) MarshalHeader(out []byte) {
 	binary.BigEndian.PutUint64(out[33:41], uint64(p.ExtentOffset))
 	binary.BigEndian.PutUint64(out[41:49], uint64(p.ReqID))
 	binary.BigEndian.PutUint64(out[49:util.PacketHeaderSize], p.KernelOffset)
-	if p.Opcode == OpRandomWriteVer {
+	if p.Opcode == OpRandomWriteVer || p.ExtentType & MultiVersionFlag > 0 {
 		binary.BigEndian.PutUint64(out[util.PacketHeaderSize:util.PacketHeaderSize+8], p.VerSeq)
 	}
 	return
@@ -591,7 +591,7 @@ func (p *Packet) WriteToNoDeadLineConn(c net.Conn) (err error) {
 // WriteToConn writes through the given connection.
 func (p *Packet) WriteToConn(c net.Conn) (err error) {
 	headSize := util.PacketHeaderSize
-	if p.Opcode == OpRandomWriteVer {
+	if p.Opcode == OpRandomWriteVer || p.ExtentType & MultiVersionFlag > 0 {
 		headSize = util.PacketHeaderVerSize
 	}
 	header, err := Buffers.Get(headSize)
@@ -647,7 +647,10 @@ func (p *Packet) ReadFromConnWithVer(c net.Conn, timeoutSec int) (err error) {
 		return
 	}
 
+	log.LogDebug("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
+
 	if p.ExtentType & MultiVersionFlag > 0 {
+		log.LogDebug("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
 		ver := make([]byte, 8)
 		if _, err = io.ReadFull(c, ver); err != nil {
 			return
