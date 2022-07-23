@@ -324,7 +324,8 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
 			e.snapshotDataSize = int64(math.Max(float64(e.snapshotDataSize), float64(offset+size)))
 		}
-
+		log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v dataSize %v snapshotDataSize %v",
+			offset, size, writeType, e.dataSize, e.snapshotDataSize)
 	}()
 	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	if isSync {
@@ -387,20 +388,20 @@ func (e *Extent) ReadTiny(data []byte, offset, size int64, isRepairRead bool) (c
 	return
 }
 
-
 func (e *Extent) checkReadOffsetAndSize(offset, size int64) error {
-	if offset > e.Size() {
-		return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v", offset, size))
+	if (e.snapshotDataSize == util.ExtentSize && offset > e.Size()) ||
+		(e.snapshotDataSize > util.ExtentSize && offset > e.snapshotDataSize )  {
+		return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v snapshotDataSize=%v", offset, size, e.snapshotDataSize))
 	}
 	return nil
 }
 
 func (e *Extent) checkWriteOffsetAndSize(writeType int, offset, size int64) error {
 	if writeType == AppendWriteType || writeType == AppendWriteVerType{
-		if offset+size > util.BlockSize*util.BlockCount {
+		if offset+size > util.ExtentSize {
 			return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v", offset, size))
 		}
-		if offset >= util.BlockCount*util.BlockSize || size == 0 {
+		if offset >= util.ExtentSize || size == 0 {
 			return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v", offset, size))
 		}
 
@@ -409,7 +410,7 @@ func (e *Extent) checkWriteOffsetAndSize(writeType int, offset, size int64) erro
 		}
 	} else if writeType == AppendRandomWriteType {
 		log.LogDebug("action[checkOffsetAndSize] offset %v size %v", offset, size)
-		if offset < util.BlockCount*util.BlockSize || size == 0 {
+		if offset < util.ExtentSize || size == 0 {
 			return NewParameterMismatchErr(fmt.Sprintf("writeType=%v offset=%v size=%v", writeType, offset, size))
 		}
 	}

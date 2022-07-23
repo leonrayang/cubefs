@@ -85,7 +85,7 @@ func (reader *ExtentReader) Read(req *ExtentRequest) (readBytes int, err error) 
 
 			e = reader.checkStreamReply(reqPacket, replyPacket)
 			if e != nil {
-				log.LogWarnf("checkStreamReply failed:(%v)", replyPacket.GetResultMsg())
+				log.LogWarnf("checkStreamReply failed:(%v) reply msg:(%v)", e, replyPacket.GetResultMsg())
 				// Dont change the error message, since the caller will
 				// check if it is NotLeaderErr.
 				return e, false
