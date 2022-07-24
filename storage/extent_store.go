@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -665,6 +666,7 @@ func (s *ExtentStore) GetAvailableTinyExtent() (extentID uint64, err error) {
 
 // SendToAvailableTinyExtentC sends the extent to the channel that stores the available tiny extents.
 func (s *ExtentStore) SendToAvailableTinyExtentC(extentID uint64) {
+	log.LogInfof("action[SendToAvailableTinyExtentC] backtrace %v", string(debug.Stack()))
 	if _, ok := s.availableTinyExtentMap.Load(extentID); !ok {
 		s.availableTinyExtentC <- extentID
 		s.availableTinyExtentMap.Store(extentID, true)

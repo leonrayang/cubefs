@@ -265,8 +265,8 @@ func NewPacketReqID() *Packet {
 }
 
 func (p *Packet) String() string {
-	return fmt.Sprintf("ReqID(%v)Op(%v)PartitionID(%v)ResultCode(%v)ExtOffset(%v)KernelOff(%v)",
-		p.ReqID, p.GetOpMsg(), p.PartitionID, p.GetResultMsg(), p.ExtentOffset, p.KernelOffset)
+	return fmt.Sprintf("ReqID(%v)Op(%v)PartitionID(%v)ResultCode(%v)ExID(%v)ExtOffset(%v)KernelOff(%v)Type(%v)Seq(%v)",
+		p.ReqID, p.GetOpMsg(), p.PartitionID, p.GetResultMsg(), p.ExtentID, p.ExtentOffset, p.KernelOffset, p.ExtentType, p.VerSeq)
 }
 
 // GetStoreType returns the store type.
