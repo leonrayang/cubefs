@@ -122,6 +122,16 @@ func (s *DataNode) addExtentInfo(p *repl.Packet) error {
 			return err
 		}
 	} else if p.IsSnapshotModWriteAppendOperation() {
+		if p.IsTinyExtentType() {
+			p.ExtentOffset, err = store.GetTinyExtentOffset(p.ExtentID)
+			if err != nil {
+				err = fmt.Errorf("addExtentInfo partition %v  %v GetTinyExtentOffset error %v", p.PartitionID, extentID, err.Error())
+				log.LogErrorf("err %v", err)
+			}
+			log.LogDebugf("action[prepare.addExtentInfo] dp %v append randomWrite p.ExtentOffset %v Kernel(file)Offset",
+				p.PartitionID, p.ExtentOffset, p.KernelOffset)
+			return err
+		}
 		p.ExtentOffset, err = store.GetExtentSnapshotModOffset(p.ExtentID)
 		log.LogDebugf("action[prepare.addExtentInfo] pack (%v)", p)
 		if err != nil {

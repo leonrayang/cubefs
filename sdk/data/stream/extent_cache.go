@@ -177,6 +177,7 @@ func (cache *ExtentCache) SplitExtentKey(ekPivot *proto.ExtentKey) (err error){
 
 // Append appends an extent key.
 func (cache *ExtentCache) Append(ek *proto.ExtentKey, sync bool) (discardExtents []proto.ExtentKey) {
+	log.LogDebugf("action[ExtentCache.Append] ek %v", ek)
 	ekEnd := ek.FileOffset + uint64(ek.Size)
 	lower := &proto.ExtentKey{FileOffset: ek.FileOffset}
 	upper := &proto.ExtentKey{FileOffset: ekEnd}
@@ -454,7 +455,7 @@ func (cache *ExtentCache) PrepareWriteRequests(offset, size int, data []byte) []
 	cache.root.DescendLessOrEqual(pivot, func(i btree.Item) bool {
 		ek := i.(*proto.ExtentKey)
 		lower.FileOffset = ek.FileOffset
-		log.LogDebugf("action[ExtentCache.PrepareWriteRequests] ek [%v]", ek.String())
+		log.LogDebugf("action[ExtentCache.PrepareWriteRequests] ek [%v], pivot[%v]", ek, pivot)
 		return false
 	})
 

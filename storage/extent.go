@@ -233,14 +233,10 @@ func IsRandomWrite(writeType int) bool {
 }
 
 func IsAppendWrite(writeType int) bool {
-	return writeType == AppendWriteType
+	return writeType == AppendWriteType || writeType == AppendWriteVerType
 }
 
-func IsAppendWriteByVer(writeType int) bool {
-	return writeType == AppendWriteVerType
-}
-
-func IsRandomAppendWrite(writeType int) bool {
+func IsAppendRandomWrite(writeType int) bool {
 	return writeType == AppendRandomWriteType
 }
 // WriteTiny performs write on a tiny extent.
@@ -301,7 +297,7 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 		log.LogErrorf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
 			offset, size, writeType, err)
 		return
-	} else if IsRandomAppendWrite(writeType) && e.snapshotDataSize != offset {
+	} else if IsAppendRandomWrite(writeType) && e.snapshotDataSize != offset {
 		err = NewParameterMismatchErr(fmt.Sprintf("extent current snapshot size = %v write offset=%v write size=%v", e.snapshotDataSize, offset, size))
 		log.LogErrorf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
 			offset, size, writeType, err)
@@ -320,7 +316,7 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 		if IsAppendWrite(writeType) {
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
 			e.dataSize = int64(math.Max(float64(e.dataSize), float64(offset+size)))
-		} else if IsAppendWriteByVer(writeType) {
+		} else if IsAppendRandomWrite(writeType) {
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
 			e.snapshotDataSize = int64(math.Max(float64(e.snapshotDataSize), float64(offset+size)))
 		}
@@ -397,7 +393,7 @@ func (e *Extent) checkReadOffsetAndSize(offset, size int64) error {
 }
 
 func (e *Extent) checkWriteOffsetAndSize(writeType int, offset, size int64) error {
-	if writeType == AppendWriteType || writeType == AppendWriteVerType{
+	if IsAppendWrite(writeType) {
 		if offset+size > util.ExtentSize {
 			return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v", offset, size))
 		}

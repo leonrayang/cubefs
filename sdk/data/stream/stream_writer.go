@@ -174,6 +174,17 @@ func (s *Streamer) IssueEvictRequest() error {
 	return err
 }
 
+func (s *Streamer) GetStoreMod(offset int, size int) (storeMode int) {
+	// Small files are usually written in a single write, so use tiny extent
+	// store only for the first write operation.
+	if offset > 0 || offset+size > s.tinySizeLimit() {
+		storeMode = proto.NormalExtentType
+	} else {
+		storeMode = proto.TinyExtentType
+	}
+	return
+}
+
 func (s *Streamer) server() {
 	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
@@ -345,6 +356,7 @@ begin:
 				s.inode, s.verSeq, req.ExtentKey.VerSeq, req.ExtentKey)
 
 			if req.ExtentKey.VerSeq == s.verSeq {
+				log.LogDebugf("action[streamer.write] over write extent key (%v)", req.ExtentKey)
 				writeSize, err = s.doOverwrite(req, direct)
 				if err == proto.ErrCodeVersionOp {
 					log.LogDebugf("action[streamer.write] write need version update")
@@ -364,7 +376,7 @@ begin:
 				}
 				log.LogDebugf("action[streamer.write] err %v retryTimes %v", err, retryTimes)
 			} else {
-				log.LogDebugf("action[streamer.write] doOverwriteByAppend")
+				log.LogDebugf("action[streamer.write] doOverwriteByAppend extent key (%v)", req.ExtentKey)
 				writeSize, err = s.doOverwriteByAppend(req, direct)
 			}
 			if s.client.bcacheEnable {
@@ -372,6 +384,7 @@ begin:
 				go s.client.evictBcache(cacheKey)
 			}
 		} else {
+			log.LogDebugf("action[streamer.write] doWrite extent key (%v)", req.ExtentKey)
 			writeSize, err = s.doWrite(req.Data, req.FileOffset, req.Size, direct)
 		}
 		if err != nil {
@@ -434,6 +447,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		if direct {
 			reqPacket.Opcode = proto.OpSyncRandomWriteAppend
 		}
+		reqPacket.ExtentType = uint8(s.GetStoreMod(offset-ekFileOffset+total+ekExtOffset, offset))
 
 		packSize := util.Min(size-total, util.BlockSize)
 		copy(reqPacket.Data[:packSize], req.Data[total:total+packSize])
@@ -614,15 +628,11 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 
 	// Small files are usually written in a single write, so use tiny extent
 	// store only for the first write operation.
-	if offset > 0 || offset+size > s.tinySizeLimit() {
-		storeMode = proto.NormalExtentType
-	} else {
-		storeMode = proto.TinyExtentType
-	}
+	storeMode = s.GetStoreMod(offset, size)
 
 	log.LogDebugf("doWrite enter: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
 	if proto.IsHot(s.client.volumeType) {
-		if storeMode == proto.NormalExtentType && (s.handler == nil || s.handler != nil && s.handler.fileOffset+s.handler.size != offset) {
+		if storeMode == proto.NormalExtentType {
 			if currentEK := s.extents.GetEnd(uint64(offset), s.verSeq); currentEK != nil && !storage.IsTinyExtent(currentEK.ExtentId) {
 				s.closeOpenHandler()
 
