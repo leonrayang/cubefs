@@ -299,6 +299,10 @@ func (p *Packet) GetOpMsg() (m string) {
 		m = "OpWrite"
 	case OpRandomWrite:
 		m = "OpRandomWrite"
+	case OpRandomWriteAppend:
+		m = "OpRandomWriteAppend"
+	case OpRandomWriteVer:
+		m = "OpRandomWriteVer"
 	case OpRead:
 		m = "Read"
 	case OpStreamRead:
@@ -399,6 +403,10 @@ func (p *Packet) GetOpMsg() (m string) {
 		m = "OpSyncWrite"
 	case OpSyncRandomWrite:
 		m = "OpSyncRandomWrite"
+	case OpSyncRandomWriteVer:
+		m = "OpSyncRandomWriteVer"
+	case OpSyncRandomWriteAppend:
+		m = "OpSyncRandomWriteAppend"
 	case OpReadTinyDeleteRecord:
 		m = "OpReadTinyDeleteRecord"
 	case OpPing:

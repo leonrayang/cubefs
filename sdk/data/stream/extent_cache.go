@@ -155,7 +155,14 @@ func (cache *ExtentCache) SplitExtentKey(ekPivot *proto.ExtentKey) (err error){
 	}
 
 	cache.root.ReplaceOrInsert(ekPivot)
-	log.LogDebugf("action[SplitExtentKey] ek [%v]", ek, ekPivot)
+	log.LogDebugf("action[SplitExtentKey] ek [%v], ekPivot[%v]", ek, ekPivot)
+
+	cache.root.Descend(func(i btree.Item) bool {
+		ek := i.(*proto.ExtentKey)
+		// skip if the start offset matches with the given offset
+		log.LogDebugf("action[SplitExtentKey.LoopPrint.Exit] inode %v ek [%v]", cache.inode, ek.String())
+		return true
+	})
 
 	return
 }

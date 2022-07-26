@@ -128,7 +128,7 @@ func (s *DataNode) addExtentInfo(p *repl.Packet) error {
 				err = fmt.Errorf("addExtentInfo partition %v  %v GetTinyExtentOffset error %v", p.PartitionID, extentID, err.Error())
 				log.LogErrorf("err %v", err)
 			}
-			log.LogDebugf("action[prepare.addExtentInfo] dp %v append randomWrite p.ExtentOffset %v Kernel(file)Offset",
+			log.LogDebugf("action[prepare.addExtentInfo] dp %v append randomWrite p.ExtentOffset %v Kernel(file)Offset %v",
 				p.PartitionID, p.ExtentOffset, p.KernelOffset)
 			return err
 		}
