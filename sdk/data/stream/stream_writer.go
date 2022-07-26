@@ -447,7 +447,9 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		if direct {
 			reqPacket.Opcode = proto.OpSyncRandomWriteAppend
 		}
-		reqPacket.ExtentType = uint8(s.GetStoreMod(offset-ekFileOffset+total+ekExtOffset, offset))
+		if req.ExtentKey.ExtentId <=  storage.TinyExtentCount {
+			reqPacket.ExtentType = proto.TinyExtentType
+		}
 
 		packSize := util.Min(size-total, util.BlockSize)
 		copy(reqPacket.Data[:packSize], req.Data[total:total+packSize])
@@ -635,7 +637,8 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 
 	log.LogDebugf("doWrite enter: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
 	if proto.IsHot(s.client.volumeType) {
-		if storeMode == proto.NormalExtentType {
+		// && (s.handler == nil || s.handler != nil && s.handler.fileOffset+s.handler.size != offset)  delete ??
+		if storeMode == proto.NormalExtentType && (s.handler == nil || s.handler != nil && s.handler.fileOffset+s.handler.size != offset) {
 			if currentEK := s.extents.GetEnd(uint64(offset), s.verSeq); currentEK != nil && !storage.IsTinyExtent(currentEK.ExtentId) {
 				s.closeOpenHandler()
 
