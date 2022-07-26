@@ -39,14 +39,14 @@ func (se *SortedExtents) String() string {
 	return string(data)
 }
 
-func (se *SortedExtents) MarshalBinary() ([]byte, error) {
+func (se *SortedExtents) MarshalBinary(v3 bool) ([]byte, error) {
 	var data []byte
 
 	se.RLock()
 	defer se.RUnlock()
 
 	for _, ek := range se.eks {
-		ekdata, err := ek.MarshalBinary()
+		ekdata, err := ek.MarshalBinary(v3)
 		if err != nil {
 			return nil, err
 		}
