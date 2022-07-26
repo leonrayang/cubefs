@@ -128,6 +128,7 @@ func (s *Streamer) IssueWriteRequest(offset int, data []byte, flags int) (write 
 	err = request.err
 	write = request.writeBytes
 	writeRequestPool.Put(request)
+	log.LogDebugf("action[IssueWriteRequest] requst done!")
 	return
 }
 
