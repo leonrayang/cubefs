@@ -384,7 +384,7 @@ begin:
 				go s.client.evictBcache(cacheKey)
 			}
 		} else {
-			log.LogDebugf("action[streamer.write] doWrite extent key (%v)", req.ExtentKey)
+			log.LogDebugf("action[streamer.write] doWrite req.FileOffset %v size %v", req.ExtentKey, req.FileOffset, req.Size)
 			writeSize, err = s.doWrite(req.Data, req.FileOffset, req.Size, direct)
 		}
 		if err != nil {
@@ -440,7 +440,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 	}
 	log.LogDebugf("action[doOverwriteByAppend] data process")
 	sc := NewStreamConn(dp, false)
-	for total < size {
+	for total < size { // normally should only run once due to key exist in the system must be less than BlockSize
 		// right position in extent:offset-ekFileOffset+total+ekExtOffset .
 		// ekExtOffset means?
 		reqPacket := NewOverwriteByAppendPacket(dp, req.ExtentKey.ExtentId, offset-ekFileOffset+total+ekExtOffset, s.inode, offset)
@@ -497,7 +497,10 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 
 		total += packSize
 	}
-
+	if err != nil {
+		log.LogErrorf("action[doOverwriteByAppend] data process err %v", err)
+		return
+	}
 	extKey := &proto.ExtentKey{
 		FileOffset:   req.ExtentKey.FileOffset,
 		PartitionId:  req.ExtentKey.PartitionId,
@@ -512,7 +515,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		log.LogErrorf("action[doOverwriteByAppend] local cache process err %v", err)
 		return
 	}
-	log.LogDebugf("action[doOverwriteByAppend] meta extent split process start")
+	log.LogDebugf("action[doOverwriteByAppend] meta extent split with ek (%v)", extKey)
 	if err = s.client.splitExtentKey(s.parentInode, s.inode, *extKey); err != nil {
 		log.LogErrorf("action[doOverwriteByAppend] lmeta extent split process err %v", err)
 		return

@@ -397,7 +397,7 @@ func (eh *ExtentHandler) processReplyError(packet *Packet, errmsg string) {
 func (eh *ExtentHandler) flush() (err error) {
 	eh.flushPacket()
 	eh.waitForFlush()
-
+	log.LogDebugf("flush.eh inode %v fileoffset %v, mod %v, key[%v] ", eh.inode, eh.fileOffset, eh.storeMode, eh.key)
 	err = eh.appendExtentKey()
 	if err != nil {
 		return

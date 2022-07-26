@@ -78,6 +78,7 @@ func (p *FollowerPacket) identificationErrorResultCode(errLog string, errMsg str
 	if strings.Contains(errLog, ActionReceiveFromFollower) || strings.Contains(errLog, ActionSendToFollowers) ||
 		strings.Contains(errLog, ConnIsNullErr) {
 		p.ResultCode = proto.OpIntraGroupNetErr
+		log.LogErrorf("action[identificationErrorResultCode] error %v, errmsg %v", errLog, errMsg)
 	} else if strings.Contains(errMsg, storage.ParameterMismatchError.Error()) ||
 		strings.Contains(errMsg, ErrorUnknownOp.Error()) {
 		p.ResultCode = proto.OpArgMismatchErr
@@ -93,6 +94,7 @@ func (p *FollowerPacket) identificationErrorResultCode(errLog string, errMsg str
 	} else if strings.Contains(errMsg, raft.ErrNotLeader.Error()) {
 		p.ResultCode = proto.OpTryOtherAddr
 	} else {
+		log.LogErrorf("action[identificationErrorResultCode] error %v, errmsg %v", errLog, errMsg)
 		p.ResultCode = proto.OpIntraGroupNetErr
 	}
 }
@@ -294,6 +296,7 @@ func (p *Packet) identificationErrorResultCode(errLog string, errMsg string) {
 	if strings.Contains(errLog, ActionReceiveFromFollower) || strings.Contains(errLog, ActionSendToFollowers) ||
 		strings.Contains(errLog, ConnIsNullErr) {
 		p.ResultCode = proto.OpIntraGroupNetErr
+		log.LogErrorf("action[identificationErrorResultCode] error %v, errmsg %v", errLog, errMsg)
 	} else if strings.Contains(errMsg, storage.ParameterMismatchError.Error()) ||
 		strings.Contains(errMsg, ErrorUnknownOp.Error()) {
 		p.ResultCode = proto.OpArgMismatchErr
@@ -312,6 +315,7 @@ func (p *Packet) identificationErrorResultCode(errLog string, errMsg string) {
 		p.ResultCode = proto.ErrCodeVersionOpError
 		log.LogErrorf("action[identificationErrorResultCode] not change ver erro code, (%v)", string(debug.Stack()))
 	} else {
+		log.LogErrorf("action[identificationErrorResultCode] error %v, errmsg %v", errLog, errMsg)
 		p.ResultCode = proto.OpIntraGroupNetErr
 	}
 }

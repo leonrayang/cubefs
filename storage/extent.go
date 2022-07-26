@@ -318,7 +318,11 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 			e.dataSize = int64(math.Max(float64(e.dataSize), float64(offset+size)))
 		} else if IsAppendRandomWrite(writeType) {
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
-			e.snapshotDataSize = int64(math.Max(float64(e.snapshotDataSize), float64(offset+size)))
+			index := int64(math.Max(float64(e.snapshotDataSize), float64(offset+size)))
+			if index%PageSize != 0 {
+				index = index + (PageSize - index%PageSize)
+			}
+			e.snapshotDataSize = index
 		}
 		log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v dataSize %v snapshotDataSize %v",
 			offset, size, writeType, e.dataSize, e.snapshotDataSize)
