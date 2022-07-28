@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"github.com/cubefs/cubefs/util/stat"
 	"net"
+	"runtime/debug"
 	"sync/atomic"
 	"time"
 
@@ -113,6 +114,7 @@ type ExtentHandler struct {
 
 // NewExtentHandler returns a new extent handler.
 func NewExtentHandler(stream *Streamer, offset int, storeMode int, size int) *ExtentHandler {
+	log.LogDebugf("NewExtentHandler stack(%v)", string(debug.Stack()))
 	eh := &ExtentHandler{
 		stream:       stream,
 		id:           GetExtentHandlerID(),
@@ -404,6 +406,7 @@ func (eh *ExtentHandler) flush() (err error) {
 	}
 
 	if eh.storeMode == proto.TinyExtentType {
+		log.LogWarnf("action[ExtentHandler.flush] tiny type not set close")
 		eh.setClosed()
 	}
 
@@ -415,8 +418,11 @@ func (eh *ExtentHandler) flush() (err error) {
 }
 
 func (eh *ExtentHandler) cleanup() (err error) {
+	log.LogInfof("action[ExtentHandler.cleanup] backtrace[%v]", string(debug.Stack()))
 	eh.doneSender <- struct{}{}
+	log.LogInfof("action[ExtentHandler.cleanup]")
 	eh.doneReceiver <- struct{}{}
+	log.LogInfof("action[ExtentHandler.cleanup]")
 	if eh.conn != nil {
 		conn := eh.conn
 		eh.conn = nil
@@ -654,14 +660,17 @@ func (eh *ExtentHandler) getStatus() int32 {
 }
 
 func (eh *ExtentHandler) setClosed() bool {
+	log.LogDebugf("action[ExtentHandler.setClosed] stack (%v)", string(debug.Stack()))
 	return atomic.CompareAndSwapInt32(&eh.status, ExtentStatusOpen, ExtentStatusClosed)
 }
 
 func (eh *ExtentHandler) setRecovery() bool {
+	log.LogDebugf("action[ExtentHandler.setRecovery] stack (%v)", string(debug.Stack()))
 	return atomic.CompareAndSwapInt32(&eh.status, ExtentStatusClosed, ExtentStatusRecovery)
 }
 
 func (eh *ExtentHandler) setError() bool {
+	log.LogDebugf("action[ExtentHandler.setError] stack (%v)", string(debug.Stack()))
 	if proto.IsHot(eh.stream.client.volumeType) {
 		atomic.StoreInt32(&eh.stream.status, StreamerError)
 	}

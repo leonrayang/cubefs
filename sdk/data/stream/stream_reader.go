@@ -51,6 +51,7 @@ type Streamer struct {
 	done    chan struct{}    // stream writer is being closed
 
 	verSeq      uint64
+	needUpdateVer int32
 
 	writeLock       sync.Mutex
 	inflightL1cache sync.Map
