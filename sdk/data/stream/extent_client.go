@@ -21,6 +21,7 @@ import (
 	"github.com/cubefs/cubefs/sdk/data/manager"
 	"golang.org/x/time/rate"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -335,8 +336,7 @@ func (client *ExtentClient) UpdateLatestVer(verSeq uint64) (err error) {
 
 			streamer.verSeq = verSeq
 			streamer.extents.verSeq = verSeq
-			streamer.flush()
-			streamer.GetExtents()
+			atomic.StoreInt32(&streamer.needUpdateVer,1)
 			log.LogDebugf("action[ExtentClient.UpdateLatestVer] finhsed stream inode %v ver update to %v", streamer.inode, verSeq)
 		}
 	}

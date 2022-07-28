@@ -136,7 +136,9 @@ func (s *Streamer) IssueFlushRequest() error {
 	request := flushRequestPool.Get().(*FlushRequest)
 	request.done = make(chan struct{}, 1)
 	s.request <- request
+	log.LogDebugf("action[IssueFlushRequest] wait")
 	<-request.done
+	log.LogDebugf("action[IssueFlushRequest] done")
 	err := request.err
 	flushRequestPool.Put(request)
 	return err
@@ -270,30 +272,55 @@ func (s *Streamer) abortRequest(request interface{}) {
 }
 
 func (s *Streamer) handleRequest(request interface{}) {
+	rType := 0
+	defer func() {
+		log.LogDebugf("action[handleRequest] streamer out type %v", rType)
+	}()
+
+	if atomic.LoadInt32(&s.needUpdateVer) == 1 {
+		s.closeOpenHandler()
+		atomic.StoreInt32(&s.needUpdateVer, 0)
+	}
+
 	switch request := request.(type) {
 	case *OpenRequest:
+		rType = 1
+		log.LogDebugf("action[handleRequest] streamer in type %v", rType)
 		s.open()
 		request.done <- struct{}{}
 	case *WriteRequest:
+		rType = 2
+		log.LogDebugf("action[handleRequest] streamer in type %v", rType)
 		request.writeBytes, request.err = s.write(request.data, request.fileOffset, request.size, request.flags)
 		request.done <- struct{}{}
 	case *TruncRequest:
+		rType = 3
+		log.LogDebugf("action[handleRequest] streamer in type %v", rType)
 		request.err = s.truncate(request.size)
 		request.done <- struct{}{}
 	case *FlushRequest:
+		rType = 4
+		log.LogDebugf("action[handleRequest] streamer in type %v", rType)
 		request.err = s.flush()
 		request.done <- struct{}{}
 	case *ReleaseRequest:
+		rType = 5
+		log.LogDebugf("action[handleRequest] streamer in type %v", rType)
 		request.err = s.release()
 		request.done <- struct{}{}
 	case *EvictRequest:
+		rType = 6
+		log.LogDebugf("action[handleRequest] streamer in type %v", rType)
 		request.err = s.evict()
 		request.done <- struct{}{}
 	case *VerUpdateRequest:
+		rType = 7
+		log.LogDebugf("action[handleRequest] streamer in type %v", rType)
 		request.err = s.updateVer(request.verSeq)
 		request.done <- struct{}{}
 	default:
 	}
+
 }
 
 func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err error) {
@@ -385,7 +412,7 @@ begin:
 				go s.client.evictBcache(cacheKey)
 			}
 		} else {
-			log.LogDebugf("action[streamer.write] doWrite req.FileOffset %v size %v", req.ExtentKey, req.FileOffset, req.Size)
+			log.LogDebugf("action[streamer.write] doWrite req %v FileOffset %v size %v", req.ExtentKey, req.FileOffset, req.Size)
 			writeSize, err = s.doWrite(req.Data, req.FileOffset, req.Size, direct)
 		}
 		if err != nil {
@@ -812,6 +839,7 @@ func (s *Streamer) closeOpenHandler() (err error) {
 		if !s.dirty {
 			// in case the current handler is not on the dirty list and will not get cleaned up
 			// TODO unhandled error
+			log.LogDebugf("action[Streamer.closeOpenHandler]")
 			s.handler.cleanup()
 		}
 		s.handler = nil

@@ -57,6 +57,7 @@ type Streamer struct {
 	inflightL1cache      sync.Map
 	inflightEvictL1cache sync.Map
 	verSeq      uint64
+	needUpdateVer int32
 
 }
 
