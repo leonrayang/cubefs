@@ -102,6 +102,13 @@ func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error
 		return
 	}
 
+	if verMgr.prepareCommit.op != proto.CreateVersionCommit &&
+		verMgr.status == proto.VersionWorking && op != proto.CreateVersionCommit {
+		err = fmt.Errorf("last ver seq %v  op %v, status %v, op %v", verMgr.prepareCommit.prepareInfo.Ver, verMgr.prepareCommit.op, verMgr.status, verMgr.prepareCommit.op)
+		log.LogErrorf("action[VolVersionManager.createTask] err %v", err)
+		return
+	}
+
 	verMgr.prepareCommit.prepareInfo =  &proto.VolVersionInfo{
 		Ver:	verSeq,
 		Ctime:	tm,
@@ -224,12 +231,14 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 			return
 		}
 	}
-	verMgr.prepareCommit.op = proto.CreateVersionPrepare
+
 	log.LogInfof("action[createVer2PhaseTask] CreateVersionPrepare")
-	if _, err = verMgr.createTask(cluster, verSeq, verMgr.prepareCommit.op, force); err != nil {
+	if _, err = verMgr.createTask(cluster, verSeq, proto.CreateVersionPrepare, force); err != nil {
 		log.LogInfof("action[createVer2PhaseTask] CreateVersionPrepare err %v", err)
 		return
 	}
+	verMgr.prepareCommit.op = proto.CreateVersionPrepare
+
 	ticker := time.NewTicker(time.Second)
 	cnt := 0
 	for{
@@ -348,13 +357,8 @@ func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op 
 	verMgr.RLock()
 	defer verMgr.RUnlock()
 
-	if verMgr.status == proto.VersionWorking && op != proto.CreateVersionCommit {
-		err = fmt.Errorf("last ver seq %v status %v", verMgr.prepareCommit.prepareInfo.Ver, verMgr.status)
-		log.LogErrorf("action[VolVersionManager.createTask] err %v", err)
-		return
-	}
-	verMgr.status = proto.VersionWorking
 
+	verMgr.status = proto.VersionWorking
 	if err = verMgr.createTaskToDataNode(cluster, verSeq, op, force); err != nil {
 		log.LogInfof("action[VolVersionManager.createTask] err %v", err)
 		return
