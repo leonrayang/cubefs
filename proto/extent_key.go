@@ -30,8 +30,9 @@ var (
 	ExtentKeyHeaderSize   = len(ExtentKeyHeader)
 	ExtentLength          = 40
 	ExtentKeyChecksumSize = 4
+	ExtentVerFieldSize    = 9  // ver(8) and isSplit(1)
 	ExtentV2Length        = ExtentKeyHeaderSize + ExtentLength + ExtentKeyChecksumSize
-	ExtentV3Length        = ExtentKeyHeaderSize + ExtentLength + ExtentKeyChecksumSize + 8
+	ExtentV3Length        = ExtentKeyHeaderSize + ExtentLength + ExtentKeyChecksumSize + ExtentVerFieldSize
 	InvalidKey            = errors.New("invalid key error")
 	InvalidKeyHeader      = errors.New("invalid extent v2 key header error")
 	InvalidKeyCheckSum    = errors.New("invalid extent v2 key checksum error")
@@ -77,7 +78,7 @@ func (k *ExtentKey) Marshal() (m string) {
 func (k *ExtentKey) MarshalBinary(v3 bool) ([]byte, error) {
 	extLen := ExtentLength
 	if v3 {
-		extLen += 8
+		extLen += ExtentVerFieldSize
 	}
 	buf := bytes.NewBuffer(make([]byte, 0, ExtentLength))
 	if err := binary.Write(buf, binary.BigEndian, k.FileOffset); err != nil {
