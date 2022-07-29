@@ -126,7 +126,7 @@ func (s *Streamer) read(data []byte, offset int, size int) (total int, err error
 		requests        []*ExtentRequest
 		revisedRequests []*ExtentRequest
 	)
-
+	log.LogDebugf("action[streamer.read] offset %v size %v", offset, size)
 	ctx := context.Background()
 	s.client.readLimiter.Wait(ctx)
 	s.client.LimitManager.ReadAlloc(ctx, size)
@@ -154,6 +154,7 @@ func (s *Streamer) read(data []byte, offset int, size int) (total int, err error
 	filesize, _ := s.extents.Size()
 	log.LogDebugf("read: ino(%v) requests(%v) filesize(%v)", s.inode, requests, filesize)
 	for _, req := range requests {
+		log.LogDebugf("action[streamer.read] req %v", req)
 		if req.ExtentKey == nil {
 			for i := range req.Data {
 				req.Data[i] = 0
@@ -196,6 +197,7 @@ func (s *Streamer) read(data []byte, offset int, size int) (total int, err error
 			//read extent
 			reader, err = s.GetExtentReader(req.ExtentKey)
 			if err != nil {
+				log.LogErrorf("action[streamer.read] req %v err %v", req, err)
 				break
 			}
 
@@ -233,11 +235,13 @@ func (s *Streamer) read(data []byte, offset int, size int) (total int, err error
 
 				log.LogDebugf("TRACE Stream read. read full extent Exit. fullReq(%v) readBytes(%v) err(%v)", fullReq, readBytes, err)
 			} else {
+				log.LogDebugf("action[streamer.read] req %v start read", req)
 				readBytes, err = reader.Read(req)
 				if err != nil || readBytes != req.Size {
 					log.LogErrorf("ERROR Stream read. read error. req(%v) readBytes(%v) err(%v)", req, readBytes, err)
 					return
 				}
+				log.LogErrorf("action[streamer.read] req %v readBytes %v", req, readBytes)
 			}
 
 			log.LogDebugf("TRACE Stream read: ino(%v) req(%v) readBytes(%v) err(%v)", s.inode, req, readBytes, err)
@@ -252,6 +256,6 @@ func (s *Streamer) read(data []byte, offset int, size int) (total int, err error
 			}
 		}
 	}
-	//log.LogErrorf("==========> Streamer Read Exit, inode(%v), time[%v us].", s.inode, time.Since(t1).Microseconds())
+	log.LogDebugf("action[streamer.read] offset %v size %v exit", offset, size)
 	return
 }
