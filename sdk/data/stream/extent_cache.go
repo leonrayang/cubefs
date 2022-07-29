@@ -130,21 +130,22 @@ func (cache *ExtentCache) SplitExtentKey(ekPivot *proto.ExtentKey) (err error){
 	}
 	ek.ModGen++
 	log.LogDebugf("action[SplitExtentKey] ek [%v] ekPivot [%v]", ek, ekPivot)
+	// begin
 	if ek.FileOffset == ekPivot.FileOffset {
 		ek.Size = ek.Size - ekPivot.Size
 		ek.FileOffset = ek.FileOffset + uint64(ekPivot.Size)
 		ek.ExtentOffset = ek.ExtentOffset + uint64(ekPivot.Size)
 		log.LogDebugf("action[SplitExtentKey] ek [%v]", ek)
-	} else if ek.FileOffset + uint64(ek.Size) == ekPivot.FileOffset + uint64(ekPivot.Size) {
+	} else if ek.FileOffset + uint64(ek.Size) == ekPivot.FileOffset + uint64(ekPivot.Size) { // end
 		ek.Size = ek.Size - ekPivot.Size
 		log.LogDebugf("action[SplitExtentKey] ek [%v]", ek)
 	} else {
-		newSize := uint32(ek.FileOffset - ekPivot.FileOffset)
+		newSize := uint32(ekPivot.FileOffset - ek.FileOffset)  // middle
 		ekEnd := &proto.ExtentKey{
 			FileOffset:   ekPivot.FileOffset+uint64(ekPivot.Size),
 			PartitionId:  ek.PartitionId,
 			ExtentId:     ek.ExtentId,
-			ExtentOffset: ek.ExtentOffset + uint64(ek.Size + ekPivot.Size),
+			ExtentOffset: ek.ExtentOffset + uint64(newSize + ekPivot.Size),
 			Size:         ek.Size-newSize-ekPivot.Size,
 			VerSeq:       ek.VerSeq,
 			ModGen:       ek.ModGen,

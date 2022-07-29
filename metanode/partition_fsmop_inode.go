@@ -253,7 +253,11 @@ func (mp *metaPartition) fsmAppendExtents(ino *Inode) (status uint8) {
 	mp.extDelCh <- delExtents
 	return
 }
-
+func (mp *metaPartition) printExtents(ino *Inode) {
+	for index, ek := range ino.Extents.eks {
+		log.LogDebugf("ino %v index:%v seq %v tmp ek (%v)", ino.Inode, index, ino.verSeq, ek)
+	}
+}
 func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (status uint8) {
 	var (
 		delExtents []proto.ExtentKey
@@ -280,6 +284,8 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		discardExtentKey = eks[1:]
 	}
 
+	mp.printExtents(ino2)
+
 	log.LogDebugf("action[fsmAppendExtentWithCheck] ino %v isSplit %v ek %v", ino2, isSplit, eks[0])
 	if !isSplit {
 		delExtents, status = ino2.AppendExtentWithCheck(ino.verSeq, eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
@@ -298,6 +304,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		delExtents, status = ino2.SplitExtentWithCheck(ino.verSeq, eks[0])
 		mp.extDelCh <- delExtents
 	}
+	mp.printExtents(ino2)
 
 	log.LogInfof("fsmAppendExtentWithCheck inode(%v) ek(%v) deleteExtents(%v) discardExtents(%v) status(%v) isSplit(%v), extents(%v)",
 		ino2.Inode, eks[0], delExtents, discardExtentKey, status, isSplit, ino2.Extents.eks)

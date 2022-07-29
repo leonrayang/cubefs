@@ -184,7 +184,7 @@ func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []p
 			invalidExtents[0].String(), ekSplit)
 		return
 	}
-	key := se.eks[startIndex-1]
+	key := &se.eks[startIndex-1]
 	if key.PartitionId != ekSplit.PartitionId || key.ExtentId != ekSplit.ExtentId {
 		status = proto.OpArgMismatchErr
 		log.LogErrorf("action[SplitWithCheck] key found with mismatch extent info [%v] request [%v]", key, ekSplit)
@@ -195,7 +195,7 @@ func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []p
 	key.ModGen++
 	key.IsSplit = true
 
-	delKey := key
+	delKey := *key
 	delKey.ExtentOffset = key.ExtentOffset + (ekSplit.FileOffset-key.FileOffset)
 	delKey.Size = ekSplit.Size
 	delExtents = append(delExtents, delKey)
@@ -215,7 +215,7 @@ func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []p
 		key.FileOffset = key.FileOffset+uint64(ekSplit.Size)
 		key.ExtentOffset = key.ExtentOffset+uint64(ekSplit.Size)
 		key.Size = keySize-ekSplit.Size
-		se.eks = append(se.eks, key)
+		se.eks = append(se.eks, *key)
 
 		log.LogDebugf("action[SplitWithCheck] se.eks [%v] eks [%v]", se.eks, eks)
 
@@ -247,9 +247,9 @@ func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []p
 		log.LogDebugf("action[SplitWithCheck] eks [%v]", se.eks)
 		se.eks = append(se.eks, proto.ExtentKey{
 			FileOffset:ekSplit.FileOffset+uint64(ekSplit.Size),
-			PartitionId: ekSplit.PartitionId,
-			ExtentId: ekSplit.ExtentId,
-			ExtentOffset: ekSplit.ExtentOffset+uint64(ekSplit.Size),
+			PartitionId: key.PartitionId,
+			ExtentId: key.ExtentId,
+			ExtentOffset: key.ExtentOffset + uint64(key.Size) + uint64(ekSplit.Size),
 			Size: keySize - key.Size - ekSplit.Size,
 			//crc
 			VerSeq: key.VerSeq,

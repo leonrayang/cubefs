@@ -128,6 +128,8 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 // Delete dentry from the dentry tree.
 func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 	resp *DentryResponse) {
+
+	log.LogDebugf("action[fsmDeleteDentry] dentry", denParm)
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
 

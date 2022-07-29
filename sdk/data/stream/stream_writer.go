@@ -425,7 +425,6 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 	// the obtained extent key could be a local key which can be inconsistent with the remote key.
 	req.ExtentKey = s.extents.Get(uint64(offset))
 	ekFileOffset := int(req.ExtentKey.FileOffset)
-	ekExtOffset := int(req.ExtentKey.ExtentOffset)
 	if req.ExtentKey == nil {
 		err = errors.New(fmt.Sprintf("doOverwrite: extent key not exist, ino(%v) ekFileOffset(%v) ek(%v)", s.inode, ekFileOffset, req.ExtentKey))
 		return
@@ -445,8 +444,8 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 	sc := NewStreamConn(dp, false)
 	for total < size { // normally should only run once due to key exist in the system must be less than BlockSize
 		// right position in extent:offset-ekFileOffset+total+ekExtOffset .
-		// ekExtOffset means?
-		reqPacket := NewOverwriteByAppendPacket(dp, req.ExtentKey.ExtentId, offset-ekFileOffset+total+ekExtOffset, s.inode, offset)
+		// ekExtOffset will be set by replay packet at addExtentInfo(datanode)
+		reqPacket := NewOverwriteByAppendPacket(dp, req.ExtentKey.ExtentId, 0, s.inode, offset)
 		if direct {
 			reqPacket.Opcode = proto.OpSyncRandomWriteAppend
 		}
@@ -507,7 +506,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		return
 	}
 	extKey := &proto.ExtentKey{
-		FileOffset:   req.ExtentKey.FileOffset,
+		FileOffset:   uint64(req.FileOffset),
 		PartitionId:  req.ExtentKey.PartitionId,
 		ExtentId:     req.ExtentKey.ExtentId,
 		ExtentOffset: uint64(verOff),
@@ -515,7 +514,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		VerSeq:       s.verSeq,
 		ModGen:       req.ExtentKey.ModGen,
 	}
-	log.LogDebugf("action[doOverwriteByAppend] local cache process start")
+	log.LogDebugf("action[doOverwriteByAppend] local cache process start extKey %v", extKey)
 	if err = s.extents.SplitExtentKey(extKey); err != nil {
 		log.LogErrorf("action[doOverwriteByAppend] local cache process err %v", err)
 		return

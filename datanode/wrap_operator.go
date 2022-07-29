@@ -343,6 +343,9 @@ func (s *DataNode) checkMultiVersionStatus(volName string) (err error) {
 					volName, atomic.LoadUint32(&ver2Phase.status), atomic.LoadUint32(&ver2Phase.step), err)
 				return
 			}
+
+			log.LogDebugf("action[checkMultiVersionStatus] vol %v info %v", volName, info)
+
 			if info.VerSeqPrepare != ver2Phase.verPrepare {
 				atomic.StoreUint32(&ver2Phase.status, proto.VersionWorkingAbnormal)
 				err = fmt.Errorf("volumeName %v status %v step %v",
