@@ -53,17 +53,27 @@ func (mp *metaPartition) CreateDentry(req *CreateDentryReq, p *Packet) (err erro
 
 // DeleteDentry deletes a dentry.
 func (mp *metaPartition) DeleteDentry(req *DeleteDentryReq, p *Packet) (err error) {
-	log.LogDebugf("action[DeleteDentry]")
+
 	dentry := &Dentry{
 		ParentId: req.ParentID,
 		Name:     req.Name,
 		VerSeq:   req.Verseq,
 	}
+	log.LogDebugf("action[DeleteDentry] den(%v)", dentry)
+
 	val, err := dentry.Marshal()
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
 		return
 	}
+
+	den := &Dentry{}
+	if err = den.Unmarshal(val); err != nil {
+		return
+	}
+	log.LogDebugf("action[DeleteDentry] test unmarshal %v!", den)
+
+
 	log.LogDebugf("action[DeleteDentry] submit!")
 	r, err := mp.submit(opFSMDeleteDentry, val)
 	if err != nil {
