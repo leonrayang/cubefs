@@ -343,7 +343,7 @@ func (mw *MetaWrapper) ddelete(mp *MetaPartition, parentID uint64, name string, 
 		Name:        name,
 		Verseq:      verSeq,
 	}
-
+	log.LogDebugf("action[ddelete] %v", req)
 	packet := proto.NewPacketReqID()
 	packet.Opcode = proto.OpMetaDeleteDentry
 	packet.PartitionID = mp.PartitionID

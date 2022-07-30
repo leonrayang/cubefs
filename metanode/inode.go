@@ -667,7 +667,7 @@ func (i *Inode) CreateVer(ver uint64) {
 	ino.ObjExtents = NewSortedObjExtents()
 	
 	i.Lock()
-	i.multiVersions = append(i.multiVersions, ino)
+	i.multiVersions = append([]*Inode{ino}, i.multiVersions...)
 	i.verSeq = ver
 	i.Unlock()
 	// snapshot means deletion take effect while all version be deleted(also include renamed shared link)

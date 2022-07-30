@@ -72,7 +72,7 @@ func (d *Dentry) setDeleted() {
 
 func (d *Dentry) String() string {
 	str := fmt.Sprintf("dentry(name:[%v],parentId:[%v],inode:[%v],type:[%v],seq:[%v],dentryList_len[%v]",
-		d.ParentId, d.Name, d.Inode, d.Type, d.VerSeq, len(d.dentryList))
+		d.Name, d.ParentId, d.Inode, d.Type, d.VerSeq, len(d.dentryList))
 
 	for idx, den := range d.dentryList {
 		str += fmt.Sprintf("idx:%v,content(%v)", idx, den)

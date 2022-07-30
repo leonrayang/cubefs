@@ -38,7 +38,7 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 	forceUpdate bool) (status uint8) {
 	status = proto.OpOk
 	item := mp.inodeTree.CopyGet(NewInode(dentry.ParentId, 0))
-	log.LogInfof("action[fsmCreateDentry] ParentId [%v] get nil, dentry name [%v], inode [%v], verseq [%v]", dentry.ParentId, dentry.Name, dentry.Inode, dentry.VerSeq)
+	log.LogDebugf("action[fsmCreateDentry] ParentId [%v] get nil, dentry name [%v], inode [%v], verseq [%v]", dentry.ParentId, dentry.Name, dentry.Inode, dentry.VerSeq)
 	var parIno *Inode
 	if !forceUpdate {
 		if item == nil {
@@ -64,16 +64,20 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 		d := item.(*Dentry)
 		verSeq, denStaus := d.getVerSeq()
 		if denStaus == DentryDeleted {
+			log.LogDebugf("action[fsmCreateDentry] newest dentry %v be set deleted flag", d)
 			if verSeq < dentry.VerSeq {
 				dn := d.Copy()
 				dn.(*Dentry).dentryList = nil
-				d.dentryList = append(d.dentryList, dn.(*Dentry))
+				d.dentryList = append([]*Dentry{dn.(*Dentry)}, d.dentryList...)
+				log.LogDebugf("action[fsmCreateDentry] pust the dentry %v to the dentry list", dn.(*Dentry))
 			}
+
 			d.Inode = dentry.Inode
 			d.VerSeq = dentry.VerSeq
 			d.Type = dentry.Type
 			d.ParentId = dentry.ParentId
-			log.LogInfof("action[fsmCreateDentry.ver] latest dentry already deleted.now create new one [%v]", dentry)
+			log.LogDebugf("action[fsmCreateDentry.ver] latest dentry already deleted.Now create new one [%v]", dentry)
+
 			if !forceUpdate {
 				parIno.IncNLink()
 				parIno.SetMtime()
@@ -82,9 +86,12 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 			status = proto.OpArgMismatchErr
 			return
 		} else if dentry.ParentId == d.ParentId && strings.Compare(dentry.Name, d.Name) == 0 && dentry.Inode == d.Inode {
+			log.LogDebugf("action[fsmCreateDentry.ver] no need repeat create new one [%v]", dentry)
 			return
 		}
+		log.LogErrorf("action[fsmCreateDentry.ver] dentry already exist [%v] and diff with the request [%v]", d, dentry)
 		status = proto.OpExistErr
+
 	} else {
 		if !forceUpdate {
 			parIno.IncNLink()
@@ -107,6 +114,7 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 	verSeq, denStatus := item.(*Dentry).getVerSeq()
 	if dentry.VerSeq == 0 || verSeq <= dentry.VerSeq {
 		if denStatus == DentryDeleted {
+			log.LogDebug("action[getDentry] dentry[%v] be set delete flag", dentry)
 			status = proto.OpNotExistErr
 			return nil, status
 		}
@@ -114,8 +122,10 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 	}
 	for _, d := range item.(*Dentry).dentryList {
 		verSeq, denStatus = d.getVerSeq()
+		log.LogDebug("action[getDentry] dentry[%v] in the dentry list ", dentry)
 		if verSeq <= dentry.VerSeq {
 			if denStatus == DentryDeleted {
+				log.LogDebug("action[getDentry] dentry[%v] in the dentry list and be set delete flag", d)
 				status = proto.OpNotExistErr
 				return nil, status
 			}
@@ -129,46 +139,54 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 	resp *DentryResponse) {
 
-	log.LogDebugf("action[fsmDeleteDentry] dentry", denParm)
+	log.LogDebugf("action[fsmDeleteDentry] dentry(%v)", denParm)
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
 
-	// the lastest dentry may be deleted before, the scope of  deleted verSeq to the newest file in the his list verSeq,
-	// used to identify the validity of the file,if create anther dentry with larger verSeq, put the
-	// deleted dentry to the history list. deleted dentry is also a point of the time line ,
-	// the dentry with DentryDeleted flag means it's empty until a new dentry be created.
+	// the lastest dentry may be deleted before and set status DentryDeleted,
+	// the scope of  deleted happened from the DentryDeleted flag owner(include in) to the file with the same name be created is invisible,
+	// if create anther dentry with larger verSeq, put the eleted dentry to the history list.
+
 	delVerFuc := func(den *Dentry) *Dentry {
 		_, status := den.getVerSeq()
 		// create denParm version
-		if denParm.VerSeq >= mp.verSeq {
+		if denParm.VerSeq >= mp.verSeq || denParm.VerSeq == 0 {
 			if status == DentryDeleted {
-				return nil
+				log.LogDebugf("action[fsmDeleteDentry] dentry %v be deleted before", denParm)
+				return den
 			}
 			den.setDeleted() // denParm create at the same version.no need to push to history list
+			//todo(leonchang): dentry list need check deleted flag, combine neighbor deleted dentry and clear if no avaliable dentry exist
 			if len(den.dentryList) == 0 {
+				log.LogDebugf("action[fsmDeleteDentry] dentry %v no dentry history version exist then delete it", denParm)
 				return mp.dentryTree.tree.Delete(denParm).(*Dentry)
 			}
 			return den
 		} else {
 			for _, hDen := range den.dentryList {
 				verSeq, status := hDen.getVerSeq()
+				log.LogDebugf("action[fsmDeleteDentry] range loop check dentry %v get seq %v", hDen, verSeq)
 				if verSeq == denParm.VerSeq {
 					if status == DentryDeleted {
-						return nil
+						log.LogDebugf("action[fsmDeleteDentry] dentry %v be deleted before", denParm)
+						return den
 					}
 					hDen.setDeleted()
 					return hDen
 				}
 				if hDen.VerSeq > denParm.VerSeq {
+					log.LogDebugf("action[fsmDeleteDentry] dentry %v not found", denParm)
 					return nil
 				}
 			}
+			log.LogDebugf("action[fsmDeleteDentry] dentry %v not found", denParm)
 			return nil
 		}
 	}
 
 	var item interface{}
 	if checkInode {
+		log.LogDebugf("action[fsmDeleteDentry] dentry %v", denParm)
 		item = mp.dentryTree.Execute(func(tree *btree.BTree) interface{} {
 			d := tree.CopyGet(denParm)
 			if d == nil {
@@ -181,6 +199,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 			return delVerFuc(den)
 		})
 	} else {
+		log.LogDebugf("action[fsmDeleteDentry] dentry %v", denParm)
 		item = mp.dentryTree.Get(denParm)
 		if item != nil {
 			item = delVerFuc(item.(*Dentry))
@@ -189,6 +208,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 
 	if item == nil {
 		resp.Status = proto.OpNotExistErr
+		log.LogErrorf("action[fsmDeleteDentry] not found dentry %v", denParm)
 		return
 	} else {
 		mp.inodeTree.CopyFind(NewInode(denParm.ParentId, 0),
