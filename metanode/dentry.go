@@ -55,11 +55,8 @@ const (
 	DentryDeleted = 2
 )
 
-func (d *Dentry) getVerSeq() (verSeq uint64, status int8) {
-	if d.VerSeq & 0x80000000 > 0 {
-		return d.VerSeq & 0xFFFFFFF, DentryDeleted
-	}
-	return d.VerSeq, DentryNormal
+func (d *Dentry) getVerSeq() (verSeq uint64,) {
+	return d.VerSeq & 0xFFFFFFF
 }
 
 func (d *Dentry) isDeleted() bool {

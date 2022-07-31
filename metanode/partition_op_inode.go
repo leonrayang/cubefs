@@ -96,6 +96,17 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 	ino := NewInode(req.Inode, 0)
 	ino.verSeq = req.VerSeq
 
+
+	item := mp.inodeTree.Get(ino)
+	if item == nil {
+		return
+	}
+	inode := item.(*Inode)
+	// eks is empty just skip
+	if !inode.ShouldDelVer(req.VerSeq) {
+		return
+	}
+
 	val, err := ino.Marshal()
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
