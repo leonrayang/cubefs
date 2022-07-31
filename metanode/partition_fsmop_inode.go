@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"github.com/cubefs/cubefs/proto"
@@ -69,6 +70,17 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 func (mp *metaPartition) getInodeByVer(ino *Inode) (i *Inode) {
 	item := mp.inodeTree.Get(ino)
 	if item == nil {
+		return
+	}
+	if ino.verSeq == math.MaxUint64 {
+		listLen := len(item.(*Inode).multiVersions)
+		if listLen == 0 {
+			return
+		}
+		i = item.(*Inode).multiVersions[listLen-1]
+		if i.verSeq != 0 {
+			return nil
+		}
 		return
 	}
 	if ino.verSeq > 0 && ino.verSeq < item.(*Inode).verSeq {
@@ -131,6 +143,7 @@ func (mp *metaPartition) Ascend(f func(i BtreeItem) bool) {
 
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
+	log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
 	resp = NewInodeResponse()
 	resp.Status = proto.OpOk
 	item := mp.inodeTree.CopyGet(ino)
@@ -166,6 +179,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 	if inode.IsTempFile() {
 		inode.DoWriteFunc(func() {
 			if inode.NLink == 0 {
+				log.LogDebugf("action[fsmUnlinkInode] unlink inode %v and push to freeList", inode)
 				inode.AccessTime = time.Now().Unix()
 				mp.freeList.Push(inode.Inode)
 			}
@@ -386,7 +400,7 @@ func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 
 func (mp *metaPartition) fsmEvictInode(ino *Inode) (resp *InodeResponse) {
 	resp = NewInodeResponse()
-
+	log.LogDebugf("action[fsmEvictInode] inode %v", ino)
 	resp.Status = proto.OpOk
 	item := mp.inodeTree.CopyGet(ino)
 	if item == nil {
@@ -395,6 +409,7 @@ func (mp *metaPartition) fsmEvictInode(ino *Inode) (resp *InodeResponse) {
 	}
 	i := item.(*Inode)
 	if i.ShouldDelete() {
+		log.LogDebugf("action[fsmEvictInode] inode %v already be mark delete", ino)
 		return
 	}
 	if proto.IsDir(i.Type) {
@@ -405,6 +420,7 @@ func (mp *metaPartition) fsmEvictInode(ino *Inode) (resp *InodeResponse) {
 	}
 
 	if i.IsTempFile() {
+		log.LogDebugf("action[fsmEvictInode] inode %v already linke zero and be set mark delete and be put to freelist", ino)
 		i.SetDeleteMark()
 		mp.freeList.Push(i.Inode)
 	}

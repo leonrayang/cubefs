@@ -649,11 +649,11 @@ func (i *Inode) getDelVer(dVer uint64) (delExtents []proto.ExtentKey) {
 		return nil
 	}
 	for _, ino := range i.multiVersions {
+		if ino.verSeq > dVer {
+			return
+		}
 		if ino.verSeq == dVer {
 			return ino.Extents.eks
-		}
-		if ino.verSeq > dVer {
-			break
 		}
 	}
 	return nil
