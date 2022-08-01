@@ -71,8 +71,6 @@ func (mp *metaPartition) DeleteDentry(req *DeleteDentryReq, p *Packet) (err erro
 	if err = den.Unmarshal(val); err != nil {
 		return
 	}
-	log.LogDebugf("action[DeleteDentry] test unmarshal %v!", den)
-
 
 	log.LogDebugf("action[DeleteDentry] submit!")
 	r, err := mp.submit(opFSMDeleteDentry, val)

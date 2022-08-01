@@ -363,18 +363,18 @@ func (mp *metaPartition) ExtentsOp(p *Packet, ino *Inode, op uint32) (err error)
 	return
 }
 
-func (mp *metaPartition) sendExtentsToChan(eks []proto.ExtentKey, v3 bool) (err error) {
+func (mp *metaPartition) sendExtentsToChan(eks []proto.ExtentKey) (err error) {
 	if len(eks) == 0 {
 		return
 	}
 
 	sortExts := NewSortedExtentsFromEks(eks)
-	val, err := sortExts.MarshalBinary(v3)
+	val, err := sortExts.MarshalBinary(true)
 	if err != nil {
 		return fmt.Errorf("[delExtents] marshal binary fail, %s", err.Error())
 	}
 
-	_, err = mp.submit(opFSMSentToChanV3, val)
+	_, err = mp.submit(opFSMSentToChan, val)
 
 	return
 }

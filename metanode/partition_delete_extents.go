@@ -34,7 +34,6 @@ import (
 const (
 	prefixDelExtent     = "EXTENT_DEL"
 	prefixDelExtentV2   = "EXTENT_DEL_V2"
-	prefixDelExtentV3   = "EXTENT_DEL_V3"
 	maxDeleteExtentSize = 10 * MB
 )
 
@@ -94,19 +93,19 @@ LOOP:
 
 	// check
 	lastItem := fileList.Back()
-	if lastItem == nil {
+	if lastItem != nil {
+		fileName = lastItem.Value.(string)
+	}
+	if lastItem == nil || !strings.HasPrefix(fileName, prefixDelExtentV2){
 		//if no exist EXTENT_DEL_*, create one
-		prefix := prefixDelExtentV2
-		if mp.verSeq > 0 {
-			prefix = prefixDelExtentV3
-		}
-		fp, fileName, fileSize, err = mp.createExtentDeleteFile(prefix, idx, fileList)
+		log.LogDebugf("action[appendDelExtentsToFile] verseq %v", mp.verSeq)
+		fp, fileName, fileSize, err = mp.createExtentDeleteFile(prefixDelExtentV2, idx, fileList)
+		log.LogDebugf("action[appendDelExtentsToFile] verseq %v fileName %v", mp.verSeq, fileName)
 		if err != nil {
 			panic(err)
 		}
 	} else {
 		//exist, open last file
-		fileName = lastItem.Value.(string)
 		fp, err = os.OpenFile(path.Join(mp.config.RootDir, fileName),
 			os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
@@ -116,15 +115,7 @@ LOOP:
 		idx = getDelExtFileIdx(fileName)
 	}
 
-	extentV2 := false
-	if strings.HasPrefix(fileName, prefixDelExtentV2) {
-		extentV2 = true
-	}
-	extentV3 := false
-	if strings.HasPrefix(fileName, prefixDelExtentV3) {
-		extentV3 = true
-	}
-
+	log.LogDebugf("action[appendDelExtentsToFile] verseq %v fileName %v", mp.verSeq, fileName)
 	// TODO Unhandled errors
 	defer fp.Close()
 	buf := make([]byte, 0)
@@ -142,11 +133,7 @@ LOOP:
 			var data []byte
 			buf = buf[:0]
 			for _, ek := range eks {
-				if extentV2 || extentV3 {
-					data, err = ek.MarshalBinaryWithCheckSum(extentV3)
-				} else {
-					data, err = ek.MarshalBinary(false)
-				}
+				data, err = ek.MarshalBinaryWithCheckSum(ek.VerSeq > 0)
 				if err != nil {
 					log.LogWarnf("[appendDelExtentsToFile] partitionId=%d,"+
 						" extentKey marshal: %s", mp.config.PartitionId, err.Error())
@@ -156,7 +143,7 @@ LOOP:
 			}
 
 			if err != nil {
-				err = mp.sendExtentsToChan(eks, extentV3)
+				err = mp.sendExtentsToChan(eks)
 				if err != nil {
 					log.LogErrorf("[appendDelExtentsToFile] mp(%d) sendExtentsToChan fail, err(%s)", mp.config.PartitionId, err.Error())
 				}
@@ -167,7 +154,7 @@ LOOP:
 				// close old File
 				fp.Close()
 				idx += 1
-				fp, fileName, fileSize, err = mp.createExtentDeleteFile(prefixDelExtentV3, idx, fileList)
+				fp, fileName, fileSize, err = mp.createExtentDeleteFile(prefixDelExtentV2, idx, fileList)
 				if err != nil {
 					panic(err)
 				}
@@ -177,6 +164,7 @@ LOOP:
 				panic(err)
 			}
 			fileSize += int64(len(buf))
+			log.LogDebugf("action[appendDelExtentsToFile] filesize now %v", fileSize)
 		}
 	}
 }
@@ -245,13 +233,9 @@ func (mp *metaPartition) deleteExtentsFromList(fileList *synclist.SyncList) {
 			extentV2 = true
 			extentKeyLen = uint64(proto.ExtentV2Length)
 		}
-		extentV3 := false
-		if strings.HasPrefix(fileName, prefixDelExtentV3) {
-			extentV3 = true
-			extentKeyLen = uint64(proto.ExtentV3Length)
-		}
 
 		cursor := binary.BigEndian.Uint64(buf[:8])
+		log.LogDebugf("action[deleteExtentsFromList] get cursor %v", cursor)
 		if size := uint64(fileInfo.Size()) - cursor; size < MB {
 			if size <= 0 {
 				size = extentKeyLen
@@ -316,7 +300,7 @@ func (mp *metaPartition) deleteExtentsFromList(fileList *synclist.SyncList) {
 
 			if len(errExts) >= int(batchCount) {
 				time.Sleep(100 * time.Millisecond)
-				err = mp.sendExtentsToChan(errExts, extentV3)
+				err = mp.sendExtentsToChan(errExts)
 				if err != nil {
 					log.LogErrorf("deleteExtentsFromList sendExtentsToChan by raft error, mp(%d), err(%v), ek(%v)", mp.config.PartitionId, err.Error(), len(errExts))
 				}
@@ -326,16 +310,7 @@ func (mp *metaPartition) deleteExtentsFromList(fileList *synclist.SyncList) {
 
 			ek := proto.ExtentKey{}
 			if extentV2 {
-				if err = ek.UnmarshalBinaryWithCheckSum(buff, extentV3); err != nil {
-					if err == proto.InvalidKeyHeader || err == proto.InvalidKeyCheckSum {
-						log.LogErrorf("[deleteExtentsFromList] invalid extent key header %v, %v, %v", fileName, mp.config.PartitionId, err)
-						continue
-					}
-					log.LogErrorf("[deleteExtentsFromList] mp: %v Unmarshal extentkey from %v unresolved error: %v", mp.config.PartitionId, fileName, err)
-					panic(err)
-				}
-			} else if extentV3 {
-				if err = ek.UnmarshalBinaryWithCheckSum(buff, extentV3); err != nil {
+				if err = ek.UnmarshalBinaryWithCheckSum(buff); err != nil {
 					if err == proto.InvalidKeyHeader || err == proto.InvalidKeyCheckSum {
 						log.LogErrorf("[deleteExtentsFromList] invalid extent key header %v, %v, %v", fileName, mp.config.PartitionId, err)
 						continue
@@ -345,7 +320,7 @@ func (mp *metaPartition) deleteExtentsFromList(fileList *synclist.SyncList) {
 				}
 			} else {
 				//ek for del no need to get version
-				if err = ek.UnmarshalBinary(buff, extentV3); err != nil {
+				if err = ek.UnmarshalBinary(buff,false); err != nil {
 					panic(err)
 				}
 			}
@@ -358,7 +333,7 @@ func (mp *metaPartition) deleteExtentsFromList(fileList *synclist.SyncList) {
 			deleteCnt++
 		}
 
-		err = mp.sendExtentsToChan(errExts, extentV3)
+		err = mp.sendExtentsToChan(errExts)
 		if err != nil {
 			log.LogErrorf("deleteExtentsFromList sendExtentsToChan by raft error, mp(%d), err(%v), ek(%v)", mp.config.PartitionId, err.Error(), len(errExts))
 		}

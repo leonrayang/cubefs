@@ -347,19 +347,19 @@ func (i *Inode) MarshalInodeValue(buff *bytes.Buffer) {
 		panic(err)
 	}
 
-	if (i.Reserved & V2EnableColdInodeFlag > 0) ||  (i.Reserved & V3EnableSnapInodeFlag > 0) {
-		// marshal ExtentsKey
-		extData, err := i.Extents.MarshalBinary(true)
-		if err != nil {
-			panic(err)
-		}
-		if err = binary.Write(buff, binary.BigEndian, uint32(len(extData))); err != nil {
-			panic(err)
-		}
-		if _, err = buff.Write(extData); err != nil {
-			panic(err)
-		}
+
+	// marshal ExtentsKey
+	extData, err := i.Extents.MarshalBinary(true)
+	if err != nil {
+		panic(err)
 	}
+	if err = binary.Write(buff, binary.BigEndian, uint32(len(extData))); err != nil {
+		panic(err)
+	}
+	if _, err = buff.Write(extData); err != nil {
+		panic(err)
+	}
+
 
 	if i.Reserved & V2EnableColdInodeFlag > 0 {
 		// marshal ObjExtentsKey
