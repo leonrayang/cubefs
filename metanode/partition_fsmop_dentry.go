@@ -301,7 +301,7 @@ func (mp *metaPartition) getDentryByVerSeq(dy *Dentry, verSeq uint64) (d *Dentry
 		} else if den.isDeleted() {
 			log.LogDebugf("action[getDentryByVerSeq] den in ver list %v, return nil due to latest is deleted", den)
 			return
-		} else if verSeq == den.getVerSeq() {
+		} else if verSeq >= den.getVerSeq() {
 			log.LogDebugf("action[getDentryByVerSeq] den in ver list %v got", den)
 			return den
 		}
