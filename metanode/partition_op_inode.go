@@ -96,14 +96,19 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 	ino := NewInode(req.Inode, 0)
 	ino.verSeq = req.VerSeq
 
-
 	item := mp.inodeTree.Get(ino)
 	if item == nil {
+		err = fmt.Errorf("inode %v reqeust cann't found", ino)
+		log.LogErrorf("action[UnlinkInode] %v", err)
+		p.PacketErrorWithBody(proto.OpNotExistErr, []byte(err.Error()))
 		return
 	}
 	inode := item.(*Inode)
 	// eks is empty just skip
 	if !inode.ShouldDelVer(req.VerSeq) {
+		err = fmt.Errorf("inode %v reqeust cann't found seq %v", inode, req.VerSeq)
+		log.LogErrorf("action[UnlinkInode] %v", err)
+		p.PacketErrorWithBody(proto.OpNotExistErr, []byte(err.Error()))
 		return
 	}
 
@@ -112,11 +117,13 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
 		return
 	}
+	log.LogDebugf("action[UnlinkInode] ino %v submit", ino)
 	r, err := mp.submit(opFSMUnlinkInode, val)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))
 		return
 	}
+	log.LogDebugf("action[UnlinkInode] %v get resp", ino)
 	msg := r.(*InodeResponse)
 	status := msg.Status
 	var reply []byte

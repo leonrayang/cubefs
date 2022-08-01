@@ -77,6 +77,7 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 				parIno.IncNLink()
 				parIno.SetMtime()
 			}
+			return
 		} else if proto.OsModeType(dentry.Type) != proto.OsModeType(d.Type) {
 			status = proto.OpArgMismatchErr
 			return
@@ -151,7 +152,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 		if denParm.VerSeq > mp.verSeq {
 			panic(fmt.Sprintf("Dentry version %v large than mp %v", denParm.VerSeq, mp.verSeq))
 		}
-		if denParm.VerSeq == 0  {
+		if denParm.VerSeq == 0 {
 			if den.isDeleted() {
 				log.LogDebugf("action[fsmDeleteDentry] dentry %v be deleted before", denParm)
 				return den
@@ -203,13 +204,20 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 			if den.Inode != denParm.Inode {
 				return nil
 			}
+			if mp.verSeq == 0 {
+				return mp.dentryTree.tree.Delete(den)
+			}
 			return delVerFuc(den)
 		})
 	} else {
 		log.LogDebugf("action[fsmDeleteDentry] dentry %v", denParm)
-		item = mp.dentryTree.Get(denParm)
-		if item != nil {
-			item = delVerFuc(item.(*Dentry))
+		if mp.verSeq == 0 {
+			mp.dentryTree.tree.Delete(denParm)
+		} else {
+			item = mp.dentryTree.Get(denParm)
+			if item != nil {
+				item = delVerFuc(item.(*Dentry))
+			}
 		}
 	}
 
