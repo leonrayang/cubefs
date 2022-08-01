@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"github.com/cubefs/cubefs/util/log"
 	"io"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -630,6 +631,9 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExt
 }
 
 func (i *Inode) ShouldDelVer(ver uint64) bool {
+	if ver == 0 {
+		return true
+	}
 	for _, inoVer := range i.multiVersions {
 		if inoVer.verSeq == ver {
 			return true
@@ -641,22 +645,34 @@ func (i *Inode) ShouldDelVer(ver uint64) bool {
 	return false
 }
 
-func (i *Inode) getDelVer(dVer uint64) (delExtents []proto.ExtentKey) {
-	if dVer >= i.verSeq {
-		return i.Extents.eks
+func (i *Inode) getDelVer(dVer uint64) (delExtents []proto.ExtentKey, found bool) {
+
+	if dVer == 0 || (dVer >= i.verSeq && dVer != math.MaxUint64) {
+		return i.Extents.eks, true
 	}
-	if len(i.multiVersions) == 0 {
-		return nil
+
+	verLen := len(i.multiVersions)
+	if verLen == 0 {
+		return
 	}
+
+	if dVer == math.MaxUint64 {
+		 inode := i.multiVersions[verLen-1]
+		 if inode.verSeq != 0 {
+		 	return
+		 }
+		 return inode.Extents.eks, true
+	}
+
 	for _, ino := range i.multiVersions {
 		if ino.verSeq > dVer {
 			return
 		}
 		if ino.verSeq == dVer {
-			return ino.Extents.eks
+			return ino.Extents.eks, true
 		}
 	}
-	return nil
+	return
 }
 
 func (i *Inode) CreateVer(ver uint64) {

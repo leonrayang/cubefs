@@ -144,28 +144,34 @@ func (mp *metaPartition) Ascend(f func(i BtreeItem) bool) {
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 	log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
+	var (
+		ext2Del []proto.ExtentKey
+		found bool
+	)
+
 	resp = NewInodeResponse()
 	resp.Status = proto.OpOk
 	item := mp.inodeTree.CopyGet(ino)
 	if item == nil {
+		log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
 		resp.Status = proto.OpNotExistErr
 		return
 	}
 	inode := item.(*Inode)
 	if inode.ShouldDelete() {
+		log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
 		resp.Status = proto.OpNotExistErr
 		return
 	}
 
 	resp.Msg = inode
-
 	if inode.IsEmptyDir() {
 		mp.inodeTree.Delete(inode)
 	}
-
-	var ext2Del []proto.ExtentKey
 	// don't unlink if no version satisfied
-	if ext2Del = inode.getDelVer(ino.verSeq); ext2Del == nil {
+	if ext2Del, found = inode.getDelVer(ino.verSeq); !found {
+		resp.Status = proto.OpNotExistErr
+		log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
 		return
 	}
 
@@ -177,17 +183,17 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 
 	//Fix#760: when nlink == 0, push into freeList and delay delete inode after 7 days
 	if inode.IsTempFile() {
-		inode.DoWriteFunc(func() {
-			if inode.NLink == 0 {
-				log.LogDebugf("action[fsmUnlinkInode] unlink inode %v and push to freeList", inode)
-				inode.AccessTime = time.Now().Unix()
-				mp.freeList.Push(inode.Inode)
-			}
-		})
+		if inode.NLink == 0 {
+			log.LogDebugf("action[fsmUnlinkInode] unlink inode %v and push to freeList", inode)
+			inode.AccessTime = time.Now().Unix()
+			mp.freeList.Push(inode.Inode)
+			log.LogDebugf("action[fsmUnlinkInode] ino %v", inode)
+		}
 	} else {
+		log.LogDebugf("action[fsmUnlinkInode] ino %v ext2Del %v", ino, ext2Del)
 		mp.extDelCh <- ext2Del
 	}
-
+	log.LogDebugf("action[fsmUnlinkInode] ino %v left", ino)
 	return
 }
 
