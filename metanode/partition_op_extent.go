@@ -140,7 +140,7 @@ func (mp *metaPartition) GetSpecVersionInfo(req *proto.MultiVersionOpRequest, p 
 }
 
 func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest, rsp *proto.GetExtentsResponse) {
-	log.LogInfof("action[GetExtentByVer] read ino %v readseq %v ino seq %v", ino.Inode, req.VerSeq, ino.verSeq)
+	log.LogInfof("action[GetExtentByVer] read ino %v readseq %v ino seq %v hist len %v", ino.Inode, req.VerSeq, ino.verSeq, len(ino.multiVersions))
 	ino.DoReadFunc(func() {
 		ino.Extents.Range(func(ek proto.ExtentKey) bool {
 			if ek.VerSeq <= req.VerSeq {
@@ -148,7 +148,6 @@ func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest
 			}
 			return true
 		})
-
 
 		for _, snapIno := range ino.multiVersions {
 			if req.VerSeq > snapIno.verSeq {
@@ -178,6 +177,7 @@ func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest
 
 // ExtentsList returns the list of extents.
 func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (err error) {
+	log.LogDebugf("action[ExtentsList] inode %v verSeq", req.Inode, req.VerSeq)
 	ino := NewInode(req.Inode, 0)
 	retMsg := mp.getInode(ino)
 	ino = retMsg.Msg
@@ -189,7 +189,7 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 	if status == proto.OpOk {
 		resp := &proto.GetExtentsResponse{}
 		log.LogInfof("action[ExtentsList] inode %v request verseq %v ino ver %v extent size %v ino.Size %v",
-			req.Inode, req.VerSeq, ino.verSeq, len(ino.Extents.eks), ino.Size)
+			req.Inode, req.VerSeq, ino.verSeq, len(ino.Extents.eks), ino.Size, ino)
 
 		if req.VerSeq > 0 && ino.verSeq > 0 {
 			mp.GetExtentByVer(ino, req, resp)
