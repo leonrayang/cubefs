@@ -22,6 +22,7 @@ import (
 	"github.com/cubefs/cubefs/util/log"
 	"io"
 	"math"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -91,6 +92,14 @@ type SplitExtentInfo struct {
 }
 
 type InodeBatch []*Inode
+
+func (i *InodeBatch) Clone() InodeBatch {
+	var rB []*Inode
+	for _ , inode := range []*Inode(*i) {
+		rB = append(rB, inode.Copy().(*Inode))
+	}
+	return rB
+}
 
 // String returns the string format of the inode.
 func (i *Inode) String() string {
@@ -170,6 +179,9 @@ func (i *Inode) Copy() BtreeItem {
 	newIno.Extents = i.Extents.Clone()
 	newIno.ObjExtents = i.ObjExtents.Clone()
 	newIno.verSeq = i.verSeq
+	newIno.multiVersions = i.multiVersions.Clone()
+	newIno.verShareLink = i.verShareLink
+	newIno.SplitExtents = i.SplitExtents
 	i.RUnlock()
 	return newIno
 }
@@ -389,7 +401,7 @@ func (i *Inode) MarshalValue() (val []byte) {
 	buff.Grow(64)
 	i.RLock()
 
-	// log.LogInfof("action[MarshalValue] inode %v current verseq %v, stack (%v)", i.Inode, i.verSeq, string(debug.Stack()))
+	log.LogInfof("action[MarshalValue] inode %v current verseq %v, hist len (%v)", i.Inode, i.verSeq, len(i.multiVersions))
 	i.MarshalInodeValue(buff)
 	if err = binary.Write(buff, binary.BigEndian,int32(len(i.multiVersions))); err != nil {
 		panic(err)
@@ -522,10 +534,11 @@ func (i *Inode) UnmarshalValue(val []byte) (err error) {
 		for verCnt > 0 {
 			ino := &Inode{}
 			ino.UnmarshalInodeValue(buff)
-			log.LogInfof("action[UnmarshalValue] inode %v old seq %v", ino.Inode, ino.verSeq)
+			log.LogInfof("action[UnmarshalValue] inode %v old seq %v hist len %v", ino.Inode, ino.verSeq, len(i.multiVersions))
 			i.multiVersions = append(i.multiVersions, ino)
 			verCnt--
 		}
+		log.LogInfof("action[UnmarshalValue] inode %v old seq %v hist len %v stack(%v)", i.Inode, i.verSeq, len(i.multiVersions), string(debug.Stack()))
 	}
 	return
 }
@@ -579,14 +592,15 @@ func (i *Inode) PrintAllSplitInfo() {
 }
 
 func (i *Inode) PrintAllVersionInfo() {
+	log.LogInfof("action[PrintAllVersionInfo] inode [%v] verSeq [%v] hist len [%v]", i.Inode, i.verSeq, len(i.multiVersions))
 	for id, info := range i.multiVersions {
-		log.LogInfof("action[PrintAllVersionInfo] layer [%v] inode [%v]", id, info)
+		log.LogInfof("action[PrintAllVersionInfo] layer [%v]  verSeq [%v] inode [%v]", id, info.verSeq, info)
 	}
 }
 
 // restore ext info to older version or deleted if no right version
 func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey) (delExtents []proto.ExtentKey, err error){
-	log.LogInfof("action[RestoreMultiSnapExts] delExtents size [%v]", len(delExtentsOrigin))
+	log.LogInfof("action[RestoreMultiSnapExts] delExtents size [%v] hist len [%v]", len(delExtentsOrigin), len(i.multiVersions))
 	// no version left.all old versions be deleted
 	if len(i.multiVersions) == 0 {
 		log.LogWarnf("action[RestoreMultiSnapExts] restore have no old version left")
@@ -645,14 +659,23 @@ func (i *Inode) ShouldDelVer(ver uint64) bool {
 	return false
 }
 
-func (i *Inode) getDelVer(dVer uint64) (delExtents []proto.ExtentKey, found bool) {
+func (i *Inode) getAndDelVer(dVer uint64) (delExtents []proto.ExtentKey, found bool) {
+	var err error
+
+	log.LogDebugf("action[getAndDelVer] ino %v verSeq %v request del ver %v hist len %v",
+		i.Inode, i.verSeq, dVer, len(i.multiVersions))
 
 	if dVer == 0 || (dVer >= i.verSeq && dVer != math.MaxUint64) {
+		if delExtents, err = i.RestoreMultiSnapExts(i.Extents.eks); err != nil {
+			log.LogErrorf("action[getAndDelVer] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
+			return
+		}
 		return i.Extents.eks, true
 	}
 
 	verLen := len(i.multiVersions)
 	if verLen == 0 {
+		log.LogDebugf("action[getAndDelVer] ino %v RestoreMultiSnapExts no left", i.Inode)
 		return
 	}
 
@@ -664,7 +687,8 @@ func (i *Inode) getDelVer(dVer uint64) (delExtents []proto.ExtentKey, found bool
 		 return inode.Extents.eks, true
 	}
 
-	for _, ino := range i.multiVersions {
+	for id, ino := range i.multiVersions {
+		log.LogDebugf("action[getAndDelVer] ino %v multiVersions level %v verseq %v", i.Inode, id, ino.verSeq)
 		if ino.verSeq > dVer {
 			return
 		}
@@ -676,16 +700,21 @@ func (i *Inode) getDelVer(dVer uint64) (delExtents []proto.ExtentKey, found bool
 }
 
 func (i *Inode) CreateVer(ver uint64) {
-	log.LogInfof("action[CreateVer] inode %v create new version [%v] and store old one [%v]",i.Inode, ver, i.verSeq)
 	//inode copy not include multi ver array
 	ino := i.Copy().(*Inode)
 	ino.Extents = NewSortedExtents()
 	ino.ObjExtents = NewSortedObjExtents()
-	
+
+	log.LogDebugf("action[CreateVer] inode %v create new version [%v] and store old one [%v], hist len [%v]",
+		i.Inode, ver, i.verSeq, len(i.multiVersions))
+
 	i.Lock()
 	i.multiVersions = append([]*Inode{ino}, i.multiVersions...)
 	i.verSeq = ver
 	i.Unlock()
+
+	log.LogDebugf("action[CreateVer] inode %v create new version [%v] and store old one [%v], now hist len [%v]",
+		i.Inode, ver, i.verSeq, len(i.multiVersions))
 	// snapshot means deletion take effect while all version be deleted(also include renamed shared link)
 	i.IncNLink()
 }
@@ -693,9 +722,9 @@ func (i *Inode) CreateVer(ver uint64) {
 func (i *Inode) SplitExtentWithCheck(ver uint64, ek proto.ExtentKey) (delExtents []proto.ExtentKey, status uint8) {
 	var err error
 	ek.VerSeq = ver
-	log.LogDebugf("action[SplitExtentWithCheck] inode %v,ver %v,ek %v", i.Inode, ver, ek)
+	log.LogDebugf("action[SplitExtentWithCheck] inode %v,ver %v,ek %v,hist len %v", i.Inode, ver, ek, len(i.multiVersions))
 	if ver != i.verSeq {
-		log.LogDebugf("action[SplitExtentWithCheck] CreateVer ver", ver)
+		log.LogDebugf("action[SplitExtentWithCheck] CreateVer ver %v", ver)
 		i.CreateVer(ver)
 	}
 
@@ -717,7 +746,7 @@ func (i *Inode) SplitExtentWithCheck(ver uint64, ek proto.ExtentKey) (delExtents
 
 func (i *Inode) AppendExtentWithCheck(ver uint64, ek proto.ExtentKey, ct int64, discardExtents []proto.ExtentKey, volType int) (delExtents []proto.ExtentKey, status uint8) {
 	ek.VerSeq = ver
-	log.LogDebugf("action[AppendExtentWithCheck] inode %v,ver %v,ek %v", i.Inode, ver, ek)
+	log.LogDebugf("action[AppendExtentWithCheck] inode %v,ver %v,ek %v,hist len %v", i.Inode, ver, ek, len(i.multiVersions))
 	if ver != i.verSeq {
 		log.LogDebugf("action[AppendExtentWithCheck] ver %v inode ver %v", ver, i.verSeq)
 		i.CreateVer(ver)

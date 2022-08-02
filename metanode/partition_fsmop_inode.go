@@ -72,6 +72,8 @@ func (mp *metaPartition) getInodeByVer(ino *Inode) (i *Inode) {
 	if item == nil {
 		return
 	}
+	log.LogDebugf("action[getInodeByVer] ino %v verseq %v hist len %v request ino ver %v",
+		ino.Inode, item.(*Inode).verSeq, len(item.(*Inode).multiVersions), ino.verSeq)
 	if ino.verSeq == math.MaxUint64 {
 		listLen := len(item.(*Inode).multiVersions)
 		if listLen == 0 {
@@ -169,7 +171,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 		mp.inodeTree.Delete(inode)
 	}
 	// don't unlink if no version satisfied
-	if ext2Del, found = inode.getDelVer(ino.verSeq); !found {
+	if ext2Del, found = inode.getAndDelVer(ino.verSeq); !found {
 		resp.Status = proto.OpNotExistErr
 		log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
 		return
@@ -283,11 +285,14 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		delExtents []proto.ExtentKey
 	)
 	status = proto.OpOk
-	item := mp.inodeTree.CopyGet(ino)
+
+	item := mp.inodeTree.Get(ino)
 	if item == nil {
 		status = proto.OpNotExistErr
 		return
 	}
+	log.LogDebugf("action[fsmAppendExtentsWithCheck] inode %v hist len %v", ino.Inode, len(ino.multiVersions))
+
 	ino2 := item.(*Inode)
 	if ino2.ShouldDelete() {
 		status = proto.OpNotExistErr
@@ -304,9 +309,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		discardExtentKey = eks[1:]
 	}
 
-	mp.printExtents(ino2)
-
-	log.LogDebugf("action[fsmAppendExtentWithCheck] ino %v isSplit %v ek %v", ino2, isSplit, eks[0])
+	log.LogDebugf("action[fsmAppendExtentWithCheck] ino %v isSplit %v ek %v hist len %v", ino2, isSplit, eks[0], len(ino2.multiVersions))
 	if !isSplit {
 		delExtents, status = ino2.AppendExtentWithCheck(ino.verSeq, eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
 		if status == proto.OpOk {
@@ -324,10 +327,10 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		delExtents, status = ino2.SplitExtentWithCheck(ino.verSeq, eks[0])
 		mp.extDelCh <- delExtents
 	}
-	mp.printExtents(ino2)
 
 	log.LogInfof("fsmAppendExtentWithCheck inode(%v) ek(%v) deleteExtents(%v) discardExtents(%v) status(%v) isSplit(%v), extents(%v)",
 		ino2.Inode, eks[0], delExtents, discardExtentKey, status, isSplit, ino2.Extents.eks)
+
 	return
 }
 

@@ -241,7 +241,7 @@ func (s *Streamer) read(data []byte, offset int, size int) (total int, err error
 					log.LogErrorf("ERROR Stream read. read error. req(%v) readBytes(%v) err(%v)", req, readBytes, err)
 					return
 				}
-				log.LogErrorf("action[streamer.read] req %v readBytes %v", req, readBytes)
+				log.LogDebugf("action[streamer.read] req %v readBytes %v", req, readBytes)
 			}
 
 			log.LogDebugf("TRACE Stream read: ino(%v) req(%v) readBytes(%v) err(%v)", s.inode, req, readBytes, err)
