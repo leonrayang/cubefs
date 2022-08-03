@@ -81,7 +81,6 @@ type Inode struct {
 	// for snapshot
 	verShareLink  uint32  // count for inode shared by different version after be renamed cross versions
 	verSeq        uint64  // latest version be create or modified
-	SplitExtents  []SplitExtentInfo  // used for split extent
 	multiVersions InodeBatch
 }
 
@@ -124,7 +123,6 @@ func (i *Inode) String() string {
 	buff.WriteString(fmt.Sprintf("Extents[%s]", i.Extents))
 	buff.WriteString(fmt.Sprintf("ObjExtents[%s]", i.ObjExtents))
 	buff.WriteString(fmt.Sprintf("verSeq[%v]", i.verSeq))
-	buff.WriteString(fmt.Sprintf("SplitExtents.len[%v]", len(i.SplitExtents)))
 	buff.WriteString(fmt.Sprintf("multiVersions.len[%v]", len(i.multiVersions)))
 	buff.WriteString("}")
 	return buff.String()
@@ -181,7 +179,7 @@ func (i *Inode) Copy() BtreeItem {
 	newIno.verSeq = i.verSeq
 	newIno.multiVersions = i.multiVersions.Clone()
 	newIno.verShareLink = i.verShareLink
-	newIno.SplitExtents = i.SplitExtents
+
 	i.RUnlock()
 	return newIno
 }
@@ -584,13 +582,6 @@ func (i *Inode) AppendObjExtents(eks []proto.ObjExtentKey, ct int64) (err error)
 	return
 }
 
-func (i *Inode) PrintAllSplitInfo() {
-	for id, info := range i.SplitExtents {
-		log.LogInfof("action[PrintAllSplitInfo] inode [%v] index [%v] extent be splited with info [dp:%v,extid:%v,refcnt:%v]",
-			i.Inode, id, info.PartitionId, info.ExtentId, info.refCnt)
-	}
-}
-
 func (i *Inode) PrintAllVersionInfo() {
 	log.LogInfof("action[PrintAllVersionInfo] inode [%v] verSeq [%v] hist len [%v]", i.Inode, i.verSeq, len(i.multiVersions))
 	for id, info := range i.multiVersions {
@@ -599,22 +590,22 @@ func (i *Inode) PrintAllVersionInfo() {
 }
 
 // restore ext info to older version or deleted if no right version
-func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey, gVer uint64) (delExtents []proto.ExtentKey, err error){
-	log.LogInfof("action[RestoreMultiSnapExts] gVer [%v] delExtents size [%v] hist len [%v]", gVer, len(delExtentsOrigin), len(i.multiVersions))
+func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey, curVer uint64, idx int) (delExtents []proto.ExtentKey, err error){
+	log.LogInfof("action[RestoreMultiSnapExts] curVer [%v] delExtents size [%v] hist len [%v]", curVer, len(delExtentsOrigin), len(i.multiVersions))
 	// no version left.all old versions be deleted
 	if len(i.multiVersions) == 0 {
 		log.LogWarnf("action[RestoreMultiSnapExts] restore have no old version left")
 		return delExtentsOrigin, nil
 	}
-	lastSeq := i.multiVersions[0].verSeq
+	lastSeq := i.multiVersions[idx].verSeq
 	specSnapExtent := make([]proto.ExtentKey, 0)
 
 	for _, delExt := range delExtentsOrigin {
 		// curr deleting delExt with a seq larger than the next version's seq, it doesn't belong to any
 		// versions,so try to delete it
 		log.LogDebugf("action[RestoreMultiSnapExts] ext split [%v] with seq[%v] gSeq[%v] try to del.the last seq [%v], ek details[%v]",
-			delExt.IsSplit, delExt.VerSeq, gVer, lastSeq, delExt)
-		if delExt.VerSeq == gVer {
+			delExt.IsSplit, delExt.VerSeq, curVer, lastSeq, delExt)
+		if delExt.VerSeq == curVer {
 			delExtents = append(delExtents, delExt)
 		} else {
 			log.LogInfof("action[RestoreMultiSnapExts] move to level 1 delExt [%v] specSnapExtent size [%v]", delExt, len(specSnapExtent))
@@ -633,11 +624,11 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey, gVer ui
 
 	i.PrintAllVersionInfo()
 
-	i.multiVersions[0].Extents.eks = append(i.multiVersions[0].Extents.eks, specSnapExtent...)
+	i.multiVersions[idx].Extents.eks = append(i.multiVersions[idx].Extents.eks, specSnapExtent...)
 
 	sort.SliceStable(
-		i.multiVersions[0].Extents.eks, func(w, z int) bool {
-			return i.multiVersions[0].Extents.eks[w].FileOffset < i.multiVersions[0].Extents.eks[z].FileOffset
+		i.multiVersions[idx].Extents.eks, func(w, z int) bool {
+			return i.multiVersions[idx].Extents.eks[w].FileOffset < i.multiVersions[idx].Extents.eks[z].FileOffset
 		})
 
 	i.PrintAllVersionInfo()
@@ -666,7 +657,7 @@ func (i *Inode) getAndDelVer(dVer uint64, gVer uint64) (delExtents []proto.Exten
 		i.Inode, i.verSeq, dVer, len(i.multiVersions))
 
 	if dVer == 0 || (dVer >= i.verSeq && dVer != math.MaxUint64) {
-		if delExtents, err = i.RestoreMultiSnapExts(i.Extents.eks, gVer); err != nil {
+		if delExtents, err = i.RestoreMultiSnapExts(i.Extents.eks, gVer, 0); err != nil {
 			log.LogErrorf("action[getAndDelVer] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
 			return
 		}
@@ -694,7 +685,15 @@ func (i *Inode) getAndDelVer(dVer uint64, gVer uint64) (delExtents []proto.Exten
 			return
 		}
 		if ino.verSeq == dVer {
-			return ino.Extents.eks, true
+			if id == len(i.multiVersions) - 1 {
+				return delExtents, true
+			}
+			if delExtents, err = i.RestoreMultiSnapExts(i.Extents.eks, dVer, id+1); err != nil {
+				log.LogErrorf("action[getAndDelVer] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
+				return
+			}
+			log.LogDebugf("action[getAndDelVer] ino %v verSeq %v get del exts %v", i.Inode, i.verSeq, delExtents)
+			return delExtents, true
 		}
 	}
 	return
@@ -737,7 +736,7 @@ func (i *Inode) SplitExtentWithCheck(gVer uint64, ver uint64, ek proto.ExtentKey
 		return
 	}
 
-	if delExtents, err = i.RestoreMultiSnapExts(delExtents, gVer); err != nil {
+	if delExtents, err = i.RestoreMultiSnapExts(delExtents, gVer, 0); err != nil {
 		log.LogErrorf("action[fsmAppendExtentWithCheck] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
 		return
 	}
@@ -767,7 +766,7 @@ func (i *Inode) AppendExtentWithCheck(gVer uint64, iVer uint64, ek proto.ExtentK
 	// multi version take effect
 	if i.verSeq > 0 {
 		var err error
-		if delExtents, err = i.RestoreMultiSnapExts(delExtents, gVer); err != nil {
+		if delExtents, err = i.RestoreMultiSnapExts(delExtents, gVer, 0); err != nil {
 			log.LogErrorf("action[AppendExtentWithCheck] RestoreMultiSnapExts err %v", err)
 			return nil, proto.OpErr
 		}
