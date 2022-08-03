@@ -171,7 +171,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 		mp.inodeTree.Delete(inode)
 	}
 	// don't unlink if no version satisfied
-	if ext2Del, found = inode.getAndDelVer(ino.verSeq); !found {
+	if ext2Del, found = inode.getAndDelVer(ino.verSeq, mp.verSeq); !found {
 		resp.Status = proto.OpNotExistErr
 		log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
 		return
@@ -311,7 +311,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 
 	log.LogDebugf("action[fsmAppendExtentWithCheck] ino %v isSplit %v ek %v hist len %v", ino2, isSplit, eks[0], len(ino2.multiVersions))
 	if !isSplit {
-		delExtents, status = ino2.AppendExtentWithCheck(ino.verSeq, eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
+		delExtents, status = ino2.AppendExtentWithCheck(mp.verSeq, ino.verSeq, eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
 		if status == proto.OpOk {
 			log.LogInfof("action[fsmAppendExtentWithCheck] delExtents [%v]", delExtents)
 			mp.extDelCh <- delExtents
@@ -324,7 +324,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 	} else {
 		// only the ek itself will be moved to level before
 		// ino verseq be set with mp ver before submit
-		delExtents, status = ino2.SplitExtentWithCheck(ino.verSeq, eks[0])
+		delExtents, status = ino2.SplitExtentWithCheck(mp.verSeq, ino.verSeq, eks[0])
 		mp.extDelCh <- delExtents
 	}
 
