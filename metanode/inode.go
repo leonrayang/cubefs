@@ -178,7 +178,6 @@ func (i *Inode) Copy() BtreeItem {
 	newIno.ObjExtents = i.ObjExtents.Clone()
 	newIno.verSeq = i.verSeq
 	newIno.multiVersions = i.multiVersions.Clone()
-	newIno.verShareLink = i.verShareLink
 
 	i.RUnlock()
 	return newIno
@@ -791,25 +790,6 @@ func (i *Inode) ExtentsTruncate(length uint64, ct int64) (delExtents []proto.Ext
 	i.Generation++
 	i.Unlock()
 	return
-}
-
-func (i *Inode) IncShareVerLink() {
-	i.Lock()
-	i.verShareLink++
-	i.Unlock()
-}
-
-func (i *Inode) DecShareVerLink() {
-	i.Lock()
-	i.verShareLink--
-	i.Unlock()
-}
-
-// GetNLink returns the nLink value.
-func (i *Inode) GetShareLink() uint32 {
-	i.RLock()
-	defer i.RUnlock()
-	return i.verShareLink
 }
 
 // IncNLink increases the nLink value by one.

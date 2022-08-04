@@ -877,11 +877,6 @@ func (mw *MetaWrapper) truncate(mp *MetaPartition, inode, size uint64) (status i
 	return statusOK, nil
 }
 
-
-func (mw *MetaWrapper) ilinkVer(mp *MetaPartition, inode uint64) (status int, info *proto.InodeInfo, err error) {
-	return mw.ilinkWork(mp, inode, proto.OpMetaLinkInodeVer)
-}
-
 func (mw *MetaWrapper) ilink(mp *MetaPartition, inode uint64) (status int, info *proto.InodeInfo, err error) {
 	return mw.ilinkWork(mp, inode, proto.OpMetaLinkInode)
 }
