@@ -57,11 +57,7 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 		resp.Status = proto.OpNotExistErr
 		return
 	}
-	if ino.verShareLink > 0 {
-		if mp.verSeq > i.verSeq { // dec while nlink is zero to stop inode be deleted
-			i.IncShareVerLink()
-		}
-	}
+
 	i.IncNLink()
 	resp.Msg = i
 	return
@@ -177,11 +173,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 		return
 	}
 
-	if inode.GetDecNLinkResult() == 0 && inode.verShareLink > 0 {
-		inode.DecShareVerLink()
-	} else {
-		inode.DecNLink()
-	}
+	inode.DecNLink()
 
 	//Fix#760: when nlink == 0, push into freeList and delay delete inode after 7 days
 	if inode.IsTempFile() {

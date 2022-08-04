@@ -119,8 +119,6 @@ func (m *metadataManager) HandleMetadataOperation(conn net.Conn, p *Packet, remo
 		err = m.opCreateInode(conn, p, remoteAddr)
 	case proto.OpMetaLinkInode:
 		err = m.opMetaLinkInode(conn, p, remoteAddr)
-	case proto.OpMetaLinkInodeVer:
-		err = m.opMetaLinkInodeByRName(conn, p, remoteAddr)
 	case proto.OpMetaFreeInodesOnRaftFollower:
 		err = m.opFreeInodeOnRaftFollower(conn, p, remoteAddr)
 	case proto.OpMetaUnlinkInode:
