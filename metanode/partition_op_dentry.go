@@ -37,7 +37,7 @@ func (mp *metaPartition) CreateDentry(req *CreateDentryReq, p *Packet) (err erro
 		Type:     req.Mode,
 		VerSeq:   mp.verSeq,
 	}
-	log.LogInfof("action[CreateDentry] with seq %v,dentry [%v]", mp.verSeq, dentry)
+	log.LogDebugf("action[CreateDentry] mp[%v] with seq %v,dentry [%v]", mp.config.PartitionId, mp.verSeq, dentry)
 	val, err := dentry.Marshal()
 	if err != nil {
 		return

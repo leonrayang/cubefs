@@ -652,7 +652,7 @@ func (p *Packet) ReadFromConnWithVer(c net.Conn, timeoutSec int) (err error) {
 		return
 	}
 
-	log.LogDebug("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
+	log.LogDebugf("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
 
 	if p.ExtentType & MultiVersionFlag > 0 {
 		log.LogDebug("action[ReadFromConnWithVer] verseq %v", p.VerSeq)

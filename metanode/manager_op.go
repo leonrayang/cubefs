@@ -480,6 +480,7 @@ func (m *metadataManager) opReadDirLimit(conn net.Conn, p *Packet,
 
 func (m *metadataManager) opMetaInodeGet(conn net.Conn, p *Packet,
 	remoteAddr string) (err error) {
+
 	req := &InodeGetReq{}
 	if err = json.Unmarshal(p.Data, req); err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
@@ -487,6 +488,7 @@ func (m *metadataManager) opMetaInodeGet(conn net.Conn, p *Packet,
 		err = errors.NewErrorf("Unmarshal [%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
+	log.LogDebugf("action[opMetaInodeGet] request %v", req)
 	mp, err := m.getPartition(req.PartitionID)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
@@ -1169,6 +1171,7 @@ func (m *metadataManager) opMetaBatchInodeGet(conn net.Conn, p *Packet,
 		err = errors.NewErrorf("[%v] req: %v, resp: %v", p.GetOpMsgWithReqAndResult(), req, err.Error())
 		return
 	}
+	log.LogDebugf("action[opMetaBatchInodeGet] req %v", req)
 	mp, err := m.getPartition(req.PartitionID)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))

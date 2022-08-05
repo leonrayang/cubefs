@@ -179,6 +179,7 @@ func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest
 func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (err error) {
 	log.LogDebugf("action[ExtentsList] inode %v verSeq", req.Inode, req.VerSeq)
 	ino := NewInode(req.Inode, 0)
+	ino.verSeq = req.VerSeq
 	retMsg := mp.getInode(ino)
 	ino = retMsg.Msg
 	var (
@@ -218,6 +219,7 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 // ObjExtentsList returns the list of obj extents and extents.
 func (mp *metaPartition) ObjExtentsList(req *proto.GetExtentsRequest, p *Packet) (err error) {
 	ino := NewInode(req.Inode, 0)
+	ino.verSeq = req.VerSeq
 	retMsg := mp.getInode(ino)
 	ino = retMsg.Msg
 	var (

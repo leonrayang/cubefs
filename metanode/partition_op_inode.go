@@ -59,7 +59,7 @@ func (mp *metaPartition) CreateInode(req *CreateInoReq, p *Packet) (err error) {
 	ino.Gid = req.Gid
 	ino.verSeq = mp.verSeq
 	ino.LinkTarget = req.Target
-	log.LogInfof("action[CreateInode] with seq %v", mp.verSeq)
+	log.LogDebugf("action[CreateInode] mp[%v] %v with seq %v", mp.config.PartitionId, inoID, mp.verSeq)
 	val, err := ino.Marshal()
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
@@ -93,6 +93,26 @@ func (mp *metaPartition) CreateInode(req *CreateInoReq, p *Packet) (err error) {
 
 // DeleteInode deletes an inode.
 func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
+	var (
+		msg *InodeResponse
+		reply []byte
+	)
+
+	makeRspFunc := func() {
+		status := msg.Status
+		if status == proto.OpOk {
+			resp := &UnlinkInoResp{
+				Info: &proto.InodeInfo{},
+			}
+			replyInfo(resp.Info, msg.Msg)
+			if reply, err = json.Marshal(resp); err != nil {
+				status = proto.OpErr
+				reply = []byte(err.Error())
+			}
+		}
+		p.PacketErrorWithBody(status, reply)
+	}
+
 	ino := NewInode(req.Inode, 0)
 	ino.verSeq = req.VerSeq
 
@@ -103,13 +123,23 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 		p.PacketErrorWithBody(proto.OpNotExistErr, []byte(err.Error()))
 		return
 	}
+
 	inode := item.(*Inode)
 	// eks is empty just skip
-	if !inode.ShouldDelVer(req.VerSeq) {
-		err = fmt.Errorf("inode %v reqeust cann't found seq %v", inode, req.VerSeq)
-		log.LogErrorf("action[UnlinkInode] %v", err)
-		p.PacketErrorWithBody(proto.OpNotExistErr, []byte(err.Error()))
-		return
+	if ok, err := inode.ShouldDelVer(req.VerSeq); !ok || err != nil {
+		if err != nil {
+			err = fmt.Errorf("inode %v reqeust cann't found seq %v", inode, req.VerSeq)
+			log.LogErrorf("action[UnlinkInode] %v", err)
+			p.PacketErrorWithBody(proto.OpNotExistErr, []byte(err.Error()))
+			return err
+		}
+		log.LogDebugf("action[UnlinkInode] inode %v no need delete at ver %v", inode.Inode, req.VerSeq)
+		resp := NewInodeResponse()
+		resp.Status = proto.OpOk
+		resp.Msg = ino
+		msg = resp
+		makeRspFunc()
+		return nil
 	}
 
 	val, err := ino.Marshal()
@@ -124,20 +154,9 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 		return
 	}
 	log.LogDebugf("action[UnlinkInode] %v get resp", ino)
-	msg := r.(*InodeResponse)
-	status := msg.Status
-	var reply []byte
-	if status == proto.OpOk {
-		resp := &UnlinkInoResp{
-			Info: &proto.InodeInfo{},
-		}
-		replyInfo(resp.Info, msg.Msg)
-		if reply, err = json.Marshal(resp); err != nil {
-			status = proto.OpErr
-			reply = []byte(err.Error())
-		}
-	}
-	p.PacketErrorWithBody(status, reply)
+	msg = r.(*InodeResponse)
+	makeRspFunc()
+
 	return
 }
 
@@ -195,6 +214,8 @@ func (mp *metaPartition) UnlinkInodeBatch(req *BatchUnlinkInoReq, p *Packet) (er
 // InodeGet executes the inodeGet command from the client.
 func (mp *metaPartition) InodeGet(req *InodeGetReq, p *Packet) (err error) {
 	ino := NewInode(req.Inode, 0)
+	ino.verSeq = req.VerSeq
+	log.LogDebugf("action[Inode] %v seq %v", ino.Inode, req.VerSeq)
 	retMsg := mp.getInode(ino)
 	ino = retMsg.Msg
 	var (
@@ -224,6 +245,7 @@ func (mp *metaPartition) InodeGetBatch(req *InodeGetReqBatch, p *Packet) (err er
 	ino := NewInode(0, 0)
 	for _, inoId := range req.Inodes {
 		ino.Inode = inoId
+		ino.verSeq = req.VerSeq
 		retMsg := mp.getInode(ino)
 		if retMsg.Status == proto.OpOk {
 			inoInfo := &proto.InodeInfo{}

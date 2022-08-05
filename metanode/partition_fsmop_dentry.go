@@ -272,7 +272,7 @@ func (mp *metaPartition) getDentryTree() *BTree {
 
 func (mp *metaPartition) getDentryByVerSeq(dy *Dentry, verSeq uint64) (d *Dentry){
 	log.LogInfof("action[getDentryByVerSeq] verseq %v, tmp dentry %v, inode id %v, name %v", verSeq, dy.VerSeq, dy.Inode, dy.Name)
-	if verSeq == 0 {
+	if verSeq == 0 || verSeq == dy.getVerSeq() {
 		if dy.isDeleted() {
 			log.LogDebugf("action[getDentryByVerSeq] tmp dentry %v, is deleted, seq %v", dy, dy.getVerSeq())
 			return
@@ -290,6 +290,7 @@ func (mp *metaPartition) getDentryByVerSeq(dy *Dentry, verSeq uint64) (d *Dentry
 		if dy.dentryList[denListLen-1].getVerSeq() != 0 || dy.dentryList[denListLen-1].isDeleted() {
 			return nil
 		}
+		log.LogDebugf("action[getDentryByVerSeq] return dentry %v seq %v", d, d.getVerSeq())
 		return
 	}
 

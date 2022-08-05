@@ -634,19 +634,19 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey, curVer 
 	return
 }
 
-func (i *Inode) ShouldDelVer(ver uint64) bool {
-	if ver == 0 {
-		return true
+func (i *Inode) ShouldDelVer(ver uint64) (ok bool, err error) {
+	if ver == 0 && i.verSeq == 0 {
+		return false, nil
 	}
 	for _, inoVer := range i.multiVersions {
 		if inoVer.verSeq == ver {
-			return true
+			return true, nil
 		}
 		if inoVer.verSeq < ver {
-			return false
+			break
 		}
 	}
-	return false
+	return false, fmt.Errorf("not found")
 }
 
 func (i *Inode) getAndDelVer(dVer uint64, gVer uint64) (delExtents []proto.ExtentKey, found bool) {
@@ -712,9 +712,6 @@ func (i *Inode) CreateVer(ver uint64) {
 	i.verSeq = ver
 	i.Unlock()
 
-	log.LogDebugf("action[CreateVer] inode %v create new version [%v] and store old one [%v], now hist len [%v]",
-		i.Inode, ver, i.verSeq, len(i.multiVersions))
-	// snapshot means deletion take effect while all version be deleted(also include renamed shared link)
 	i.IncNLink()
 }
 
