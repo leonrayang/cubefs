@@ -885,7 +885,7 @@ func (mp *metaPartition) delVersion(verSeq uint64) (err error) {
 
 		inode.RLock()
 		// eks is empty just skip
-		if !inode.ShouldDelVer(verSeq) {
+		if ok, _ := inode.ShouldDelVer(verSeq); !ok {
 			inode.RUnlock()
 			return true
 		}

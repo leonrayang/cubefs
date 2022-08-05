@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/cubefs/cubefs/util/log"
+	"math"
 )
 
 // Dentry wraps necessary properties of the `dentry` information in file system.
@@ -50,26 +51,21 @@ type Dentry struct {
 	dentryList DentryBatch
 }
 
-const (
-	DentryNormal = 1
-	DentryDeleted = 2
-)
-
-func (d *Dentry) getVerSeq() (verSeq uint64,) {
-	return d.VerSeq & 0xFFFFFFF
+func (d *Dentry) getVerSeq() (verSeq uint64) {
+	return d.VerSeq & math.MaxInt64
 }
 
 func (d *Dentry) isDeleted() bool {
-	return d.VerSeq & 0x80000000 > 0
+	return (d.VerSeq >> 63) != 0
 }
 
 func (d *Dentry) setDeleted() {
-	d.VerSeq |= 0x80000000
+	d.VerSeq |= uint64(1)<<63
 }
 
 func (d *Dentry) String() string {
-	str := fmt.Sprintf("dentry(name:[%v],parentId:[%v],inode:[%v],type:[%v],seq:[%v],dentryList_len[%v]",
-		d.Name, d.ParentId, d.Inode, d.Type, d.VerSeq, len(d.dentryList))
+	str := fmt.Sprintf("dentry(name:[%v],parentId:[%v],inode:[%v],type:[%v],seq:[%v],isDeleted:[%v],dentryList_len[%v]",
+		d.Name, d.ParentId, d.Inode, d.Type, d.getVerSeq(), d.isDeleted(), len(d.dentryList))
 
 	for idx, den := range d.dentryList {
 		str += fmt.Sprintf("idx:%v,content(%v)", idx, den)
@@ -280,6 +276,7 @@ func (d *Dentry) UnmarshalValue(val []byte) (err error) {
 				return
 			}
 			d.dentryList = append(d.dentryList, den)
+			log.LogInfof("action[UnmarshalValue] dentry name %v, inode %v, parent inode %v, val len %v", den.Name, den.Inode, den.ParentId, len(val))
 		}
 	}
 	return

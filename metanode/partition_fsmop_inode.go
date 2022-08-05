@@ -66,6 +66,8 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 func (mp *metaPartition) getInodeByVer(ino *Inode) (i *Inode) {
 	item := mp.inodeTree.Get(ino)
 	if item == nil {
+		log.LogDebugf("action[getInodeByVer] not found ino %v verseq %v hist len %v request ino ver %v",
+			ino.Inode, item.(*Inode).verSeq, len(item.(*Inode).multiVersions), ino.verSeq)
 		return
 	}
 	log.LogDebugf("action[getInodeByVer] ino %v verseq %v hist len %v request ino ver %v",

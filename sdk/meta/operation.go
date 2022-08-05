@@ -460,7 +460,7 @@ func (mw *MetaWrapper) iget(mp *MetaPartition, inode uint64) (status int, info *
 	packet.Opcode = proto.OpMetaInodeGet
 	packet.PartitionID = mp.PartitionID
 
-	log.LogDebugf("action[iget] pack mp id %v, req vol name %v inode %v", mp.PartitionID, req.VolName, req.Inode)
+	log.LogDebugf("action[iget] pack mp id %v, req %v", mp.PartitionID, req)
 
 	err = packet.MarshalData(req)
 	if err != nil {
@@ -512,7 +512,7 @@ func (mw *MetaWrapper) batchIget(wg *sync.WaitGroup, mp *MetaPartition, inodes [
 		Inodes:      inodes,
 		VerSeq:      mw.VerReadSeq,
 	}
-
+	log.LogDebugf("action[batchIget] req %v", req)
 	packet := proto.NewPacketReqID()
 	packet.Opcode = proto.OpMetaBatchInodeGet
 	packet.PartitionID = mp.PartitionID
@@ -626,7 +626,7 @@ func (mw *MetaWrapper) readDirLimit(mp *MetaPartition, parentID uint64, from str
 		log.LogErrorf("readDirLimit: req(%v) err(%v)", *req, err)
 		return
 	}
-
+	log.LogDebugf("action[readDirLimit] mp [%v] parentId %v", mp.PartitionID, parentID)
 	metric := exporter.NewTPCnt(packet.GetOpMsg())
 	defer func() {
 		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
@@ -651,7 +651,7 @@ func (mw *MetaWrapper) readDirLimit(mp *MetaPartition, parentID uint64, from str
 		log.LogErrorf("readDirLimit: packet(%v) mp(%v) err(%v) PacketData(%v)", packet, mp, err, string(packet.Data))
 		return
 	}
-	log.LogDebugf("readDirLimit: packet(%v) mp(%v) req(%v)", packet, mp, *req)
+	log.LogDebugf("readDirLimit: packet(%v) mp(%v) req(%v) rsp(%v)", packet, mp, *req, resp.Children)
 	return statusOK, resp.Children, nil
 }
 
