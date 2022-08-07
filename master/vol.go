@@ -71,6 +71,17 @@ func newVersionMgr(vol *Vol) *VolVersionManager {
 	}
 }
 
+func(verMgr * VolVersionManager) Persist(cluster *Cluster) (err error){
+	var val []byte
+	if val, err = json.Marshal(verMgr.multiVersionList); err != nil {
+		return
+	}
+	if err = cluster.syncMultiVersion(verMgr.vol, val); err != nil {
+		return
+	}
+	return
+}
+
 func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo){
 	log.LogInfof("action[CommitVer] enter.op now [%v]", verMgr.prepareCommit.op)
 
@@ -251,6 +262,9 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 						verMgr.verSeq = verSeq
 						verMgr.prepareCommit.reset()
 						verMgr.prepareCommit.op = proto.CreateVersionCommit
+						if err = verMgr.Persist(cluster); err != nil {
+							return
+						}
 						log.LogInfof("action[createVer2PhaseTask] prepare fin.start commit")
 						return verMgr.createTask(cluster, verSeq, verMgr.prepareCommit.op, force)
 					}
@@ -374,12 +388,7 @@ func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op 
 		if err = verMgr.DelVer(verSeq); err != nil {
 			return
 		}
-
-		var val []byte
-		if val, err = json.Marshal(verMgr.multiVersionList); err != nil {
-			return
-		}
-		if err = cluster.syncMultiVersion(verMgr.vol, val); err != nil {
+		if err = verMgr.Persist(cluster); err != nil {
 			return
 		}
 	}
