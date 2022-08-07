@@ -43,6 +43,7 @@ func (commit *Ver2PhaseCommit) reset() {
 	// datanode and metanode will not allow change member during make snapshot
 	commit.dataNodeArray = new(sync.Map)
 	commit.metaNodeArray = new(sync.Map)
+	log.LogDebugf("action[Ver2PhaseCommit.reset]")
 }
 
 type VolVersionManager struct {
@@ -108,7 +109,7 @@ func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error
 		log.LogErrorf("action[VolVersionManager.createTask] err %v", err)
 		return
 	}
-
+	verMgr.prepareCommit.reset()
 	verMgr.prepareCommit.prepareInfo =  &proto.VolVersionInfo{
 		Ver:	verSeq,
 		Ctime:	tm,
@@ -258,10 +259,10 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 				}
 				return
 			case <-verMgr.cancel:
-				log.LogInfof("action[createVer2PhaseTask] verseq %v op %v be canceled", verSeq, verMgr.prepareCommit.op)
+				log.LogInfof("action[createVer2PhaseTask.cancel] verseq %v op %v be canceled", verSeq, verMgr.prepareCommit.op)
 				return
 			case <-ticker.C:
-				log.LogInfof("action[createVer2PhaseTask] verseq %v op %v wait", verSeq, verMgr.prepareCommit.op)
+				log.LogInfof("action[createVer2PhaseTask.tick] verseq %v op %v wait", verSeq, verMgr.prepareCommit.op)
 				cnt++
 				if cnt > 10 {
 					verMgr.status = proto.VersionWorkingTimeOut
