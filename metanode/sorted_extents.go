@@ -206,16 +206,18 @@ func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []p
 	log.LogDebugf("action[SplitWithCheck] eks [%v]", se.eks)
 
 	if key.FileOffset == ekSplit.FileOffset { // at the begin
+		keyDup := *key
 		eks := make([]proto.ExtentKey, len(se.eks)-startIndex)
 		copy(eks, se.eks[startIndex:])
 		se.eks = se.eks[:startIndex-1]
-		se.eks =  append(se.eks, ekSplit)
 
+		se.eks =  append(se.eks, ekSplit)
 		log.LogDebugf("action[SplitWithCheck] se.eks [%v], eks [%v]", se.eks, eks)
-		key.FileOffset = key.FileOffset+uint64(ekSplit.Size)
-		key.ExtentOffset = key.ExtentOffset+uint64(ekSplit.Size)
-		key.Size = keySize-ekSplit.Size
-		se.eks = append(se.eks, *key)
+
+		keyDup.FileOffset = keyDup.FileOffset+uint64(ekSplit.Size)
+		keyDup.ExtentOffset = keyDup.ExtentOffset+uint64(ekSplit.Size)
+		keyDup.Size = keySize-ekSplit.Size
+		se.eks =  append(se.eks, keyDup)
 
 		log.LogDebugf("action[SplitWithCheck] se.eks [%v] eks [%v]", se.eks, eks)
 
