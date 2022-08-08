@@ -703,6 +703,7 @@ func (i *Inode) CreateVer(ver uint64) {
 	ino := i.Copy().(*Inode)
 	ino.Extents = NewSortedExtents()
 	ino.ObjExtents = NewSortedObjExtents()
+	ino.multiVersions = nil
 
 	log.LogDebugf("action[CreateVer] inode %v create new version [%v] and store old one [%v], hist len [%v]",
 		i.Inode, ver, i.verSeq, len(i.multiVersions))
