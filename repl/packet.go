@@ -293,6 +293,7 @@ var (
 )
 
 func (p *Packet) identificationErrorResultCode(errLog string, errMsg string) {
+	log.LogErrorf("action[identificationErrorResultCode] error %v, errmsg %v", errLog, errMsg)
 	if strings.Contains(errLog, ActionReceiveFromFollower) || strings.Contains(errLog, ActionSendToFollowers) ||
 		strings.Contains(errLog, ConnIsNullErr) {
 		p.ResultCode = proto.OpIntraGroupNetErr
