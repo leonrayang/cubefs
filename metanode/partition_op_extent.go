@@ -145,6 +145,9 @@ func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest
 		ino.Extents.Range(func(ek proto.ExtentKey) bool {
 			if ek.VerSeq <= req.VerSeq {
 				rsp.Extents = append(rsp.Extents, ek)
+				log.LogInfof("action[GetExtentByVer] fresh layer.read ino %v readseq %v ino seq %v include ek %v", ino.Inode, req.VerSeq, ino.verSeq, ek)
+			} else {
+				log.LogInfof("action[GetExtentByVer] fresh layer.read ino %v readseq %v ino seq %v exclude ek %v", ino.Inode, req.VerSeq, ino.verSeq, ek)
 			}
 			return true
 		})
@@ -155,19 +158,17 @@ func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest
 				break
 			}
 			log.LogInfof("action[GetExtentByVer] read ino %v readseq %v snapIno ino seq %v", ino.Inode, req.VerSeq, snapIno.verSeq)
-			for _, ek := range ino.Extents.eks {
+			for _, ek := range snapIno.Extents.eks {
 				if req.VerSeq >= ek.VerSeq {
-					log.LogInfof("action[GetExtentByVer] get extent ino %v readseq %v snapIno ino seq %v, ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
+					log.LogInfof("action[GetExtentByVer] get extent ino %v readseq %v snapIno ino seq %v, include ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
 					rsp.Extents = append(rsp.Extents, ek)
 				} else {
-					log.LogInfof("action[GetExtentByVer] not get extent ino %v readseq %v snapIno ino seq %v, ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
+					log.LogInfof("action[GetExtentByVer] not get extent ino %v readseq %v snapIno ino seq %v, exclude ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
 				}
 			}
-
-
 		}
-		sort.SliceStable(ino.Extents.eks, func(i, j int) bool {
-			return ino.Extents.eks[i].FileOffset < ino.Extents.eks[j].FileOffset
+		sort.SliceStable(rsp.Extents, func(i, j int) bool {
+			return rsp.Extents[i].FileOffset < rsp.Extents[j].FileOffset
 		})
 
 	})
@@ -179,8 +180,10 @@ func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest
 func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (err error) {
 	log.LogDebugf("action[ExtentsList] inode %v verSeq", req.Inode, req.VerSeq)
 	ino := NewInode(req.Inode, 0)
-	ino.verSeq = req.VerSeq
 	retMsg := mp.getInode(ino)
+
+	//notice.getInode should not set verSeq due to extent need filter from the newest layer to req.VerSeq
+	ino.verSeq = req.VerSeq
 	ino = retMsg.Msg
 	var (
 		reply  []byte
@@ -189,8 +192,8 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 
 	if status == proto.OpOk {
 		resp := &proto.GetExtentsResponse{}
-		log.LogInfof("action[ExtentsList] inode %v request verseq %v ino ver %v extent size %v ino.Size %v",
-			req.Inode, req.VerSeq, ino.verSeq, len(ino.Extents.eks), ino.Size, ino)
+		log.LogInfof("action[ExtentsList] inode %v request verseq %v ino ver %v extent size %v ino.Size %v hist len %v",
+			req.Inode, req.VerSeq, ino.verSeq, len(ino.Extents.eks), ino.Size, ino, len(ino.multiVersions))
 
 		if req.VerSeq > 0 && ino.verSeq > 0 {
 			mp.GetExtentByVer(ino, req, resp)
