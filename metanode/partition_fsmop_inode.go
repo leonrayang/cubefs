@@ -269,11 +269,7 @@ func (mp *metaPartition) fsmAppendExtents(ino *Inode) (status uint8) {
 	mp.extDelCh <- delExtents
 	return
 }
-func (mp *metaPartition) printExtents(ino *Inode) {
-	for index, ek := range ino.Extents.eks {
-		log.LogDebugf("ino %v index:%v seq %v tmp ek (%v)", ino.Inode, index, ino.verSeq, ek)
-	}
-}
+
 func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (status uint8) {
 	var (
 		delExtents []proto.ExtentKey
@@ -317,7 +313,8 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		}
 	} else {
 		// only the ek itself will be moved to level before
-		// ino verseq be set with mp ver before submit
+		// ino verseq be set with mp ver before submit in case other mp be updated while on flight, which will lead to
+		// inconsistent between raft pairs
 		delExtents, status = ino2.SplitExtentWithCheck(mp.verSeq, ino.verSeq, eks[0])
 		mp.extDelCh <- delExtents
 	}
