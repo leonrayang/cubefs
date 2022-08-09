@@ -212,7 +212,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 	} else {
 		log.LogDebugf("action[fsmDeleteDentry] dentry %v", denParm)
 		if mp.verSeq == 0 {
-			mp.dentryTree.tree.Delete(denParm)
+			item = mp.dentryTree.tree.Delete(denParm)
 		} else {
 			item = mp.dentryTree.Get(denParm)
 			if item != nil {
