@@ -126,7 +126,7 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 
 	inode := item.(*Inode)
 	// eks is empty just skip
-	if ok, err := inode.ShouldDelVer(req.VerSeq); !ok || err != nil {
+	if ok, err := inode.ShouldDelVer(mp.verSeq, req.VerSeq); !ok || err != nil {
 		if err != nil {
 			err = fmt.Errorf("inode %v reqeust cann't found seq %v", inode, req.VerSeq)
 			log.LogErrorf("action[UnlinkInode] %v", err)
