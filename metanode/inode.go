@@ -79,7 +79,6 @@ type Inode struct {
 	ObjExtents *SortedObjExtents
 
 	// for snapshot
-	verShareLink  uint32  // count for inode shared by different version after be renamed cross versions
 	verSeq        uint64  // latest version be create or modified
 	multiVersions InodeBatch
 }
@@ -634,15 +633,30 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey, curVer 
 	return
 }
 
-func (i *Inode) ShouldDelVer(ver uint64) (ok bool, err error) {
-	if ver == 0 && i.verSeq == 0 {
-		return false, nil
-	}
-	for _, inoVer := range i.multiVersions {
-		if inoVer.verSeq == ver {
+func (i *Inode) ShouldDelVer(gVer uint64, delVer uint64) (ok bool, err error) {
+	if i.verSeq == 0 {
+		if delVer > 0 {
+			return false, fmt.Errorf("not found")
+		} else {
+			// mp ver larger than zero means snapshot happened but haven't take effect on this inode
+			if gVer > 0 {
+				return false, nil
+			}
 			return true, nil
 		}
-		if inoVer.verSeq < ver {
+	} else {
+		if delVer > i.verSeq {
+			return false, fmt.Errorf("not found")
+		} else if delVer == i.verSeq {
+			return true, nil
+		}
+	}
+
+	for _, inoVer := range i.multiVersions {
+		if inoVer.verSeq == delVer {
+			return true, nil
+		}
+		if inoVer.verSeq < delVer {
 			break
 		}
 	}
