@@ -381,7 +381,7 @@ func (mw *MetaWrapper) ddelete(mp *MetaPartition, parentID uint64, name string, 
 	return statusOK, resp.Inode, nil
 }
 
-func (mw *MetaWrapper) lookup(mp *MetaPartition, parentID uint64, name string) (status int, inode uint64, mode uint32, err error) {
+func (mw *MetaWrapper) lookup(mp *MetaPartition, parentID uint64, name string, verSeq uint64) (status int, inode uint64, mode uint32, err error) {
 	bgTime := stat.BeginStat()
 	defer func() {
 		stat.EndStat("lookup", err, bgTime, 1)
@@ -392,7 +392,7 @@ func (mw *MetaWrapper) lookup(mp *MetaPartition, parentID uint64, name string) (
 		PartitionID: mp.PartitionID,
 		ParentID:    parentID,
 		Name:        name,
-		VerSeq:      mw.VerReadSeq,
+		VerSeq:      verSeq,
 	}
 	packet := proto.NewPacketReqID()
 	packet.Opcode = proto.OpMetaLookup
@@ -443,7 +443,7 @@ func (mw *MetaWrapper) lookup(mp *MetaPartition, parentID uint64, name string) (
 	return statusOK, resp.Inode, resp.Mode, nil
 }
 
-func (mw *MetaWrapper) iget(mp *MetaPartition, inode uint64) (status int, info *proto.InodeInfo, err error) {
+func (mw *MetaWrapper) iget(mp *MetaPartition, inode uint64, verSeq uint64) (status int, info *proto.InodeInfo, err error) {
 	bgTime := stat.BeginStat()
 	defer func() {
 		stat.EndStat("iget", err, bgTime, 1)
@@ -453,7 +453,7 @@ func (mw *MetaWrapper) iget(mp *MetaPartition, inode uint64) (status int, info *
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		Inode:       inode,
-		VerSeq:      mw.VerReadSeq,
+		VerSeq:      verSeq,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -608,14 +608,14 @@ func (mw *MetaWrapper) readDir(mp *MetaPartition, parentID uint64) (status int, 
 }
 
 // read limit dentries start from
-func (mw *MetaWrapper) readDirLimit(mp *MetaPartition, parentID uint64, from string, limit uint64) (status int, children []proto.Dentry, err error) {
+func (mw *MetaWrapper) readDirLimit(mp *MetaPartition, parentID uint64, from string, limit uint64, verSeq uint64) (status int, children []proto.Dentry, err error) {
 	req := &proto.ReadDirLimitRequest{
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		ParentID:    parentID,
 		Marker:      from,
 		Limit:       limit,
-		VerSeq:      mw.VerReadSeq,
+		VerSeq:      verSeq,
 	}
 
 	packet := proto.NewPacketReqID()

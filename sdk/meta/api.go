@@ -172,7 +172,7 @@ func (mw *MetaWrapper) Lookup_ll(parentID uint64, name string) (inode uint64, mo
 		return 0, 0, syscall.ENOENT
 	}
 
-	status, inode, mode, err := mw.lookup(parentMP, parentID, name)
+	status, inode, mode, err := mw.lookup(parentMP, parentID, name, mw.VerReadSeq)
 	if err != nil || status != statusOK {
 		return 0, 0, statusToErrno(status)
 	}
@@ -186,7 +186,7 @@ func (mw *MetaWrapper) InodeGet_ll(inode uint64) (*proto.InodeInfo, error) {
 		return nil, syscall.ENOENT
 	}
 
-	status, info, err := mw.iget(mp, inode)
+	status, info, err := mw.iget(mp, inode, mw.VerReadSeq)
 	if err != nil || status != statusOK {
 		if status == statusNoent {
 			// For NOENT error, pull the latest mp and give it another try,
@@ -208,7 +208,7 @@ func (mw *MetaWrapper) doInodeGet(inode uint64) (*proto.InodeInfo, error) {
 		return nil, syscall.ENOENT
 	}
 
-	status, info, err := mw.iget(mp, inode)
+	status, info, err := mw.iget(mp, inode, mw.VerReadSeq)
 	if err != nil || status != statusOK {
 		return nil, statusToErrno(status)
 	}
@@ -355,7 +355,7 @@ func (mw *MetaWrapper) Delete_ll_EX(parentID uint64, name string, isDir bool, ve
 	}
 
 	if isDir {
-		status, inode, mode, err = mw.lookup(parentMP, parentID, name)
+		status, inode, mode, err = mw.lookup(parentMP, parentID, name, verSeq)
 		if err != nil || status != statusOK {
 			return nil, statusToErrno(status)
 		}
@@ -367,7 +367,7 @@ func (mw *MetaWrapper) Delete_ll_EX(parentID uint64, name string, isDir bool, ve
 			log.LogErrorf("Delete_ll: No inode partition, parentID(%v) name(%v) ino(%v)", parentID, name, inode)
 			return nil, syscall.EAGAIN
 		}
-		status, info, err = mw.iget(mp, inode)
+		status, info, err = mw.iget(mp, inode, verSeq)
 		if err != nil || status != statusOK {
 			return nil, statusToErrno(status)
 		}
@@ -425,7 +425,7 @@ func (mw *MetaWrapper) Rename_ll(srcParentID uint64, srcName string, dstParentID
 	}
 
 	// look up for the src ino
-	status, inode, mode, err := mw.lookup(srcParentMP, srcParentID, srcName)
+	status, inode, mode, err := mw.lookup(srcParentMP, srcParentID, srcName, 0)
 	if err != nil || status != statusOK {
 		return statusToErrno(status)
 	}
@@ -551,7 +551,7 @@ func (mw *MetaWrapper) ReadDirLimit_ll(parentID uint64, from string, limit uint6
 		return nil, syscall.ENOENT
 	}
 
-	status, children, err := mw.readDirLimit(parentMP, parentID, from, limit)
+	status, children, err := mw.readDirLimit(parentMP, parentID, from, limit, mw.VerReadSeq)
 	if err != nil || status != statusOK {
 		return nil, statusToErrno(status)
 	}
