@@ -1,11 +1,9 @@
 package cmd
 
 import (
-	"fmt"
 	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/sdk/master"
 	"github.com/spf13/cobra"
-	"time"
 )
 
 const (
@@ -37,19 +35,26 @@ func newVersionCreateCmd(client *master.MasterClient) *cobra.Command {
 		Short:   cmdVersionCreateShort,
 		Aliases: []string{"create"},
 		Run: func(cmd *cobra.Command, args []string) {
-			var ver *proto.VolVersionInfo
+			var verList *proto.VolVersionInfoList
+			var volumeName = args[0]
 			var err error
 			defer func() {
 				if err != nil {
 					errout("Error: %v", err)
 				}
 			}()
-			if ver, err = client.AdminAPI().CreateVersion(optKeyword); err != nil {
+			if _, err = client.AdminAPI().CreateVersion(volumeName); err != nil {
 				return
 			}
+			stdout("create command be received by master and it's a asynchronous command,now try get the latest list\n")
+			if verList, err = client.AdminAPI().GetVerList(volumeName); err != nil {
+				return
+			}
+			stdout("%v\n\n", volumeVersionTableHeader)
+			for _, ver := range verList.VerList {
+				stdout("%v\n", formatVerInfoTableRow(ver))
+			}
 
-			stdout("%v\n", fmt.Sprintf("version info[verseq %v, time %v, status %v",
-				ver.Status, ver.Ctime.Format(time.UnixDate), ver.Status))
 		},
 	}
 	cmd.Flags().StringVar(&optKeyword, "keyword", "", "Specify keyword of volume name to filter")
@@ -63,6 +68,7 @@ func newVersionListCmd(client *master.MasterClient) *cobra.Command {
 		Short:   cmdVersionListShort,
 		Aliases: []string{"create"},
 		Run: func(cmd *cobra.Command, args []string) {
+			var volumeName = args[0]
 			var verList *proto.VolVersionInfoList
 			var err error
 			defer func() {
@@ -70,13 +76,12 @@ func newVersionListCmd(client *master.MasterClient) *cobra.Command {
 					errout("Error: %v", err)
 				}
 			}()
-			if verList, err = client.AdminAPI().GetVerList(optKeyword); err != nil {
+			if verList, err = client.AdminAPI().GetVerList(volumeName); err != nil {
 				return
 			}
-			stdout("%v\n", volumeInfoTableHeader)
+			stdout("%v\n", volumeVersionTableHeader)
 			for _, ver := range verList.VerList {
-				stdout("%v\n", fmt.Sprintf("verseq %v, time %v, status %v",
-					ver.Status, ver.Ctime.Format(time.UnixDate), ver.Status))
+				stdout("%v\n", formatVerInfoTableRow(ver))
 			}
 		},
 	}
