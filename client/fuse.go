@@ -700,7 +700,9 @@ func parseMountOption(cfg *config.Config) (*proto.MountOptions, error) {
 	}
 
 	opt.EnableBcache = GlobalMountOptions[proto.EnableBcache].GetBool()
-	opt.VerReadSeq = uint64(GlobalMountOptions[proto.SnapshotReadVerSeq].GetInt64())
+	if opt.Rdonly {
+		opt.VerReadSeq = uint64(GlobalMountOptions[proto.SnapshotReadVerSeq].GetInt64())
+	}
 	opt.MetaSendTimeout = GlobalMountOptions[proto.MetaSendTimeout].GetInt64()
 
 	opt.BuffersTotalLimit = GlobalMountOptions[proto.BuffersTotalLimit].GetInt64()
