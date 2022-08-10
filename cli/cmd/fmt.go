@@ -152,6 +152,17 @@ func formatVolInfoTableRow(vi *proto.VolInfo) string {
 }
 
 var (
+	volumeVersionPattern = "%-20v    %-40v    %-8v    %-8v"
+	volumeVersionTableHeader  = fmt.Sprintf(volumeVersionPattern, "VER", "CTIME", "STATUS", "OTHER")
+)
+
+func formatVerInfoTableRow(vi *proto.VolVersionInfo) string {
+	return fmt.Sprintf(volumeVersionPattern,
+		vi.Ver, vi.Ctime.Local().Format(time.RFC1123), vi.Status, "")
+}
+
+
+var (
 	dataPartitionTablePattern = "%-8v    %-8v    %-10v    %-10v     %-18v    %-18v"
 	dataPartitionTableHeader  = fmt.Sprintf(dataPartitionTablePattern,
 		"ID", "REPLICAS", "STATUS", "ISRECOVER", "LEADER", "MEMBERS")
