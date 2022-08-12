@@ -332,7 +332,7 @@ func (mw *MetaWrapper) Delete_Ver_ll(parentID uint64, name string, isDir bool, v
 }
 
 func (mw *MetaWrapper) Delete_ll(parentID uint64, name string, isDir bool) (*proto.InodeInfo, error) {
-	return mw.Delete_ll_EX(parentID, name, isDir, 0)
+	return mw.Delete_ll_EX(parentID, name, isDir, mw.VerReadSeq)
 }
 /*
  * Note that the return value of InodeInfo might be nil without error,
