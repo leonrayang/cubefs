@@ -72,28 +72,7 @@ func (mp *metaPartition) getInodeByVer(ino *Inode) (i *Inode) {
 	}
 	log.LogDebugf("action[getInodeByVer] ino %v verseq %v hist len %v request ino ver %v",
 		ino.Inode, item.(*Inode).verSeq, len(item.(*Inode).multiVersions), ino.verSeq)
-	if ino.verSeq == math.MaxUint64 {
-		listLen := len(item.(*Inode).multiVersions)
-		if listLen == 0 {
-			return
-		}
-		i = item.(*Inode).multiVersions[listLen-1]
-		if i.verSeq != 0 {
-			return nil
-		}
-		return
-	}
-	if ino.verSeq > 0 && ino.verSeq < item.(*Inode).verSeq {
-		for _, iTmp := range item.(*Inode).multiVersions {
-			if ino.verSeq >= iTmp.verSeq {
-				i = iTmp
-				break
-			}
-		}
-	} else {
-		i = item.(*Inode)
-	}
-	return
+	return item.(*Inode).getInoByVer(ino.verSeq)
 }
 
 func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
@@ -142,11 +121,10 @@ func (mp *metaPartition) Ascend(f func(i BtreeItem) bool) {
 }
 
 // fsmUnlinkInode delete the specified inode from inode tree.
-func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
+func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshotInfo) (resp *InodeResponse) {
 	log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
 	var (
 		ext2Del []proto.ExtentKey
-		found bool
 	)
 
 	resp = NewInodeResponse()
@@ -168,18 +146,33 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 	if inode.IsEmptyDir() {
 		mp.inodeTree.Delete(inode)
 	}
-	// don't unlink if no version satisfied
-	if ext2Del, found = inode.getAndDelVer(ino.verSeq, mp.verSeq); !found {
-		resp.Status = proto.OpNotExistErr
-		log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
-		return
-	}
 
-	inode.DecNLink()
+	if ino.verSeq > inode.verSeq && ino.verSeq != math.MaxUint64 {
+		inode.CreateUnlinkVer(ino.verSeq, verlist)
+		inode.DecNLink()
+	} else {
+		var dIno *Inode
+		if proto.IsDir(inode.Type) {
+			if dIno = inode.getInoByVer(ino.verSeq); dIno == nil {
+				resp.Status = proto.OpNotExistErr
+				log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
+				return
+			}
+		} else {
+			// don't unlink if no version satisfied
+			if ext2Del, dIno = inode.getAndDelVer(ino.verSeq, mp.verSeq, verlist); dIno == nil {
+				resp.Status = proto.OpNotExistErr
+				log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
+				return
+			}
+		}
+		dIno.DecNLink()
+	}
 
 	//Fix#760: when nlink == 0, push into freeList and delay delete inode after 7 days
 	if inode.IsTempFile() {
-		if inode.NLink == 0 {
+		// all snapshot between create to last deletion cleaned
+		if inode.NLink == 0 && len(inode.multiVersions) == 0 {
 			log.LogDebugf("action[fsmUnlinkInode] unlink inode %v and push to freeList", inode)
 			inode.AccessTime = time.Now().Unix()
 			mp.freeList.Push(inode.Inode)
@@ -196,7 +189,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInodeBatch(ib InodeBatch) (resp []*InodeResponse) {
 	for _, ino := range ib {
-		resp = append(resp, mp.fsmUnlinkInode(ino))
+		resp = append(resp, mp.fsmUnlinkInode(ino, mp.multiVersionList))
 	}
 	return
 }
