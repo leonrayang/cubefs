@@ -61,7 +61,7 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		if err = ino.Unmarshal(msg.V); err != nil {
 			return
 		}
-		resp = mp.fsmUnlinkInode(ino)
+		resp = mp.fsmUnlinkInode(ino, mp.multiVersionList)
 	case opFSMUnlinkInodeBatch:
 		inodes, err := InodeBatchUnmarshal(msg.V)
 		if err != nil {
