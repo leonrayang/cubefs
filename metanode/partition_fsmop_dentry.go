@@ -172,20 +172,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 			return den
 		} else {
 			for _, hDen := range den.dentryList {
-				verSeq := hDen.getVerSeq()
-				log.LogDebugf("action[fsmDeleteDentry] range loop check dentry %v get seq %v", hDen, verSeq)
-				if verSeq == denParm.VerSeq {
-					if hDen.isDeleted() {
-						log.LogDebugf("action[fsmDeleteDentry] dentry %v be deleted before", denParm)
-						return den
-					}
-					hDen.setDeleted()
-					return hDen
-				}
-				if hDen.VerSeq > denParm.VerSeq {
-					log.LogDebugf("action[fsmDeleteDentry] dentry %v not found", denParm)
-					return nil
-				}
+
 			}
 			log.LogDebugf("action[fsmDeleteDentry] dentry %v not found", denParm)
 			return nil

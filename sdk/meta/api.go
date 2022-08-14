@@ -413,7 +413,7 @@ func (mw *MetaWrapper) Rename_ll(srcParentID uint64, srcName string, dstParentID
 	var (
 		oldInode uint64
 	)
-	lastVerSeq := mw.LastVerSeq
+	var lastVerSeq uint64 = 0
 
 	srcParentMP := mw.getPartitionByInode(srcParentID)
 	if srcParentMP == nil {
