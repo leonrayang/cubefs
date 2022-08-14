@@ -63,7 +63,7 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 	return
 }
 
-func (mp *metaPartition) getInodeByVer(ino *Inode) (i *Inode, idx int) {
+func (mp *metaPartition) getInodeByVer(ino *Inode) (i *Inode) {
 	item := mp.inodeTree.Get(ino)
 	if item == nil {
 		log.LogDebugf("action[getInodeByVer] not found ino %v verseq %v hist len %v request ino ver %v",
@@ -72,7 +72,8 @@ func (mp *metaPartition) getInodeByVer(ino *Inode) (i *Inode, idx int) {
 	}
 	log.LogDebugf("action[getInodeByVer] ino %v verseq %v hist len %v request ino ver %v",
 		ino.Inode, item.(*Inode).verSeq, len(item.(*Inode).multiVersions), ino.verSeq)
-	return item.(*Inode).getInoByVer(ino.verSeq),
+	i, _ = item.(*Inode).getInoByVer(ino.verSeq, false)
+	return
 }
 
 func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
@@ -151,7 +152,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 	// create a version if the snapshot be depend on
 	if ino.verSeq == 0  {
 		// if there's no snapshot itself, nor have snapshot after inode's ver then need unlink directly and make no snapshot
-		// just move to upper layer,the request snapshot be dropped
+		// just move to upper layer, the behavior looks like that the snapshot be dropped
 		if len(inode.multiVersions) == 0 {
 			var found bool
 			// no matter verSeq of inode is larger than zero,if not be depended then dropped
@@ -161,9 +162,8 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 				// operate inode directly
 				goto end
 			}
-		}
-
-		if inode.verSeq != mp.verSeq { // need create version
+			return
+		} else if inode.verSeq != mp.verSeq { // need create version
 			if proto.IsDir(inode.Type) { // dir is all info but inode is part,which is quit different
 				inode.CreateVer(mp.verSeq)
 				inode.DecNLink()
@@ -197,14 +197,40 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 			var dIno *Inode
 			if proto.IsDir(inode.Type) { // snapshot dir deletion don't take link into consider, but considers the scope of snapshot contrast to verList
 				var idx int
-				if dIno, idx = inode.getInoByVer(ino.verSeq, true); dIno == nil {
+				if dIno, idx = inode.getInoByVer(ino.verSeq, false); dIno == nil {
 					resp.Status = proto.OpNotExistErr
 					log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
 					return
 				}
-				
+				if idx == 0 {
+					// header layer do nothing and be depends on should not be dropped
+					log.LogDebugf("action[fsmUnlinkInode] ino %v first layer do nothing", ino)
+					return
+				}
+				// if any alive snapshot in mp dimension exist in seq scope from dino to next ascend neighbor, dio snapshot be keep or else drop
+				var endSeq uint64
+				realIdx := idx-1
+				if realIdx == 0 {
+					endSeq = inode.verSeq
+				} else {
+					endSeq = inode.multiVersions[realIdx-1].verSeq
+				}
 
+				log.LogDebugf("action[fsmUnlinkInode] inode %v try drop multiVersion idx %v effective seq scope [%v,%v) ",
+					inode.Inode, realIdx, dIno.verSeq, endSeq)
 
+				for vidx, info := range verlist {
+					if info.VerSeq >= dIno.verSeq && info.VerSeq < endSeq {
+						log.LogDebugf("action[fsmUnlinkInode] inode %v dir layer idx %v include snapshot %v.don't drop", inode.Inode, realIdx, info.VerSeq)
+						return
+					}
+					if info.VerSeq >= endSeq || vidx == len(verlist)-1 {
+						log.LogDebugf("action[fsmUnlinkInode] inode %v try drop multiVersion idx %v", inode.Inode, realIdx)
+						inode.multiVersions = append(inode.multiVersions[:realIdx], inode.multiVersions[realIdx+1:]...)
+						return
+					}
+					log.LogDebugf("action[fsmUnlinkInode] inode %v try drop scope [%v, %v), mp ver %v not suitable", inode.Inode, dIno.verSeq, endSeq, info.VerSeq)
+				}
 			} else {
 				// special case, snapshot is the last one and be depended by upper version,update it's version to the right one
 				// ascend search util to the curr unCommit version in the verList
