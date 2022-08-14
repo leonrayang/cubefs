@@ -154,16 +154,24 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 		// if there's no snapshot itself, nor have snapshot after inode's ver then need unlink directly and make no snapshot
 		// just move to upper layer, the behavior looks like that the snapshot be dropped
 		if len(inode.multiVersions) == 0 {
-			var found bool
+			var (
+				found bool
+				rspSeq uint64
+			)
+			log.LogDebugf("action[fsmUnlinkInode] check depends on ino %v (with no snapshot itself) found seq %v and update to %v, verlist %v", ino, inode.verSeq, rspSeq, verlist)
 			// no matter verSeq of inode is larger than zero,if not be depended then dropped
-			inode.verSeq, found = inode.getLastestVer(inode.verSeq, true, verlist)
+			rspSeq, found = inode.getLastestVer(inode.verSeq, true, verlist)
 			if !found { // no snapshot depend on this inode
+				log.LogDebugf("action[fsmUnlinkInode] no snapshot available depends on ino %v not found seq %v and return, verlist %v", ino, inode.verSeq, verlist)
 				inode.DecNLink()
 				// operate inode directly
 				goto end
 			}
+			log.LogDebugf("action[fsmUnlinkInode] snapshot available depends on ino %v found seq %v and update to %v, verlist %v", ino, inode.verSeq, rspSeq, verlist)
+			inode.verSeq = rspSeq
 			return
 		} else if inode.verSeq != mp.verSeq { // need create version
+			log.LogDebugf("action[fsmUnlinkInode] need create version.ino %v withSeq %v not equal mp seq %v, verlist %v", ino, inode.verSeq, mp.verSeq, verlist)
 			if proto.IsDir(inode.Type) { // dir is all info but inode is part,which is quit different
 				inode.CreateVer(mp.verSeq)
 				inode.DecNLink()
@@ -173,6 +181,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 			}
 			return
 		} else {
+			log.LogDebugf("action[fsmUnlinkInode] need restore.ino %v withSeq %v equal mp seq, verlist %v", ino, inode.verSeq, verlist)
 			// need restore
 			if !proto.IsDir(inode.Type) {
 				var dIno *Inode
@@ -189,17 +198,20 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 			}
 		}
 	} else { // means drop snapshot
+		log.LogDebugf("action[fsmUnlinkInode] req drop assigned snapshot reqseq %v inode seq %v", ino.verSeq, inode.verSeq)
 		if ino.verSeq > inode.verSeq && ino.verSeq != math.MaxUint64 {
 			resp.Status = proto.OpNotExistErr
-			log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
+			log.LogDebugf("action[fsmUnlinkInode] inode %v unlink not exist snapshot and return do nothing.reqSeq %v larger than inode seq %v",
+				ino.Inode, ino.verSeq, inode.verSeq)
 			return
 		} else {
+			log.LogDebugf("action[fsmUnlinkInode] ino %v try search seq %v isdir %v", ino, ino.verSeq, proto.IsDir(inode.Type))
 			var dIno *Inode
 			if proto.IsDir(inode.Type) { // snapshot dir deletion don't take link into consider, but considers the scope of snapshot contrast to verList
 				var idx int
 				if dIno, idx = inode.getInoByVer(ino.verSeq, false); dIno == nil {
 					resp.Status = proto.OpNotExistErr
-					log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
+					log.LogDebugf("action[fsmUnlinkInode] ino %v not found", ino)
 					return
 				}
 				if idx == 0 {
@@ -221,11 +233,11 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 
 				for vidx, info := range verlist {
 					if info.VerSeq >= dIno.verSeq && info.VerSeq < endSeq {
-						log.LogDebugf("action[fsmUnlinkInode] inode %v dir layer idx %v include snapshot %v.don't drop", inode.Inode, realIdx, info.VerSeq)
+						log.LogDebugf("action[fsmUnlinkInode] inode %v dir layer idx %v still have effective snapshot seq %v.so don't drop", inode.Inode, realIdx, info.VerSeq)
 						return
 					}
 					if info.VerSeq >= endSeq || vidx == len(verlist)-1 {
-						log.LogDebugf("action[fsmUnlinkInode] inode %v try drop multiVersion idx %v", inode.Inode, realIdx)
+						log.LogDebugf("action[fsmUnlinkInode] inode %v try drop multiVersion idx %v and return", inode.Inode, realIdx)
 						inode.multiVersions = append(inode.multiVersions[:realIdx], inode.multiVersions[realIdx+1:]...)
 						return
 					}
@@ -237,7 +249,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 				if ino.verSeq == inode.verSeq /*&& len(inode.multiVersions) == 0*/ {
 					if len(verlist) == 0 {
 						resp.Status = proto.OpNotExistErr
-						log.LogErrorf("action[fsmUnlinkInode] inode %v verlist should be larger than 0", inode.Inode)
+						log.LogErrorf("action[fsmUnlinkInode] inode %v verlist should be larger than 0, return not found", inode.Inode)
 						return
 					}
 

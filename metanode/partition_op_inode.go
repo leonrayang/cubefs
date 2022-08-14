@@ -124,23 +124,23 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 		return
 	}
 
-	inode := item.(*Inode)
-	// eks is empty just skip
-	if ok, err := inode.ShouldDelVer(mp.verSeq, req.VerSeq); !ok || err != nil {
-		if err != nil {
-			err = fmt.Errorf("inode %v reqeust cann't found seq %v", inode, req.VerSeq)
-			log.LogErrorf("action[UnlinkInode] %v", err)
-			p.PacketErrorWithBody(proto.OpNotExistErr, []byte(err.Error()))
-			return err
-		}
-		log.LogDebugf("action[UnlinkInode] inode %v no need delete at ver %v", inode.Inode, req.VerSeq)
-		resp := NewInodeResponse()
-		resp.Status = proto.OpOk
-		resp.Msg = ino
-		msg = resp
-		makeRspFunc()
-		return nil
-	}
+	//inode := item.(*Inode)
+	//// eks is empty just skip
+	//if ok, err := inode.ShouldDelVer(mp.verSeq, req.VerSeq); !ok || err != nil {
+	//	if err != nil {
+	//		err = fmt.Errorf("inode %v reqeust cann't found seq %v", inode, req.VerSeq)
+	//		log.LogErrorf("action[UnlinkInode] %v", err)
+	//		p.PacketErrorWithBody(proto.OpNotExistErr, []byte(err.Error()))
+	//		return err
+	//	}
+	//	log.LogDebugf("action[UnlinkInode] inode %v no need delete at ver %v", inode.Inode, req.VerSeq)
+	//	resp := NewInodeResponse()
+	//	resp.Status = proto.OpOk
+	//	resp.Msg = ino
+	//	msg = resp
+	//	makeRspFunc()
+	//	return nil
+	//}
 
 	val, err := ino.Marshal()
 	if err != nil {
