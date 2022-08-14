@@ -147,7 +147,10 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
 
-	var item interface{}
+	var (
+		item interface{}
+		doMore = true
+	)
 	if checkInode {
 		log.LogDebugf("action[fsmDeleteDentry] dentry %v", denParm)
 		item = mp.dentryTree.Execute(func(tree *btree.BTree) interface{} {
@@ -160,10 +163,14 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 				return nil
 			}
 			if mp.verSeq == 0 {
+				log.LogDebugf("action[fsmDeleteDentry] volume snapshot not enabled,delete directly")
 				return mp.dentryTree.tree.Delete(den)
 			}
-			return den.deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList)
+			return den
 		})
+		if item != nil && mp.verSeq != 0 {
+			item, doMore = item.(*Dentry).deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList)
+		}
 	} else {
 		log.LogDebugf("action[fsmDeleteDentry] dentry %v", denParm)
 		if mp.verSeq == 0 {
@@ -171,11 +178,15 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 		} else {
 			item = mp.dentryTree.Get(denParm)
 			if item != nil {
-				item = item.(*Dentry).deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList)
+				item, doMore = item.(*Dentry).deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList)
 			}
 		}
 	}
 
+	if !doMore {
+		log.LogDebugf("action[fsmDeleteDentry] there's nothing to do more denParm %v", denParm)
+		return
+	}
 	if item == nil {
 		resp.Status = proto.OpNotExistErr
 		log.LogErrorf("action[fsmDeleteDentry] not found dentry %v", denParm)

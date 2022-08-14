@@ -668,7 +668,7 @@ func (i *Inode)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMul
 	return 0, false
 }
 
-func (i *Inode) ShouldDelVer(gVer uint64, delVer uint64) (ok bool, err error) {
+func (i *Inode) ShouldDelVer(mpVer uint64, delVer uint64) (ok bool, err error) {
 	if i.verSeq == 0 {
 		if delVer > 0 {
 			if delVer == math.MaxUint64 {
@@ -677,7 +677,7 @@ func (i *Inode) ShouldDelVer(gVer uint64, delVer uint64) (ok bool, err error) {
 			return false, fmt.Errorf("not found")
 		} else {
 			// mp ver larger than zero means snapshot happened but haven't take effect on this inode
-			if gVer > 0 {
+			if mpVer > 0 {
 				return false, nil
 			}
 			return true, nil
