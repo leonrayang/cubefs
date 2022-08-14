@@ -97,7 +97,7 @@ func (d *Dentry) getVerSnapshotByVer(verSeq uint64) (den *Dentry, idx int) {
 			return
 		} else if verSeq >= lDen.getVerSeq() {
 			log.LogDebugf("action[getDentryByVerSeq] den in ver list %v got", lDen)
-			return lDen, id
+			return lDen, id+1
 		}
 	}
 	log.LogDebugf("action[getDentryByVerSeq] den in ver list not found right dentry with seq %v", verSeq)
@@ -134,7 +134,7 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 	}
 	if delVerSeq == 0 {
 		if d.isDeleted() {
-			log.LogDebugf("action[fsmDeleteDentry] dentry %v seq %v be deleted before", d, delVerSeq)
+			log.LogDebugf("action[deleteVerSnapshot] dentry %v seq %v be deleted before", d, delVerSeq)
 			return nil, false
 		}
 		// if there's no snapshot itself, nor have snapshot after inode's ver then need unlink directly and make no snapshot
@@ -154,17 +154,17 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 				dn := d.Copy()
 				dn.(*Dentry).dentryList = nil
 				d.dentryList = append([]*Dentry{dn.(*Dentry)}, d.dentryList...)
-				log.LogDebugf("action[fsmDeleteDentry] need create on version. push the dentry %v to the dentry list", dn.(*Dentry))
+				log.LogDebugf("action[deleteVerSnapshot] need create on version. push the dentry %v to the dentry list", dn.(*Dentry))
 			}
 			d.VerSeq = mpVerSeq
 			d.setDeleted() // denParm create at the same version.no need to push to history list
-			log.LogDebugf("action[fsmDeleteDentry] den %v be set deleted at version seq %v", d, mpVerSeq)
+			log.LogDebugf("action[deleteVerSnapshot] den %v be set deleted at version seq %v", d, mpVerSeq)
 			//todo(leonchang): dentry list need check deleted flag, combine neighbor deleted dentry and clear if no avaliable dentry exist
 
 			return d, true
 		}
 	} else {
-		log.LogDebugf("action[fsmDeleteDentry] dentry %v seq %v not found", d, delVerSeq)
+		log.LogDebugf("action[deleteVerSnapshot] dentry %v seq %v need drop snapshot", d, delVerSeq)
 		return d.deleteVerSnapshotInList(delVerSeq, verlist)
 	}
 
@@ -176,13 +176,13 @@ func (d *Dentry) deleteVerSnapshotInList(verSeq uint64, verlist []*MetaMultiSnap
 		idx int
 	)
 	if den, idx = d.getVerSnapshotByVer(verSeq); den == nil {
-		log.LogDebugf("action[deleteVerSnapshot] den %v not seq %v", d, verSeq)
+		log.LogDebugf("action[deleteVerSnapshotInList] den %v not seq %v", d, verSeq)
 		return nil, false
 	}
 	if idx == 0 {
 		// header layer do nothing and be depends on should not be dropped
-		log.LogDebugf("action[deleteVerSnapshot] den %v seq %v first layer do nothing", d, verSeq)
-		return d, true
+		log.LogDebugf("action[deleteVerSnapshotInList] den %v seq %v first layer do nothing", d, verSeq)
+		return d, false
 	}
 	// if any alive snapshot in mp dimension exist in seq scope from den to next ascend neighbor, dio snapshot be keep or else drop
 	var endSeq uint64
@@ -193,20 +193,20 @@ func (d *Dentry) deleteVerSnapshotInList(verSeq uint64, verlist []*MetaMultiSnap
 		endSeq = d.dentryList[realIdx-1].VerSeq
 	}
 
-	log.LogDebugf("action[deleteVerSnapshot] inode %v try drop multiVersion idx %v effective seq scope [%v,%v) ",
+	log.LogDebugf("action[deleteVerSnapshotInList] inode %v try drop multiVersion idx %v effective seq scope [%v,%v) ",
 		d.Inode, realIdx, d.VerSeq, endSeq)
 
 	for vidx, info := range verlist {
 		if info.VerSeq >= den.VerSeq && info.VerSeq < endSeq {
-			log.LogDebugf("action[deleteVerSnapshot] inode %v dir layer idx %v include snapshot %v.don't drop", den.Inode, realIdx, info.VerSeq)
+			log.LogDebugf("action[deleteVerSnapshotInList] inode %v dir layer idx %v include snapshot %v.don't drop", den.Inode, realIdx, info.VerSeq)
 			return den, false
 		}
 		if info.VerSeq >= endSeq || vidx == len(verlist)-1 {
-			log.LogDebugf("action[deleteVerSnapshot] inode %v try drop multiVersion idx %v", den.Inode, realIdx)
+			log.LogDebugf("action[deleteVerSnapshotInList] inode %v try drop multiVersion idx %v", den.Inode, realIdx)
 			d.dentryList = append(d.dentryList[:realIdx], d.dentryList[realIdx+1:]...)
 			return den, false
 		}
-		log.LogDebugf("action[deleteVerSnapshot] inode %v try drop scope [%v, %v), mp ver %v not suitable", den.Inode, den.VerSeq, endSeq, info.VerSeq)
+		log.LogDebugf("action[deleteVerSnapshotInList] inode %v try drop scope [%v, %v), mp ver %v not suitable", den.Inode, den.VerSeq, endSeq, info.VerSeq)
 	}
 	return nil, false
 }

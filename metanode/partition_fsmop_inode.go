@@ -158,7 +158,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 				found bool
 				rspSeq uint64
 			)
-			log.LogDebugf("action[fsmUnlinkInode] check depends on ino %v (with no snapshot itself) found seq %v and update to %v, verlist %v", ino, inode.verSeq, rspSeq, verlist)
+			log.LogDebugf("action[fsmUnlinkInode] check if have snapshot depends on the deleitng ino %v (with no snapshot itself) found seq %v and update to %v, verlist %v", ino, inode.verSeq, rspSeq, verlist)
 			// no matter verSeq of inode is larger than zero,if not be depended then dropped
 			rspSeq, found = inode.getLastestVer(inode.verSeq, true, verlist)
 			if !found { // no snapshot depend on this inode

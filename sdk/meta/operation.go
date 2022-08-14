@@ -98,6 +98,7 @@ func (mw *MetaWrapper) iunlink(mp *MetaPartition, inode uint64, verSeq uint64) (
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		Inode:       inode,
+		VerSeq: verSeq,
 	}
 
 	packet := proto.NewPacketReqID()
