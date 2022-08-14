@@ -15,8 +15,6 @@
 package metanode
 
 import (
-	"fmt"
-	"math"
 	"strings"
 
 	"github.com/cubefs/cubefs/proto"
@@ -107,77 +105,47 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 		return nil, status
 	}
 	log.LogDebug("action[getDentry] dentry[%v] be set delete flag", dentry)
-	verSeq := item.(*Dentry).getVerSeq()
-	if dentry.VerSeq == 0 || verSeq <= dentry.VerSeq {
-		if item.(*Dentry).isDeleted() {
-			log.LogDebug("action[getDentry] dentry[%v] be set delete flag", dentry)
-			status = proto.OpNotExistErr
-			return nil, status
-		}
-		log.LogDebug("action[getDentry] dentry[%v] be geted", item.(*Dentry))
-		return item.(*Dentry), status
+
+	den := mp.getDentryByVerSeq(item.(*Dentry), dentry.VerSeq)
+	if den != nil && den.VerSeq == dentry.VerSeq {
+		return den,  proto.OpOk
 	}
-	for _, d := range item.(*Dentry).dentryList {
-		verSeq = d.getVerSeq()
-		log.LogDebug("action[getDentry] dentry[%v] in the dentry list ", dentry)
-		if verSeq == dentry.VerSeq {
-			if d.isDeleted() {
-				log.LogDebug("action[getDentry] dentry[%v] in the dentry list and be set delete flag", d)
-				status = proto.OpNotExistErr
-				return nil, status
-			}
-			return item.(*Dentry), status
-		}
-		if verSeq < dentry.VerSeq {
-			return nil, proto.OpNotExistErr
-		}
-	}
-	return nil, proto.OpNotExistErr
+	return den, proto.OpNotExistErr
+
+	//verSeq := item.(*Dentry).getVerSeq()
+	//if dentry.VerSeq == 0 || verSeq <= dentry.VerSeq {
+	//	if item.(*Dentry).isDeleted() {
+	//		log.LogDebug("action[getDentry] dentry[%v] be set delete flag", dentry)
+	//		status = proto.OpNotExistErr
+	//		return nil, status
+	//	}
+	//	log.LogDebug("action[getDentry] dentry[%v] be geted", item.(*Dentry))
+	//	return item.(*Dentry), status
+	//}
+	//for _, d := range item.(*Dentry).dentryList {
+	//	verSeq = d.getVerSeq()
+	//	log.LogDebug("action[getDentry] dentry[%v] in the dentry list ", dentry)
+	//	if verSeq == dentry.VerSeq {
+	//		if d.isDeleted() {
+	//			log.LogDebug("action[getDentry] dentry[%v] in the dentry list and be set delete flag", d)
+	//			status = proto.OpNotExistErr
+	//			return nil, status
+	//		}
+	//		return item.(*Dentry), status
+	//	}
+	//	if verSeq < dentry.VerSeq {
+	//		return nil, proto.OpNotExistErr
+	//	}
+	//}
+	//return nil, proto.OpNotExistErr
 }
 
 // Delete dentry from the dentry tree.
-func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
-	resp *DentryResponse) {
+func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp *DentryResponse) {
 
 	log.LogDebugf("action[fsmDeleteDentry] dentry(%v)", denParm)
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
-
-	// the lastest dentry may be deleted before and set status DentryDeleted,
-	// the scope of  deleted happened from the DentryDeleted flag owner(include in) to the file with the same name be created is invisible,
-	// if create anther dentry with larger verSeq, put the eleted dentry to the history list.
-
-	delVerFuc := func(den *Dentry) *Dentry {
-		// create denParm version
-		if denParm.VerSeq > mp.verSeq {
-			panic(fmt.Sprintf("Dentry version %v large than mp %v", denParm.VerSeq, mp.verSeq))
-		}
-		if denParm.VerSeq == 0 {
-			if den.isDeleted() {
-				log.LogDebugf("action[fsmDeleteDentry] dentry %v be deleted before", denParm)
-				return den
-			}
-
-			if den.VerSeq < mp.verSeq {
-				dn := den.Copy()
-				dn.(*Dentry).dentryList = nil
-				den.dentryList = append([]*Dentry{dn.(*Dentry)}, den.dentryList...)
-				log.LogDebugf("action[fsmDeleteDentry] pust the dentry %v to the dentry list", dn.(*Dentry))
-			}
-			den.VerSeq = mp.verSeq
-			den.setDeleted() // denParm create at the same version.no need to push to history list
-			log.LogDebugf("action[fsmDeleteDentry] den %v be set deleted", den)
-			//todo(leonchang): dentry list need check deleted flag, combine neighbor deleted dentry and clear if no avaliable dentry exist
-
-			return den
-		} else {
-			for _, hDen := range den.dentryList {
-
-			}
-			log.LogDebugf("action[fsmDeleteDentry] dentry %v not found", denParm)
-			return nil
-		}
-	}
 
 	var item interface{}
 	if checkInode {
@@ -194,7 +162,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 			if mp.verSeq == 0 {
 				return mp.dentryTree.tree.Delete(den)
 			}
-			return delVerFuc(den)
+			return den.deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList)
 		})
 	} else {
 		log.LogDebugf("action[fsmDeleteDentry] dentry %v", denParm)
@@ -203,7 +171,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (
 		} else {
 			item = mp.dentryTree.Get(denParm)
 			if item != nil {
-				item = delVerFuc(item.(*Dentry))
+				item = item.(*Dentry).deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList)
 			}
 		}
 	}
@@ -259,42 +227,7 @@ func (mp *metaPartition) getDentryTree() *BTree {
 
 func (mp *metaPartition) getDentryByVerSeq(dy *Dentry, verSeq uint64) (d *Dentry){
 	log.LogInfof("action[getDentryByVerSeq] verseq %v, tmp dentry %v, inode id %v, name %v", verSeq, dy.VerSeq, dy.Inode, dy.Name)
-	if verSeq == 0 || verSeq >= dy.getVerSeq() {
-		if dy.isDeleted() {
-			log.LogDebugf("action[getDentryByVerSeq] tmp dentry %v, is deleted, seq %v", dy, dy.getVerSeq())
-			return
-		}
-		return dy
-	}
-
-	// read the oldest version snapshot,the oldest version is 0 should make a different with the lastest uncommit version read(with seq 0)
-	if verSeq == math.MaxUint64 {
-		denListLen := len(dy.dentryList)
-		if denListLen == 0 {
-			return
-		}
-		d = dy.dentryList[denListLen-1]
-		if dy.dentryList[denListLen-1].getVerSeq() != 0 || dy.dentryList[denListLen-1].isDeleted() {
-			return nil
-		}
-		log.LogDebugf("action[getDentryByVerSeq] return dentry %v seq %v", d, d.getVerSeq())
-		return
-	}
-
-	for _, den := range dy.dentryList {
-		log.LogDebugf("action[getDentryByVerSeq] den in ver list %v, is delete %v, seq %v", den, den.isDeleted(), den.getVerSeq())
-		if verSeq < den.getVerSeq() {
-			log.LogDebugf("action[getDentryByVerSeq] den in ver list %v, return nil, request seq %v, history ver seq %v", den, verSeq, den.getVerSeq())
-			return
-		} else if den.isDeleted() {
-			log.LogDebugf("action[getDentryByVerSeq] den in ver list %v, return nil due to latest is deleted", den)
-			return
-		} else if verSeq >= den.getVerSeq() {
-			log.LogDebugf("action[getDentryByVerSeq] den in ver list %v got", den)
-			return den
-		}
-	}
-	log.LogDebugf("action[getDentryByVerSeq] den in ver list not found right dentry with seq %v", verSeq)
+	d, _ =  dy.getVerSnapshotByVer(verSeq)
 	return
 }
 
