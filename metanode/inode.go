@@ -650,6 +650,24 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey, curVer 
 	return
 }
 
+func (i *Inode)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMultiSnapshotInfo) (uint64, bool) {
+	if len(verlist) == 0 {
+		return 0, false
+	}
+	for id, info := range verlist {
+		if commit && id == len(verlist)-1 {
+			break
+		}
+		if info.VerSeq > reqVerSeq {
+			return info.VerSeq, true
+		}
+	}
+	vlen := len(verlist)-1
+	log.LogErrorf("action[getLastestVer] inode %v reqVerSeq %v not found, the largetst one %v",
+		i.Inode, reqVerSeq, verlist[vlen-1].VerSeq)
+	return 0, false
+}
+
 func (i *Inode) ShouldDelVer(gVer uint64, delVer uint64) (ok bool, err error) {
 	if i.verSeq == 0 {
 		if delVer > 0 {
@@ -691,11 +709,11 @@ func (i *Inode) ShouldDelVer(gVer uint64, delVer uint64) (ok bool, err error) {
 	return false, fmt.Errorf("not found")
 }
 
-func (ino *Inode) getInoByVer(verSeq uint64) (i *Inode) {
+func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
 	log.LogDebugf("action[getInodeByVer] ino %v verseq %v hist len %v request ino ver %v",
 		ino.Inode, ino.verSeq, ino.multiVersions, verSeq)
-	if verSeq == 0 {
-		return ino
+	if verSeq == 0 || verSeq == ino.Inode {
+		return ino, 0
 	}
 	if verSeq == math.MaxUint64 {
 		listLen := len(ino.multiVersions)
@@ -704,19 +722,26 @@ func (ino *Inode) getInoByVer(verSeq uint64) (i *Inode) {
 		}
 		i = ino.multiVersions[listLen-1]
 		if i.verSeq != 0 {
-			return nil
+			return nil, 0
 		}
 		return
 	}
 	if verSeq > 0 && ino.verSeq > verSeq {
-		for _, iTmp := range ino.multiVersions {
-			if verSeq >= iTmp.verSeq {
-				i = iTmp
-				break
+		for id, iTmp := range ino.multiVersions {
+			if verSeq == iTmp.verSeq {
+				return iTmp,id
+			} else if verSeq > iTmp.verSeq{
+				if !equal {
+					return iTmp,id
+				}
+				return
 			}
+
 		}
 	} else {
-		i = ino
+		if !equal {
+			return ino, 0
+		}
 	}
 	return
 }
@@ -812,6 +837,7 @@ func (i *Inode) CreateUnlinkVer(ver uint64, verlist []*MetaMultiSnapshotInfo) {
 	i.Extents = NewSortedExtents()
 	i.ObjExtents = NewSortedObjExtents()
 	i.multiVersions = nil
+	i.SetDeleteMark()
 
 
 	log.LogDebugf("action[CreateVer] inode %v create new version [%v] and store old one [%v], hist len [%v]",
