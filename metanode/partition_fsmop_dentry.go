@@ -197,6 +197,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 				if item != nil { // no matter
 					ino := item.(*Inode)
 					if !ino.ShouldDelete() {
+						log.LogDebugf("action[fsmDeleteDentry] den  %v delete parent's link", denParm)
 						item.(*Inode).DecNLink()
 						item.(*Inode).SetMtime()
 					}

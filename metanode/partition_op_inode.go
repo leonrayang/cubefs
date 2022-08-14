@@ -115,7 +115,7 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 
 	ino := NewInode(req.Inode, 0)
 	ino.verSeq = req.VerSeq
-
+	log.LogDebugf("action[UnlinkInode] verseq %v ino %v", ino.verSeq, ino)
 	item := mp.inodeTree.Get(ino)
 	if item == nil {
 		err = fmt.Errorf("inode %v reqeust cann't found", ino)
@@ -123,7 +123,7 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 		p.PacketErrorWithBody(proto.OpNotExistErr, []byte(err.Error()))
 		return
 	}
-
+	log.LogDebugf("action[UnlinkInode] ino %v submit", ino)
 	//inode := item.(*Inode)
 	//// eks is empty just skip
 	//if ok, err := inode.ShouldDelVer(mp.verSeq, req.VerSeq); !ok || err != nil {
