@@ -827,12 +827,15 @@ func (c *Cluster) getVolVer(volName string) (info *proto.VolumeVerInfo, err erro
 	if vol.VersionMgr.enabled {
 		verSeqPrepare = vol.VersionMgr.prepareCommit.prepareInfo.Ver
 	}
-
+	var pStatus uint8
+	if vol.VersionMgr.prepareCommit.prepareInfo != nil {
+		pStatus = vol.VersionMgr.prepareCommit.prepareInfo.Status
+	}
 	info = &proto.VolumeVerInfo{
 		Name:volName,
 		VerSeq: vol.VersionMgr.verSeq,
 		VerSeqPrepare: verSeqPrepare,
-		VerPrepareStatus: vol.VersionMgr.status,
+		VerPrepareStatus: pStatus,
 		Enabled: vol.VersionMgr.enabled,
 	}
 	return

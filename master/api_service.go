@@ -3108,11 +3108,17 @@ func (m *Server) CreateVersion(w http.ResponseWriter, r *http.Request) {
 		force, _ = strconv.ParseBool(value)
 	}
 
-	if ver, err = vol.VersionMgr.createVer2PhaseTask(m.cluster, uint64(time.Now().Unix()),  proto.CreateVersion, force); err != nil {
+	if err = vol.VersionMgr.startWork(); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVersionOpError, Msg: err.Error()})
 		return
 	}
 
+	if ver, err = vol.VersionMgr.createVer2PhaseTask(m.cluster, uint64(time.Now().Unix()),  proto.CreateVersion, force); err != nil {
+		vol.VersionMgr.finishWork()
+		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVersionOpError, Msg: err.Error()})
+		return
+	}
+	vol.VersionMgr.finishWork()
 	sendOkReply(w, r, newSuccessHTTPReply(ver))
 }
 
@@ -3125,6 +3131,7 @@ func (m *Server) DelVersion(w http.ResponseWriter, r *http.Request) {
 		value string
 		force bool
 	)
+	log.LogDebugf("action[DelVersion]")
 	if err = r.ParseForm(); err != nil {
 		return
 	}
@@ -3132,10 +3139,16 @@ func (m *Server) DelVersion(w http.ResponseWriter, r *http.Request) {
 	if name, err = extractName(r); err != nil {
 		return
 	}
-
-	if verSeq, err = extractUint64(r, verSeqKey); err != nil {
+	if value = r.FormValue(verSeqKey); value == "" {
+		sendErrReply(w, r, newErrHTTPReply(fmt.Errorf("verSeq not exist")))
 		return
 	}
+
+	if verSeq, err = extractUint64(r, verSeqKey); err != nil {
+		sendErrReply(w, r, newErrHTTPReply(fmt.Errorf("verSeq not exist")))
+		return
+	}
+
 	if value = r.FormValue(forceKey); value != "" {
 		force, _ = strconv.ParseBool(value)
 	}
@@ -3143,10 +3156,17 @@ func (m *Server) DelVersion(w http.ResponseWriter, r *http.Request) {
 		sendErrReply(w, r, newErrHTTPReply(proto.ErrVolNotExists))
 		return
 	}
-	if _, err = vol.VersionMgr.createTask(m.cluster, verSeq, proto.DeleteVersion, force); err != nil {
-		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVersionOpError, Msg: err.Error()})
-	}
 
+	if err = vol.VersionMgr.startWork(); err != nil {
+		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVersionOpError, Msg: err.Error()})
+		return
+	}
+	if _, err = vol.VersionMgr.createTask(m.cluster, verSeq, proto.DeleteVersion, force); err != nil {
+		vol.VersionMgr.finishWork()
+		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVersionOpError, Msg: err.Error()})
+		return
+	}
+	vol.VersionMgr.finishWork()
 	sendOkReply(w, r, newSuccessHTTPReply("success!"))
 }
 

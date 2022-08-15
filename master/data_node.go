@@ -233,7 +233,7 @@ func (dataNode *DataNode) createVersionTask(volume string, version uint64, op ui
 	request := &proto.MultiVersionOpRequest{
 		VolumeID: volume,
 		VerSeq:   version,
-		Op:       op,
+		Op:       uint8(op),
 		Addr:     addr,
 	}
 	log.LogInfof("action[createVersionTask] op %v  datanode addr %v addr %v volume %v seq %v", op, dataNode.Addr, addr, volume, version)
