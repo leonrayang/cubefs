@@ -396,6 +396,19 @@ func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op 
 	return
 }
 
+func (verMgr *VolVersionManager) init(cluster *Cluster) error {
+	log.LogWarnf("action[VolVersionManager.init]")
+	verMgr.multiVersionList = append(verMgr.multiVersionList, &proto.VolVersionInfo{
+		Ver:0,
+		Ctime:time.Now(),
+		Status:1,
+	})
+	if cluster.partition.IsRaftLeader() {
+		return verMgr.Persist(cluster)
+	}
+	return nil
+}
+
 func (verMgr *VolVersionManager) loadMultiVersion(val []byte) (err error) {
 	if err = json.Unmarshal(val, &verMgr.multiVersionList); err != nil {
 		return
