@@ -439,6 +439,7 @@ type SetAttrRequest struct {
 	ModifyTime  int64  `json:"mt"`
 	AccessTime  int64  `json:"at"`
 	Valid       uint32 `json:"valid"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 const (
