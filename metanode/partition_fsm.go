@@ -271,7 +271,7 @@ func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
 			if ver.VerSeq == opData.VerSeq {
 				log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v, seqArray size %v", mp.config.PartitionId, opData.VerSeq, opData.Op, len(mp.multiVersionList))
 				// mp.multiVersionList = append(mp.multiVersionList[:i], mp.multiVersionList[i+1:]...)
-				mp.multiVersionList[i].Status = proto.VersionDeleting
+				mp.multiVersionList = append(mp.multiVersionList[:i], mp.multiVersionList[i+1:]...)
 				break
 			}
 		}

@@ -1586,7 +1586,7 @@ func (m *metadataManager) prepareCreateVersion(req *proto.MultiVersionOpRequest)
 			err = fmt.Errorf("seq %v create less than loal %v", req.VerSeq, ver2Phase.verSeq)
 			return
 		} else if req.VerSeq == ver2Phase.verPrepare {
-			if ver2Phase.step == proto.VersionWorking {
+			if ver2Phase.status == proto.VersionWorking {
 				opAagin = true
 				return
 			}
@@ -1623,6 +1623,10 @@ func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op
 	if err != nil {
 		log.LogErrorf("action[commitCreateVersion] %v mp  err %v do Decoder", VolumeID, err.Error())
 		return err
+	}
+
+	if Op == proto.DeleteVersion {
+		return
 	}
 
 	if value, ok := m.volUpdating.Load(VolumeID); ok {
@@ -1736,7 +1740,7 @@ func (m *metadataManager) opMultiVersionOp(conn net.Conn, p *Packet,
 				log.LogErrorf("action[opMultiVersionOp] %v mp  err %v do Decoder", req.VolumeID, err.Error())
 				goto end
 			}
-		} else {
+		} else if req.Op == proto.CreateVersionCommit || req.Op == proto.DeleteVersion {
 			if err = m.commitCreateVersion(req.VolumeID, req.VerSeq, req.Op); err != nil {
 				log.LogErrorf("action[opMultiVersionOp] %v mp  err %v do commitCreateVersion", req.VolumeID, err.Error())
 				goto end

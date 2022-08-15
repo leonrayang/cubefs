@@ -367,7 +367,7 @@ func (s *DataNode) checkMultiVersionStatus(volName string) (err error) {
 }
 // Handle OpHeartbeat packet.
 func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
-	log.LogInfof("action[handleUpdateVerPacket] enter in")
+	log.LogWarnf("action[handleUpdateVerPacket] enter in p %v", p)
 	var err error
 	defer func() {
 		if err != nil {
@@ -383,6 +383,8 @@ func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 		log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
 		return
 	}
+
+	log.LogWarnf("action[handleUpdateVerPacket] task %v", task)
 
 	go func() {
 		request := &proto.MultiVersionOpRequest{}
@@ -403,7 +405,7 @@ func (s *DataNode) handleUpdateVerPacket(p *repl.Packet) {
 					log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
 					goto end
 				}
-			} else {
+			} else if request.Op == proto.CreateVersionCommit {
 				if err = s.commitCreateVersion(request.VolumeID, request.VerSeq); err != nil {
 					log.LogErrorf("action[handleUpdateVerPacket] handle master version reqeust err %v", err)
 					goto end
