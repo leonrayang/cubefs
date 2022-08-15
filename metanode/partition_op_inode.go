@@ -352,7 +352,14 @@ func (mp *metaPartition) EvictInodeBatch(req *BatchEvictInodeReq, p *Packet) (er
 }
 
 // SetAttr set the inode attributes.
-func (mp *metaPartition) SetAttr(reqData []byte, p *Packet) (err error) {
+func (mp *metaPartition) SetAttr(req *SetattrRequest, reqData []byte, p *Packet) (err error) {
+	if req.VerSeq != 0 {
+		reqData, err = json.Marshal(req)
+		if err != nil {
+			log.LogErrorf("setattr: marshal err(%v)", err)
+			return
+		}
+	}
 	_, err = mp.submit(opFSMSetAttr, reqData)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))

@@ -605,7 +605,7 @@ func (m *metadataManager) opSetAttr(conn net.Conn, p *Packet,
 	if err = m.checkMultiVersionStatus(mp.GetVolName()); err != nil {
 		return
 	}
-	if err = mp.SetAttr(p.Data, p); err != nil {
+	if err = mp.SetAttr(req, p.Data, p); err != nil {
 		err = errors.NewErrorf("[opSetAttr] req: %v, error: %s", req, err.Error())
 	}
 	m.respondToClient(conn, p)

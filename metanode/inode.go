@@ -1045,6 +1045,13 @@ func (i *Inode) SetAttr(req *SetattrRequest) {
 	if req.Valid&proto.AttrModifyTime != 0 {
 		i.ModifyTime = req.ModifyTime
 	}
+
+	if req.VerSeq != i.verSeq {
+		log.LogDebugf("action[AppendExtentWithCheck] ver %v inode ver %v", req.VerSeq, i.verSeq)
+		i.CreateVer(req.VerSeq)
+	}
+
+
 	i.Unlock()
 }
 

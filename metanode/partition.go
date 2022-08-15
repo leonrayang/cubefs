@@ -130,7 +130,7 @@ type OpInode interface {
 	CreateInodeLink(req *LinkInodeReq, p *Packet) (err error)
 	EvictInode(req *EvictInodeReq, p *Packet) (err error)
 	EvictInodeBatch(req *BatchEvictInodeReq, p *Packet) (err error)
-	SetAttr(reqData []byte, p *Packet) (err error)
+	SetAttr(req *SetattrRequest, reqData []byte, p *Packet) (err error)
 	GetInodeTree() *BTree
 	DeleteInode(req *proto.DeleteInodeRequest, p *Packet) (err error)
 	DeleteInodeBatch(req *proto.DeleteInodeBatchRequest, p *Packet) (err error)
