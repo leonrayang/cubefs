@@ -2514,6 +2514,10 @@ func (c *Cluster) createVol(req *createVolReq) (vol *Vol, err error) {
 
 	vol.dataPartitions.readableAndWritableCnt = readWriteDataPartitions
 	vol.updateViewCache(c)
+	if err = vol.VersionMgr.init(c); err != nil {
+		log.LogError("init dataPartition error in verMgr init", err.Error())
+	}
+
 	log.LogInfof("action[createVol] vol[%v],readableAndWritableCnt[%v]", req.name, readWriteDataPartitions)
 	return
 

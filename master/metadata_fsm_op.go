@@ -523,8 +523,8 @@ func (c *Cluster) loadMultiVersion(vol *Vol) (err error) {
 	key := MultiVerPrefix + strconv.FormatUint(vol.ID, 10)
 	result, err := c.fsm.store.SeekForPrefix([]byte(key))
 	if err != nil {
-		err = fmt.Errorf("action[loadClusterValue],err:%v", err.Error())
-		return err
+		log.LogErrorf("action[loadMultiVersion] err %v", err.Error())
+		return vol.VersionMgr.init(c)
 	}
 	for _, value := range result {
 		return vol.VersionMgr.loadMultiVersion(value)
@@ -992,9 +992,12 @@ func (c *Cluster) loadVols() (err error) {
 		}
 		vol := newVolFromVolValue(vv)
 		vol.Status = vv.Status
-		c.putVol(vol)
 
-		c.loadMultiVersion(vol)
+		if err = c.loadMultiVersion(vol); err != nil {
+			log.LogInfof("action[loadVols],vol[%v] load ver manager error %v", vol.Name, err)
+			continue
+		}
+		c.putVol(vol)
 		log.LogInfof("action[loadVols],vol[%v]", vol.Name)
 	}
 	return
