@@ -491,6 +491,9 @@ func (verMgr *VolVersionManager) loadMultiVersion(val []byte) (err error) {
 }
 
 func (verMgr *VolVersionManager) getVersionInfo(verGet uint64) (verInfo *proto.VolVersionInfo, err error) {
+	verMgr.RLock()
+	defer verMgr.RUnlock()
+
 	for _, ver := range verMgr.multiVersionList {
 		if ver.Ctime.Unix() == int64(verGet) {
 			return ver, nil
@@ -506,6 +509,9 @@ func (verMgr *VolVersionManager) getVersionInfo(verGet uint64) (verInfo *proto.V
 }
 
 func (verMgr *VolVersionManager) getLatestVer() (ver uint64) {
+	verMgr.RLock()
+	defer verMgr.RUnlock()
+
 	size := len(verMgr.multiVersionList)
 	if size == 0 {
 		return 0
@@ -515,6 +521,9 @@ func (verMgr *VolVersionManager) getLatestVer() (ver uint64) {
 }
 
 func (verMgr *VolVersionManager) getVersionList() *proto.VolVersionInfoList {
+	verMgr.RLock()
+	defer verMgr.RUnlock()
+
 	return &proto.VolVersionInfoList {
 		VerList : verMgr.multiVersionList,
 	}
