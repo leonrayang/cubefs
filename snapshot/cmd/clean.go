@@ -17,6 +17,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -52,10 +53,10 @@ func newCleanCmd() *cobra.Command {
 
 func newCleanSnapshotCmd() *cobra.Command {
 	var c = &cobra.Command{
-		Use:   "inode",
+		Use:   "snapshot",
 		Short: "clean snapshot",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := Clean("snapshot"); err != nil {
+			if err := Clean("snapshot", args); err != nil {
 				fmt.Println(err)
 			}
 		},
@@ -69,7 +70,7 @@ func newCleanInodeCmd() *cobra.Command {
 		Use:   "inode",
 		Short: "clean dirty inode",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := Clean("inode"); err != nil {
+			if err := Clean("inode", args); err != nil {
 				fmt.Println(err)
 			}
 		},
@@ -83,7 +84,7 @@ func newCleanDentryCmd() *cobra.Command {
 		Use:   "dentry",
 		Short: "clean dirty dentry",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := Clean("dentry"); err != nil {
+			if err := Clean("dentry", args); err != nil {
 				fmt.Println(err)
 			}
 		},
@@ -97,7 +98,7 @@ func newEvictInodeCmd() *cobra.Command {
 		Use:   "evict",
 		Short: "clean dirty dentry",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := Clean("evict"); err != nil {
+			if err := Clean("evict", args); err != nil {
 				fmt.Println(err)
 			}
 		},
@@ -106,16 +107,16 @@ func newEvictInodeCmd() *cobra.Command {
 	return c
 }
 
-func Clean(opt string) error {
+func Clean(opt string, args []string) error {
 	defer log.LogFlush()
 
 	if MasterAddr == "" || VolName == "" {
 		return fmt.Errorf("Lack of parameters: master(%v) vol(%v)", MasterAddr, VolName)
 	}
 
-	ump.InitUmp("fsck", "")
+	ump.InitUmp("snapshot", "")
 
-	_, err := log.InitLog("fscklog", "fsck", log.InfoLevel, nil)
+	_, err := log.InitLog("snapshotlog", "snapshot", log.InfoLevel, nil)
 	if err != nil {
 		return fmt.Errorf("Init log failed: %v", err)
 	}
@@ -254,6 +255,56 @@ func cleanDentries() error {
 }
 
 
-func cleanSnapshot() error {
+func cleanSnapshot() (err error) {
+	log.LogInfof("action[cleanSnapshot] vol %v verSeq %v", VolName, VerSeq)
+
+	var (
+		children []proto.Dentry
+		parents []proto.Dentry
+		ino *proto.InodeInfo
+	)
+
+	log.LogDebugf("action[cleanSnapshot] ReadDirLimit_ll parent root verSeq %v", VerSeq)
+	parents, err = gMetaWrapper.ReadDirLimitByVer(1, "", math.MaxUint64, VerSeq) // one more for nextMarker
+	if err != nil && err != syscall.ENOENT {
+		log.LogErrorf("action[cleanSnapshot] parent root verSeq %v err %v", VerSeq, err)
+		return err
+	}
+
+	if err == syscall.ENOENT {
+		log.LogWarnf("action[cleanSnapshot] parent root verSeq %v found nothing", VerSeq)
+		return  nil
+	}
+
+	log.LogDebugf("action[cleanSnapshot]  parent root verSeq %v Delete_ll_EX children", VerSeq)
+	for _, child := range parents {
+		if ino, err = gMetaWrapper.Delete_ll_EX(1, child.Name, proto.IsDir(child.Type), VerSeq); err != nil || ino == nil {
+			log.LogErrorf("action[cleanSnapshot] parent root Delete_ll_EX child name %v verSeq %v err %v", child.Name, VerSeq, err)
+		} else {
+			log.LogDebugf("action[cleanSnapshot] parent root Delete_ll_EX child name %v verSeq %v ino %v success", child.Name, VerSeq, ino)
+		}
+	}
+
+	for _, parent := range parents {
+		if proto.IsDir(parent.Type) {
+			children, err = gMetaWrapper.ReadDirLimitByVer(parent.Inode, "", math.MaxUint64, VerSeq)
+			if err != nil && err != syscall.ENOENT{
+				log.LogErrorf("action[cleanSnapshot] parent %v verSeq %v err %v", parent.Name, VerSeq, err)
+				return err
+			}
+			if err == syscall.ENOENT {
+				log.LogWarnf("action[cleanSnapshot] parent %v verSeq %v found nothing", parent.Name, VerSeq)
+				continue
+			}
+			for _, child := range children {
+				if ino, err = gMetaWrapper.Delete_ll_EX(parent.Inode, child.Name, proto.IsDir(child.Type), VerSeq); err != nil || ino == nil {
+					log.LogErrorf("action[cleanSnapshot] parent %v Delete_ll_EX child name %v verSeq %v err %v", parent.Name, child.Name, VerSeq, err)
+				} else {
+					log.LogDebugf("action[cleanSnapshot] parent %v Delete_ll_EX child name %v verSeq %v ino %v success", parent.Name, child.Name, VerSeq, ino)
+				}
+			}
+			parents = append(parents, children...)
+		}
+	}
 	return nil
 }

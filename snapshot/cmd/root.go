@@ -44,6 +44,7 @@ func NewRootCmd() *cobra.Command {
 	c.PersistentFlags().StringVarP(&MasterAddr, "master", "m", "", "master addresses")
 	c.PersistentFlags().StringVarP(&VolName, "vol", "V", "", "volume name")
 	c.PersistentFlags().StringVarP(&MetaPort, "mport", "", "", "prof port of metanode")
+	c.PersistentFlags().Uint64VarP(&VerSeq, "verSeq", "s", 0, "verSeq to drop snapshot")
 	c.Flags().BoolVarP(&optShowVersion, "version", "v", false, "Show version information")
 	return c
 }

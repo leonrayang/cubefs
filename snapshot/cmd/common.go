@@ -26,6 +26,7 @@ var (
 	MasterAddr string
 	VolName    string
 	MetaPort   string
+	VerSeq     uint64
 )
 
 

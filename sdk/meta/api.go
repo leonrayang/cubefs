@@ -332,7 +332,7 @@ func (mw *MetaWrapper) Delete_Ver_ll(parentID uint64, name string, isDir bool, v
 }
 
 func (mw *MetaWrapper) Delete_ll(parentID uint64, name string, isDir bool) (*proto.InodeInfo, error) {
-	return mw.Delete_ll_EX(parentID, name, isDir, mw.VerReadSeq)
+	return mw.Delete_ll_EX(parentID, name, isDir, 0)
 }
 /*
  * Note that the return value of InodeInfo might be nil without error,
@@ -362,17 +362,19 @@ func (mw *MetaWrapper) Delete_ll_EX(parentID uint64, name string, isDir bool, ve
 		if !proto.IsDir(mode) {
 			return nil, syscall.EINVAL
 		}
-		mp = mw.getPartitionByInode(inode)
-		if mp == nil {
-			log.LogErrorf("Delete_ll: No inode partition, parentID(%v) name(%v) ino(%v)", parentID, name, inode)
-			return nil, syscall.EAGAIN
-		}
-		status, info, err = mw.iget(mp, inode, verSeq)
-		if err != nil || status != statusOK {
-			return nil, statusToErrno(status)
-		}
-		if info == nil || info.Nlink > 2 {
-			return nil, syscall.ENOTEMPTY
+		if verSeq == 0 {
+			mp = mw.getPartitionByInode(inode)
+			if mp == nil {
+				log.LogErrorf("Delete_ll: No inode partition, parentID(%v) name(%v) ino(%v)", parentID, name, inode)
+				return nil, syscall.EAGAIN
+			}
+			status, info, err = mw.iget(mp, inode, verSeq)
+			if err != nil || status != statusOK {
+				return nil, statusToErrno(status)
+			}
+			if info == nil || info.Nlink > 2 {
+				return nil, syscall.ENOTEMPTY
+			}
 		}
 	}
 
@@ -396,7 +398,7 @@ func (mw *MetaWrapper) Delete_ll_EX(parentID uint64, name string, isDir bool, ve
 		return nil, nil
 	}
 
-	if mw.EnableSummary {
+	if verSeq == 0 && mw.EnableSummary {
 		go func() {
 			if proto.IsDir(mode) {
 				mw.UpdateSummary_ll(parentID, 0, -1, 0)
@@ -543,9 +545,24 @@ func (mw *MetaWrapper) ReadDir_ll(parentID uint64) ([]proto.Dentry, error) {
 	}
 	return children, nil
 }
+// Read limit count dentries with parentID, start from string
+func (mw *MetaWrapper) ReadDirLimitByVer(parentID uint64, from string, limit uint64, verSeq uint64) ([]proto.Dentry, error) {
+	log.LogDebugf("action[ReadDirLimit_ll] parentID %v from %v limit %v", parentID, from, limit)
+	parentMP := mw.getPartitionByInode(parentID)
+	if parentMP == nil {
+		return nil, syscall.ENOENT
+	}
+
+	status, children, err := mw.readDirLimit(parentMP, parentID, from, limit, verSeq)
+	if err != nil || status != statusOK {
+		return nil, statusToErrno(status)
+	}
+	return children, nil
+}
 
 // Read limit count dentries with parentID, start from string
 func (mw *MetaWrapper) ReadDirLimit_ll(parentID uint64, from string, limit uint64) ([]proto.Dentry, error) {
+	log.LogDebugf("action[ReadDirLimit_ll] parentID %v from %v limit %v", parentID, from, limit)
 	parentMP := mw.getPartitionByInode(parentID)
 	if parentMP == nil {
 		return nil, syscall.ENOENT
