@@ -116,9 +116,9 @@ func (d *Dentry)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMu
 			return info.VerSeq, true
 		}
 	}
-	vlen := len(verlist)-1
+
 	log.LogErrorf("action[getLastestVer] inode %v reqVerSeq %v not found, the largetst one %v",
-		d.Inode, reqVerSeq, verlist[vlen-1].VerSeq)
+		d.Inode, reqVerSeq, verlist[len(verlist)-1].VerSeq)
 	return 0, false
 }
 
@@ -128,6 +128,7 @@ func (d *Dentry)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMu
 // if create anther dentry with larger verSeq, put the eleted dentry to the history list.
 // return doMore bool,true means need do nex step on caller as unlink parentIO
 func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []*MetaMultiSnapshotInfo) (*Dentry, bool) {
+	log.LogDebugf("action[deleteVerSnapshot] delVerSeq %v mpVer %v verList %v", delVerSeq, mpVerSeq, verlist)
 	// create denParm version
 	if delVerSeq > mpVerSeq {
 		panic(fmt.Sprintf("Dentry version %v large than mp %v", delVerSeq, mpVerSeq))
@@ -142,7 +143,7 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 		if len(d.dentryList) == 0 {
 			var found bool
 			// no matter verSeq of inode is larger than zero,if not be depended then dropped
-			d.VerSeq, found = d.getLastestVer(delVerSeq, true, verlist)
+			d.VerSeq, found = d.getLastestVer(d.VerSeq, false, verlist)
 			if !found { // no snapshot depend on this dentry,could drop it
 				// operate inode directly
 				return d, true

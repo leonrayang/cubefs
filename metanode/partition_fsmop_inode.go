@@ -200,7 +200,6 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 	} else { // means drop snapshot
 		log.LogDebugf("action[fsmUnlinkInode] req drop assigned snapshot reqseq %v inode seq %v", ino.verSeq, inode.verSeq)
 		if ino.verSeq > inode.verSeq && ino.verSeq != math.MaxUint64 {
-			resp.Status = proto.OpNotExistErr
 			log.LogDebugf("action[fsmUnlinkInode] inode %v unlink not exist snapshot and return do nothing.reqSeq %v larger than inode seq %v",
 				ino.Inode, ino.verSeq, inode.verSeq)
 			return

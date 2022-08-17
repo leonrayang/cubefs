@@ -116,7 +116,7 @@ func Clean(opt string, args []string) error {
 
 	ump.InitUmp("snapshot", "")
 
-	_, err := log.InitLog("snapshotlog", "snapshot", log.InfoLevel, nil)
+	_, err := log.InitLog("snapshotlog", "snapshot", log.DebugLevel, nil)
 	if err != nil {
 		return fmt.Errorf("Init log failed: %v", err)
 	}
@@ -276,7 +276,7 @@ func cleanSnapshot() (err error) {
 		return  nil
 	}
 
-	log.LogDebugf("action[cleanSnapshot]  parent root verSeq %v Delete_ll_EX children", VerSeq)
+	log.LogDebugf("action[cleanSnapshot]  parent root verSeq %v Delete_ll_EX children count %v", VerSeq, len(parents))
 	for _, child := range parents {
 		if ino, err = gMetaWrapper.Delete_ll_EX(1, child.Name, proto.IsDir(child.Type), VerSeq); err != nil || ino == nil {
 			log.LogErrorf("action[cleanSnapshot] parent root Delete_ll_EX child name %v verSeq %v err %v", child.Name, VerSeq, err)
