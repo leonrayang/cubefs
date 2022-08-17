@@ -66,13 +66,14 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 func (mp *metaPartition) getInodeByVer(ino *Inode) (i *Inode) {
 	item := mp.inodeTree.Get(ino)
 	if item == nil {
-		log.LogDebugf("action[getInodeByVer] not found ino %v verseq %v hist len %v request ino ver %v",
-			ino.Inode, item.(*Inode).verSeq, len(item.(*Inode).multiVersions), ino.verSeq)
+		log.LogDebugf("action[getInodeByVer] not found ino %v verseq", ino.Inode, ino.verSeq)
 		return
 	}
 	log.LogDebugf("action[getInodeByVer] ino %v verseq %v hist len %v request ino ver %v",
 		ino.Inode, item.(*Inode).verSeq, len(item.(*Inode).multiVersions), ino.verSeq)
 	i, _ = item.(*Inode).getInoByVer(ino.verSeq, false)
+
+	log.LogDebugf("action[getInodeByVer] ino %v verseq %v fin", ino.Inode, item.(*Inode).verSeq)
 	return
 }
 
@@ -167,10 +168,8 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 				// operate inode directly
 				goto end
 			}
-			log.LogDebugf("action[fsmUnlinkInode] snapshot available depends on ino %v found seq %v and update to %v, verlist %v", ino, inode.verSeq, rspSeq, verlist)
-			inode.verSeq = rspSeq
-			return
-		} else if inode.verSeq != mp.verSeq { // need create version
+		}
+		if inode.verSeq != mp.verSeq { // need create version
 			log.LogDebugf("action[fsmUnlinkInode] need create version.ino %v withSeq %v not equal mp seq %v, verlist %v", ino, inode.verSeq, mp.verSeq, verlist)
 			if proto.IsDir(inode.Type) { // dir is all info but inode is part,which is quit different
 				inode.CreateVer(mp.verSeq)
@@ -546,6 +545,7 @@ func (mp *metaPartition) checkAndInsertFreeList(ino *Inode) {
 }
 
 func (mp *metaPartition) fsmSetAttr(req *SetattrRequest) (err error) {
+	log.LogDebugf("action[fsmSetAttr] req %v", req)
 	ino := NewInode(req.Inode, req.Mode)
 	item := mp.inodeTree.CopyGet(ino)
 	if item == nil {

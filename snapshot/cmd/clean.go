@@ -278,15 +278,15 @@ func cleanSnapshot() (err error) {
 
 	log.LogDebugf("action[cleanSnapshot]  parent root verSeq %v Delete_ll_EX children count %v", VerSeq, len(parents))
 	for _, child := range parents {
-		if ino, err = gMetaWrapper.Delete_ll_EX(1, child.Name, proto.IsDir(child.Type), VerSeq); err != nil || ino == nil {
+		if ino, err = gMetaWrapper.Delete_ll_EX(1, child.Name, proto.IsDir(child.Type), VerSeq); err != nil {
 			log.LogErrorf("action[cleanSnapshot] parent root Delete_ll_EX child name %v verSeq %v err %v", child.Name, VerSeq, err)
-		} else {
-			log.LogDebugf("action[cleanSnapshot] parent root Delete_ll_EX child name %v verSeq %v ino %v success", child.Name, VerSeq, ino)
 		}
+		log.LogDebugf("action[cleanSnapshot] parent root Delete_ll_EX child name %v verSeq %v ino %v success", child.Name, VerSeq, ino)
 	}
 
 	for _, parent := range parents {
 		if proto.IsDir(parent.Type) {
+			log.LogDebugf("action[cleanSnapshot] try loop delete dir %v %v with verSeq %v", parent.Inode, parent.Name, VerSeq)
 			children, err = gMetaWrapper.ReadDirLimitByVer(parent.Inode, "", math.MaxUint64, VerSeq)
 			if err != nil && err != syscall.ENOENT{
 				log.LogErrorf("action[cleanSnapshot] parent %v verSeq %v err %v", parent.Name, VerSeq, err)
@@ -304,6 +304,8 @@ func cleanSnapshot() (err error) {
 				}
 			}
 			parents = append(parents, children...)
+		} else {
+			log.LogDebugf("action[cleanSnapshot] file %v %v is not dir", parent.Inode, parent.Name)
 		}
 	}
 	return nil
