@@ -66,7 +66,11 @@ func (mp *metaPartition) DeleteDentry(req *DeleteDentryReq, p *Packet) (err erro
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
 		return
 	}
-
+	if mp.verSeq == 0 && dentry.VerSeq > 0 {
+		err = fmt.Errorf("snapshot not enabled")
+		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
+		return
+	}
 	log.LogDebugf("action[DeleteDentry] submit!")
 	r, err := mp.submit(opFSMDeleteDentry, val)
 	if err != nil {

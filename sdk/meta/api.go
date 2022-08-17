@@ -379,22 +379,24 @@ func (mw *MetaWrapper) Delete_ll_EX(parentID uint64, name string, isDir bool, ve
 			}
 		}
 	}
-
+	log.LogDebugf("action[Delete_ll] parentID %v name %v verSeq %v", parentID, name, verSeq)
 	status, inode, err = mw.ddelete(parentMP, parentID, name, verSeq)
 	if err != nil || status != statusOK {
 		if status == statusNoent {
+			log.LogDebugf("action[Delete_ll] parentID %v name %v verSeq %v", parentID, name, verSeq)
 			return nil, nil
 		}
+		log.LogDebugf("action[Delete_ll] parentID %v name %v verSeq %v", parentID, name, verSeq)
 		return nil, statusToErrno(status)
 	}
-
+	log.LogDebugf("action[Delete_ll] parentID %v name %v verSeq %v", parentID, name, verSeq)
 	// dentry is deleted successfully but inode is not, still returns success.
 	mp = mw.getPartitionByInode(inode)
 	if mp == nil {
 		log.LogErrorf("Delete_ll: No inode partition, parentID(%v) name(%v) ino(%v)", parentID, name, inode)
 		return nil, nil
 	}
-
+	log.LogDebugf("action[Delete_ll] parentID %v name %v verSeq %v", parentID, name, verSeq)
 	status, info, err = mw.iunlink(mp, inode, verSeq)
 	if err != nil || status != statusOK {
 		return nil, nil

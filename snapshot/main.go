@@ -16,6 +16,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/cubefs/cubefs/proto"
 	"os"
 
 	"github.com/cubefs/cubefs/snapshot/cmd"
@@ -23,6 +24,7 @@ import (
 
 func main() {
 	c := cmd.NewRootCmd()
+	proto.InitBufferPool(3276800)
 	if err := c.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed: %v\n", err)
 		os.Exit(1)
