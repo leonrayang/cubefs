@@ -84,7 +84,7 @@ type MetaPartitionConfig struct {
 	Cursor        uint64              `json:"-"`     // Cursor ID of the inode that have been assigned
 	NodeId        uint64              `json:"-"`
 	RootDir       string              `json:"-"`
-	VerSeq        uint64               `json:"ver_seq"`
+	VerSeq        uint64              `json:"ver_seq"`
 	BeforeStart   func()              `json:"-"`
 	AfterStart    func()              `json:"-"`
 	BeforeStop    func()              `json:"-"`
@@ -135,6 +135,7 @@ type OpInode interface {
 	DeleteInode(req *proto.DeleteInodeRequest, p *Packet) (err error)
 	DeleteInodeBatch(req *proto.DeleteInodeBatchRequest, p *Packet) (err error)
 	ClearInodeCache(req *proto.ClearInodeCacheRequest, p *Packet) (err error)
+	InodeExpirationGetBatch(req *InodeGetExpirationReqBatch, p *Packet) (err error)
 }
 
 type OpExtend interface {
@@ -177,6 +178,7 @@ type OpMultipart interface {
 	AppendMultipart(req *proto.AddMultipartPartRequest, p *Packet) (err error)
 	RemoveMultipart(req *proto.RemoveMultipartRequest, p *Packet) (err error)
 	ListMultipart(req *proto.ListMultipartRequest, p *Packet) (err error)
+	GetExpiredMultipart(req *proto.GetExpiredMultipartRequest, p *Packet) (err error)
 }
 
 // MultiVersion operation from master or client
@@ -228,7 +230,6 @@ type MetaPartition interface {
 	ForceSetMetaPartitionToFininshLoad()
 }
 
-
 // metaPartition manages the range of the inode IDs.
 // When a new inode is requested, it allocates a new inode id for this inode if possible.
 // States:
@@ -259,9 +260,9 @@ type metaPartition struct {
 	volType                int
 	xattrLock              sync.Mutex
 	//snapshot
-	verSeq                  uint64
-	multiVersionList 		*proto.VolVersionInfoList
-	versionLock             sync.Mutex
+	verSeq           uint64
+	multiVersionList *proto.VolVersionInfoList
+	versionLock      sync.Mutex
 }
 
 func (mp *metaPartition) updateSize() {
@@ -532,7 +533,7 @@ func NewMetaPartition(conf *MetaPartitionConfig, manager *metadataManager) MetaP
 	return mp
 }
 
-func (mp *metaPartition)  GetVolName() (volName string) {
+func (mp *metaPartition) GetVolName() (volName string) {
 	return mp.config.VolName
 }
 
@@ -856,7 +857,7 @@ func (mp *metaPartition) multiVersionTTLWork() (err error) {
 
 		for {
 			select {
-			case <- ttl.C:
+			case <-ttl.C:
 				log.LogDebugf("[multiVersionTTLWork] begin cache ttl, mp[%v]", mp.config.PartitionId)
 				// only leader can do TTL work
 				if _, ok := mp.IsLeader(); !ok {
@@ -901,10 +902,10 @@ func (mp *metaPartition) delVersion(verSeq uint64) (err error) {
 
 		p := &Packet{}
 		req := &proto.UnlinkInodeRequest{
-			Inode: inode.Inode,
+			Inode:  inode.Inode,
 			VerSeq: verSeq,
 		}
-		mp.UnlinkInode(req,p)
+		mp.UnlinkInode(req, p)
 		// check empty result.
 		// if result is OpAgain, means the extDelCh maybe full,
 		// so let it sleep 1s.
@@ -924,7 +925,6 @@ func (mp *metaPartition) delVersion(verSeq uint64) (err error) {
 
 	return
 }
-
 
 // cacheTTLWork only happen in datalake situation
 func (mp *metaPartition) cacheTTLWork() (err error) {

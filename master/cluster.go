@@ -65,6 +65,7 @@ type Cluster struct {
 	followerReadManager *followerReadManager
 	diskQosEnable       bool
 	QosAcceptLimit      *rate.Limiter
+	s3LcMgr             *s3LifecycleManager
 }
 
 type followerReadManager struct {
@@ -145,6 +146,8 @@ func newCluster(name string, leaderInfo *LeaderInfo, fsm *MetadataFsm, partition
 	c.idAlloc = newIDAllocator(c.fsm.store, c.partition)
 	c.domainManager = newDomainManager(c)
 	c.QosAcceptLimit = rate.NewLimiter(rate.Limit(c.cfg.QosMasterAcceptLimit), proto.QosDefaultBurst)
+	c.s3LcMgr = newS3LifecycleManager()
+	c.s3LcMgr.cluster = c
 	return
 }
 
@@ -164,6 +167,7 @@ func (c *Cluster) scheduleTask() {
 	c.scheduleToReduceReplicaNum()
 	c.scheduleToCheckNodeSetGrpManagerStatus()
 	c.scheduleToCheckFollowerReadCache()
+	c.scheduleToScanS3Expiration()
 }
 
 func (c *Cluster) masterAddr() (addr string) {
@@ -254,6 +258,17 @@ func (c *Cluster) scheduleToCheckDataPartitions() {
 				c.checkDataPartitions()
 			}
 			time.Sleep(time.Second * time.Duration(c.cfg.IntervalToCheckDataPartition))
+		}
+	}()
+}
+
+func (c *Cluster) scheduleToScanS3Expiration() {
+	go func() {
+		for {
+			if c.partition != nil && c.partition.IsRaftLeader() {
+				c.scanS3Expiration()
+			}
+			time.Sleep(time.Second * time.Duration(c.cfg.IntervalToScanS3Expiration))
 		}
 	}()
 }
@@ -349,6 +364,19 @@ func (c *Cluster) checkDataPartitions() {
 	}
 }
 
+func (c *Cluster) scanS3Expiration() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.LogWarnf("scanS3Expiration occurred panic,err[%v]", r)
+			WarnBySpecialKey(fmt.Sprintf("%v_%v_scheduling_job_panic", c.Name, ModuleName),
+				"scanS3Expiration occurred panic")
+		}
+	}()
+
+	c.s3LcMgr.rescheduleScanRoutine()
+
+}
+
 func (c *Cluster) doLoadDataPartitions() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -410,6 +438,15 @@ func (c *Cluster) scheduleToCheckHeartbeat() {
 			time.Sleep(time.Second * defaultIntervalToCheckHeartbeat)
 		}
 	}()
+
+	go func() {
+		for {
+			if c.partition != nil && c.partition.IsRaftLeader() {
+				c.checkLcNodeHeartbeat()
+			}
+			time.Sleep(time.Second * defaultIntervalToCheckHeartbeat)
+		}
+	}()
 }
 
 func (c *Cluster) checkLeaderAddr() {
@@ -439,6 +476,27 @@ func (c *Cluster) checkMetaNodeHeartbeat() {
 		return true
 	})
 	c.addMetaNodeTasks(tasks)
+}
+
+func (c *Cluster) checkLcNodeHeartbeat() {
+	tasks := make([]*proto.AdminTask, 0)
+	diedNodes := make([]string, 0)
+	c.s3LcMgr.lcNodes.Range(func(addr, lcNode interface{}) bool {
+		node := lcNode.(*LcNode)
+		node.checkLiveness()
+		if !node.IsActive {
+			diedNodes = append(diedNodes, node.Addr)
+			return true
+		}
+		task := node.createHeartbeatTask(c.masterAddr())
+		tasks = append(tasks, task)
+		return true
+	})
+	c.addLcNodeTasks(tasks)
+	for _, node := range diedNodes {
+		log.LogInfof("checkLcNodeHeartbeat: deregister node(%v)", node)
+		_ = c.delLcNode(node)
+	}
 }
 
 func (c *Cluster) scheduleToCheckMetaPartitions() {
@@ -832,11 +890,11 @@ func (c *Cluster) getVolVer(volName string) (info *proto.VolumeVerInfo, err erro
 		pStatus = vol.VersionMgr.prepareCommit.prepareInfo.Status
 	}
 	info = &proto.VolumeVerInfo{
-		Name:volName,
-		VerSeq: vol.VersionMgr.verSeq,
-		VerSeqPrepare: verSeqPrepare,
+		Name:             volName,
+		VerSeq:           vol.VersionMgr.verSeq,
+		VerSeqPrepare:    verSeqPrepare,
 		VerPrepareStatus: pStatus,
-		Enabled: vol.VersionMgr.enabled,
+		Enabled:          vol.VersionMgr.enabled,
 	}
 	return
 }
@@ -1294,6 +1352,16 @@ func (c *Cluster) metaNode(addr string) (metaNode *MetaNode, err error) {
 		return
 	}
 	metaNode = value.(*MetaNode)
+	return
+}
+
+func (c *Cluster) lcNode(addr string) (lcNode *LcNode, err error) {
+	value, ok := c.s3LcMgr.lcNodes.Load(addr)
+	if !ok {
+		err = errors.Trace(lcNodeNotFound(addr), "%v not found", addr)
+		return
+	}
+	lcNode = value.(*LcNode)
 	return
 }
 
@@ -2861,4 +2929,111 @@ func (c *Cluster) clearMetaNodes() {
 		metaNode.clean()
 		return true
 	})
+}
+
+func (c *Cluster) delLcNode(nodeAddr string) (err error) {
+
+	tasks := c.s3LcMgr.lnStates.RemoveNode(nodeAddr)
+	if len(tasks) != 0 {
+		if c.s3LcMgr.lcScan != nil {
+			c.s3LcMgr.lcScan.redoTasks(tasks)
+		}
+	}
+	c.s3LcMgr.lnMutex.Lock()
+	defer c.s3LcMgr.lnMutex.Unlock()
+
+	val, loaded := c.s3LcMgr.lcNodes.LoadAndDelete(nodeAddr)
+	if loaded {
+		ln := val.(*LcNode)
+		if err = c.syncDeleteLcNode(ln); err != nil {
+			err = fmt.Errorf("action[delLcNode],clusterID[%v] lcNodeAddr:%v err:%v ", c.Name, nodeAddr, err.Error())
+			return
+		}
+	}
+	log.LogInfof("action[delLcNode],clusterID[%v] lcNodeAddr:%v", c.Name, nodeAddr)
+	return
+}
+
+func (c *Cluster) addLcNode(nodeAddr string) (id uint64, err error) {
+	c.s3LcMgr.lnMutex.Lock()
+	defer c.s3LcMgr.lnMutex.Unlock()
+	var ln *LcNode
+	if node, ok := c.s3LcMgr.lcNodes.Load(nodeAddr); ok {
+		ln = node.(*LcNode)
+		return ln.ID, nil
+	}
+
+	ln = newLcNode(nodeAddr, c.Name)
+	// allocate dataNode id
+	if id, err = c.idAlloc.allocateCommonID(); err != nil {
+		goto errHandler
+	}
+	ln.ID = id
+	log.LogInfof("action[addLcNode] lcnode id[%v]", id)
+	if err = c.syncAddLcNode(ln); err != nil {
+		goto errHandler
+	}
+
+	c.s3LcMgr.lcNodes.Store(nodeAddr, ln)
+	log.LogInfof("action[addLcNode],clusterID[%v] lcNodeAddr:%v",
+		c.Name, nodeAddr)
+
+	delete(c.s3LcMgr.lnStates.workingNodes, nodeAddr)
+	c.s3LcMgr.lnStates.idleNodes[nodeAddr] = nodeAddr
+	log.LogInfof("action[addLcNode], lcnode(%v) is set idle", nodeAddr)
+	return
+
+errHandler:
+	err = fmt.Errorf("action[addLcNode],clusterID[%v] lcNodeAddr:%v err:%v ", c.Name, nodeAddr, err.Error())
+	log.LogError(errors.Stack(err))
+	Warn(c.Name, err.Error())
+	return
+}
+
+func (c *Cluster) SetBucketLifecycle(req *proto.SetBucketLifecycleRequest) error {
+	lcConf := &proto.LcConfiguration{
+		VolName: req.VolName,
+		Rules:   req.Rules,
+	}
+
+	if c.s3LcMgr.GetBucketLifecycle(req.VolName) != nil {
+		if err := c.syncUpdateLcConf(lcConf); err != nil {
+			err = fmt.Errorf("action[SetBucketLifecycle],clusterID[%v] vol:%v err:%v ", c.Name, lcConf.VolName, err.Error())
+			log.LogError(errors.Stack(err))
+			Warn(c.Name, err.Error())
+		}
+	} else {
+		if err := c.syncAddLcConf(lcConf); err != nil {
+			err = fmt.Errorf("action[SetBucketLifecycle],clusterID[%v] vol:%v err:%v ", c.Name, lcConf.VolName, err.Error())
+			log.LogError(errors.Stack(err))
+			Warn(c.Name, err.Error())
+		}
+	}
+
+	_ = c.s3LcMgr.SetBucketLifecycle(lcConf)
+	log.LogInfof("action[SetBucketLifecycle],clusterID[%v] vol:%v", c.Name, lcConf.VolName)
+	return nil
+}
+
+func (c *Cluster) GetBucketLifecycle(VolName string) (lcConf *proto.LcConfiguration) {
+
+	lcConf = c.s3LcMgr.GetBucketLifecycle(VolName)
+	log.LogInfof("action[GetBucketLifecycle],clusterID[%v] vol:%v", c.Name, lcConf.VolName)
+	return
+}
+
+func (c *Cluster) DelBucketLifecycle(VolName string) {
+	lcConf := &proto.LcConfiguration{
+		VolName: VolName,
+	}
+
+	if err := c.syncDeleteLcConf(lcConf); err != nil {
+		err = fmt.Errorf("action[DelBucketLifecycle],clusterID[%v] vol:%v err:%v ", c.Name, VolName, err.Error())
+		log.LogError(errors.Stack(err))
+		Warn(c.Name, err.Error())
+	}
+
+	c.s3LcMgr.DelBucketLifecycle(VolName)
+	log.LogInfof("action[DelBucketLifecycle],clusterID[%v] vol:%v", c.Name, VolName)
+	return
 }

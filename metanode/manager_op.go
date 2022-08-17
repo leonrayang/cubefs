@@ -1162,6 +1162,32 @@ func (m *metadataManager) opRemoveMetaPartitionRaftMember(conn net.Conn,
 	return
 }
 
+func (m *metadataManager) opMetaBatchInodeExpirationGet(conn net.Conn, p *Packet,
+	remoteAddr string) (err error) {
+	req := &proto.BatchInodeGetExpirationRequest{}
+	if err = json.Unmarshal(p.Data, req); err != nil {
+		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
+		m.respondToClient(conn, p)
+		err = errors.NewErrorf("[%v] req: %v, resp: %v", p.GetOpMsgWithReqAndResult(), req, err.Error())
+		return
+	}
+	mp, err := m.getPartition(req.PartitionID)
+	if err != nil {
+		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
+		m.respondToClient(conn, p)
+		err = errors.NewErrorf("[%v] req: %v, resp: %v", p.GetOpMsgWithReqAndResult(), req, err.Error())
+		return
+	}
+	if !m.serveProxy(conn, mp, p) {
+		return
+	}
+	err = mp.InodeExpirationGetBatch(req, p)
+	m.respondToClient(conn, p)
+	log.LogDebugf("%s [opMetaBatchInodeGet] req: %d - %v, resp: %v, "+
+		"body: %s", remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data)
+	return
+}
+
 func (m *metadataManager) opMetaBatchInodeGet(conn net.Conn, p *Packet,
 	remoteAddr string) (err error) {
 	req := &proto.BatchInodeGetRequest{}
@@ -1509,6 +1535,31 @@ func (m *metadataManager) opRemoveMultipart(conn net.Conn, p *Packet, remote str
 	return
 }
 
+func (m *metadataManager) opGetExpiredMultipart(conn net.Conn, p *Packet, remote string) (err error) {
+	req := &proto.GetExpiredMultipartRequest{}
+	if err = json.Unmarshal(p.Data, req); err != nil {
+		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
+		m.respondToClient(conn, p)
+		err = errors.NewErrorf("[opGetExpiredMultipart] req: %v, resp: %v", req, err.Error())
+		return
+	}
+
+	mp, err := m.getPartition(req.PartitionId)
+	if err != nil {
+		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
+		m.respondToClient(conn, p)
+		err = errors.NewErrorf("[opGetMultipart] req: %v, resp: %v", req, err.Error())
+		return
+	}
+
+	if !m.serveProxy(conn, mp, p) {
+		return
+	}
+	err = mp.GetExpiredMultipart(req, p)
+	_ = m.respondToClient(conn, p)
+	return
+}
+
 func (m *metadataManager) opGetMultipart(conn net.Conn, p *Packet, remote string) (err error) {
 	req := &proto.GetMultipartRequest{}
 	if err = json.Unmarshal(p.Data, req); err != nil {
@@ -1604,7 +1655,7 @@ func (m *metadataManager) prepareCreateVersion(req *proto.MultiVersionOpRequest)
 	return
 }
 
-func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op uint8) (err error){
+func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op uint8) (err error) {
 
 	log.LogWarnf("action[commitCreateVersion] volume %v seq %v", VolumeID, VerSeq)
 	m.Range(func(id uint64, partition MetaPartition) bool {
@@ -1663,7 +1714,7 @@ func (m *metadataManager) checkMultiVersionStatus(volName string) (err error) {
 	if value, ok := m.volUpdating.Load(volName); ok {
 		ver2Phase := value.(*verOp2Phase)
 
-		if atomic.LoadUint32(&ver2Phase.status) != proto.VersionWorkingAbnormal  &&
+		if atomic.LoadUint32(&ver2Phase.status) != proto.VersionWorkingAbnormal &&
 			atomic.LoadUint32(&ver2Phase.step) == proto.CreateVersionPrepare {
 
 			ver2Phase.Lock() // here trylock may be better after go1.18 adapted to compile
@@ -1684,7 +1735,7 @@ func (m *metadataManager) checkMultiVersionStatus(volName string) (err error) {
 				return
 			}
 			if info.VerSeqPrepare != ver2Phase.verPrepare {
-			 	atomic.StoreUint32(&ver2Phase.status, proto.VersionWorkingAbnormal)
+				atomic.StoreUint32(&ver2Phase.status, proto.VersionWorkingAbnormal)
 				err = fmt.Errorf("volumeName %v status %v step %v",
 					volName, atomic.LoadUint32(&ver2Phase.status), atomic.LoadUint32(&ver2Phase.step))
 				log.LogErrorf("action[checkMultiVersionStatus] err %v", err)
@@ -1715,7 +1766,7 @@ func (m *metadataManager) opMultiVersionOp(conn net.Conn, p *Packet,
 		adminTask = &proto.AdminTask{
 			Request: req,
 		}
-		opAgain   bool
+		opAgain bool
 	)
 
 	go func() {

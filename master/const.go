@@ -208,6 +208,13 @@ const (
 	opSyncUpdateZone           uint32 = 0x24
 	opSyncAllocClientID        uint32 = 0x25
 	opSyncMulitVersion         uint32 = 0x26
+	opSyncAddLcNode            uint32 = 0x30
+	opSyncDeleteLcNode         uint32 = 0x31
+	opSyncUpdateLcNode         uint32 = 0x32
+	opSyncAddLcConf            uint32 = 0x33
+	opSyncDeleteLcConf         uint32 = 0x34
+	opSyncUpdateLcConf         uint32 = 0x35
+
 )
 
 const (
@@ -215,6 +222,7 @@ const (
 	idSeparator           = "$" // To seperate ID of server that submits raft changes
 	metaNodeAcronym       = "mn"
 	dataNodeAcronym       = "dn"
+	lcNodeAcronym          = "ln"
 	dataPartitionAcronym  = "dp"
 	metaPartitionAcronym  = "mp"
 	volAcronym            = "vol"
@@ -223,6 +231,7 @@ const (
 	nodeSetGrpAcronym     = "g"
 	zoneAcronym           = "zone"
 	domainAcronym         = "zoneDomain"
+	lcConfigurationAcronym = "lcConf"
 	maxDataPartitionIDKey = keySeparator + "max_dp_id"
 	maxMetaPartitionIDKey = keySeparator + "max_mp_id"
 	maxCommonIDKey        = keySeparator + "max_common_id"
@@ -247,4 +256,6 @@ const (
 	volUserPrefix         = keySeparator + volUserAcronym + keySeparator
 	volWarnUsedRatio      = 0.9
 	volCachePrefix        = keySeparator + volNameAcronym + keySeparator
+	lcNodePrefix           = keySeparator + lcNodeAcronym + keySeparator
+	lcConfPrefix           = keySeparator + lcConfigurationAcronym + keySeparator
 )

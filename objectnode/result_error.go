@@ -104,6 +104,11 @@ var (
 	TagsGreaterThen10                   = &ErrorCode{ErrorCode: "BadRequest", ErrorMessage: "Object tags cannot be greater than 10", StatusCode: http.StatusBadRequest}
 	InvalidTagKey                       = &ErrorCode{ErrorCode: "InvalidTag", ErrorMessage: "The TagKey you have provided is invalid", StatusCode: http.StatusBadRequest}
 	InvalidTagValue                     = &ErrorCode{ErrorCode: "InvalidTag", ErrorMessage: "The TagValue you have provided is invalid", StatusCode: http.StatusBadRequest}
+	LifeCycleRulesGreaterThen1K         = &ErrorCode{ErrorCode: "InvalidRequest", ErrorMessage: "The number of lifecycle rules must not exceed the allowed limit of 1000 rules.", StatusCode: http.StatusBadRequest}
+	LifeCycleRulesLessThenOne           = &ErrorCode{ErrorCode: "InvalidRequest", ErrorMessage: "At least one lifecycle rule must be specified.", StatusCode: http.StatusBadRequest}
+	LifeCycleAtLeastOneAction           = &ErrorCode{ErrorCode: "InvalidRequest", ErrorMessage: "At least one action must be specified in a lifecycle rule.", StatusCode: http.StatusBadRequest}
+	LifeCycleRulesInvalid               = &ErrorCode{ErrorCode: "InvalidRequest", ErrorMessage: "Lifecycle rule is invalid.", StatusCode: http.StatusBadRequest}
+	NoSuchLifecycleConfiguration        = &ErrorCode{ErrorCode: "NoSuchLifecycleConfiguration", ErrorMessage: "The lifecycle configuration does not exist.", StatusCode: http.StatusNotFound}
 )
 
 func HttpStatusErrorCode(code int) *ErrorCode {

@@ -57,10 +57,10 @@ type MetadataManagerConfig struct {
 }
 
 type verOp2Phase struct {
-	verSeq      uint64
-	verPrepare  uint64
-	status      uint32
-	step        uint32
+	verSeq     uint64
+	verPrepare uint64
+	status     uint32
+	step       uint32
 	sync.Mutex
 }
 
@@ -218,6 +218,11 @@ func (m *metadataManager) HandleMetadataOperation(conn net.Conn, p *Packet, remo
 	// multi version
 	case proto.OpVersionOperation:
 		err = m.opMultiVersionOp(conn, p, remoteAddr)
+
+	case proto.OpMetaBatchInodeExpirationGet:
+		err = m.opMetaBatchInodeExpirationGet(conn, p, remoteAddr)
+	case proto.OpGetExpiredMultipart:
+		err = m.opGetExpiredMultipart(conn, p, remoteAddr)
 
 	default:
 		err = fmt.Errorf("%s unknown Opcode: %d, reqId: %d", remoteAddr,
@@ -522,12 +527,12 @@ func (m *metadataManager) MarshalJSON() (data []byte, err error) {
 // NewMetadataManager returns a new metadata manager.
 func NewMetadataManager(conf MetadataManagerConfig, metaNode *MetaNode) MetadataManager {
 	return &metadataManager{
-		nodeId:     conf.NodeID,
-		zoneName:   conf.ZoneName,
-		rootDir:    conf.RootDir,
-		raftStore:  conf.RaftStore,
-		partitions: make(map[uint64]MetaPartition),
-		metaNode:   metaNode,
+		nodeId:      conf.NodeID,
+		zoneName:    conf.ZoneName,
+		rootDir:     conf.RootDir,
+		raftStore:   conf.RaftStore,
+		partitions:  make(map[uint64]MetaPartition),
+		metaNode:    metaNode,
 		volUpdating: new(sync.Map),
 	}
 }

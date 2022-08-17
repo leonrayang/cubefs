@@ -69,7 +69,6 @@ const (
 	OpTinyExtentRepairRead           uint8 = 0x15
 	OpGetMaxExtentIDAndPartitionSize uint8 = 0x16
 
-
 	// Operations: Client -> MetaNode.
 	OpMetaCreateInode   uint8 = 0x20
 	OpMetaUnlinkInode   uint8 = 0x21
@@ -103,6 +102,9 @@ const (
 	OpMetaExtentAddWithCheck uint8 = 0x3A // Append extent key with discard extents check
 	OpMetaReadDirLimit       uint8 = 0x3D
 
+	//Operations: LcNode -> MetaNode
+	OpMetaBatchInodeExpirationGet uint8 = 0x3E
+
 	// Operations: Master -> MetaNode
 	OpCreateMetaPartition           uint8 = 0x40
 	OpMetaNodeHeartbeat             uint8 = 0x41
@@ -113,6 +115,10 @@ const (
 	OpAddMetaPartitionRaftMember    uint8 = 0x46
 	OpRemoveMetaPartitionRaftMember uint8 = 0x47
 	OpMetaPartitionTryToLeader      uint8 = 0x48
+
+	// Operations: Master -> LcNode
+	OpLcNodeHeartbeat uint8 = 0x50
+	OpLcNodeScan      uint8 = 0x51
 
 	// Operations: Master -> DataNode
 	OpCreateDataPartition           uint8 = 0x60
@@ -134,7 +140,8 @@ const (
 	OpRemoveMultipart  uint8 = 0x73
 	OpListMultiparts   uint8 = 0x74
 
-	OpBatchDeleteExtent uint8 = 0x75 // SDK to MetaNode
+	OpBatchDeleteExtent   uint8 = 0x75 // SDK to MetaNode
+	OpGetExpiredMultipart uint8 = 0x76
 
 	//Operations: MetaNode Leader -> MetaNode Follower
 	OpMetaBatchDeleteInode  uint8 = 0x90
@@ -143,11 +150,11 @@ const (
 	OpMetaBatchEvictInode   uint8 = 0x93
 
 	//Multi version snapshot
-	OpRandomWriteAppend              uint8 = 0xA1
-	OpSyncRandomWriteAppend          uint8 = 0xA2
-	OpRandomWriteVer                 uint8 = 0xA3
-	OpSyncRandomWriteVer             uint8 = 0xA4
-	OpSyncRandomWriteVerRsp          uint8 = 0xA5
+	OpRandomWriteAppend     uint8 = 0xA1
+	OpSyncRandomWriteAppend uint8 = 0xA2
+	OpRandomWriteVer        uint8 = 0xA3
+	OpSyncRandomWriteVer    uint8 = 0xA4
+	OpSyncRandomWriteVerRsp uint8 = 0xA5
 	// Commons
 	OpConflictExtentsErr uint8 = 0xF2
 	OpIntraGroupNetErr   uint8 = 0xF3
@@ -176,8 +183,8 @@ const (
 	OpMetaClearInodeCache    uint8 = 0xD1
 
 	// multiVersion to dp/mp
-	OpVersionOperation       uint8 = 0xD5
-	OpSplitMarkDelete        uint8 = 0xD6
+	OpVersionOperation uint8 = 0xD5
+	OpSplitMarkDelete  uint8 = 0xD6
 )
 
 const (
@@ -193,11 +200,10 @@ const (
 
 // multi version operation
 const (
-	CreateVersion = 1
-	DeleteVersion = 2
+	CreateVersion        = 1
+	DeleteVersion        = 2
 	CreateVersionPrepare = 3
-	CreateVersionCommit = 4
-
+	CreateVersionCommit  = 4
 )
 
 // stage of version building
@@ -211,8 +217,8 @@ const (
 
 // status of version
 const (
-	VersionNormal = 1
-	VersionDeleted = 2
+	VersionNormal   = 1
+	VersionDeleted  = 2
 	VersionDeleting = 3
 )
 
@@ -229,7 +235,7 @@ const (
 // Packet defines the packet structure.
 type Packet struct {
 	Magic              uint8
-	ExtentType         uint8  // the highest bit be set while rsp to client if version not consistent then Verseq be valid
+	ExtentType         uint8 // the highest bit be set while rsp to client if version not consistent then Verseq be valid
 	Opcode             uint8
 	ResultCode         uint8
 	RemainingFollowers uint8
@@ -246,7 +252,7 @@ type Packet struct {
 	StartT             int64
 	mesg               string
 	HasPrepare         bool
-	VerSeq             uint64  // only used in mod request to datanode
+	VerSeq             uint64 // only used in mod request to datanode
 }
 
 // NewPacket returns a new packet.
@@ -525,7 +531,7 @@ func (p *Packet) MarshalHeader(out []byte) {
 	binary.BigEndian.PutUint64(out[33:41], uint64(p.ExtentOffset))
 	binary.BigEndian.PutUint64(out[41:49], uint64(p.ReqID))
 	binary.BigEndian.PutUint64(out[49:util.PacketHeaderSize], p.KernelOffset)
-	if p.Opcode == OpRandomWriteVer || p.ExtentType & MultiVersionFlag > 0 {
+	if p.Opcode == OpRandomWriteVer || p.ExtentType&MultiVersionFlag > 0 {
 		binary.BigEndian.PutUint64(out[util.PacketHeaderSize:util.PacketHeaderSize+8], p.VerSeq)
 	}
 	return
@@ -596,7 +602,7 @@ func (p *Packet) WriteToNoDeadLineConn(c net.Conn) (err error) {
 // WriteToConn writes through the given connection.
 func (p *Packet) WriteToConn(c net.Conn) (err error) {
 	headSize := util.PacketHeaderSize
-	if p.Opcode == OpRandomWriteVer || p.ExtentType & MultiVersionFlag > 0 {
+	if p.Opcode == OpRandomWriteVer || p.ExtentType&MultiVersionFlag > 0 {
 		headSize = util.PacketHeaderVerSize
 	}
 	header, err := Buffers.Get(headSize)
@@ -624,7 +630,6 @@ func ReadFull(c net.Conn, buf *[]byte, readSize int) (err error) {
 	_, err = io.ReadFull(c, (*buf)[:readSize])
 	return
 }
-
 
 // ReadFromConn reads the data from the given connection.
 // Recognize the version bit and parse out version,
@@ -654,13 +659,13 @@ func (p *Packet) ReadFromConnWithVer(c net.Conn, timeoutSec int) (err error) {
 
 	log.LogDebugf("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
 
-	if p.ExtentType & MultiVersionFlag > 0 {
+	if p.ExtentType&MultiVersionFlag > 0 {
 		log.LogDebug("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
 		ver := make([]byte, 8)
 		if _, err = io.ReadFull(c, ver); err != nil {
 			return
 		}
-		p.VerSeq =  binary.BigEndian.Uint64(ver)
+		p.VerSeq = binary.BigEndian.Uint64(ver)
 		log.LogDebug("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
 	}
 

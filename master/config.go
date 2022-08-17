@@ -41,6 +41,7 @@ const (
 	faultDomain                         = "faultDomain"
 	cfgDomainBatchGrpCnt                = "faultDomainGrpBatchCnt"
 	cfgDomainBuildAsPossible            = "faultDomainBuildAsPossible"
+	intervalToScanS3Expiration          = "intervalToScanS3Expiration"
 )
 
 //default value
@@ -74,6 +75,7 @@ const (
 	defaultDiffSpaceUsage                              = 1024 * 1024 * 1024
 	defaultNodeSetGrpStep                              = 1
 	defaultMasterMinQosAccept                          = 20000
+	defaultIntervalToScanS3Expiration                  = 12 * 3600
 )
 
 // AddrDatabase is a map that stores the address of a given host (e.g., the leader)
@@ -109,6 +111,7 @@ type clusterConfig struct {
 	DomainBuildAsPossible               bool
 	DataPartitionUsageThreshold         float64
 	QosMasterAcceptLimit                uint64
+	IntervalToScanS3Expiration          int64
 }
 
 func newClusterConfig() (cfg *clusterConfig) {
@@ -128,6 +131,7 @@ func newClusterConfig() (cfg *clusterConfig) {
 	cfg.metaNodeReservedMem = defaultMetaNodeReservedMem
 	cfg.diffSpaceUsage = defaultDiffSpaceUsage
 	cfg.QosMasterAcceptLimit = defaultMasterMinQosAccept
+	cfg.IntervalToScanS3Expiration = defaultIntervalToScanS3Expiration
 	return
 }
 
