@@ -104,10 +104,10 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 		status = proto.OpNotExistErr
 		return nil, status
 	}
-	log.LogDebug("action[getDentry] dentry[%v] be set delete flag", dentry)
+	log.LogDebug("action[getDentry] dentry[%v]", dentry)
 
 	den := mp.getDentryByVerSeq(item.(*Dentry), dentry.VerSeq)
-	if den != nil && den.VerSeq == dentry.VerSeq {
+	if den != nil {
 		return den,  proto.OpOk
 	}
 	return den, proto.OpNotExistErr
@@ -150,6 +150,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 	var (
 		item interface{}
 		doMore = true
+		clean bool
 	)
 	if checkInode {
 		log.LogDebugf("action[fsmDeleteDentry] dentry %v", denParm)
@@ -166,11 +167,9 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 				log.LogDebugf("action[fsmDeleteDentry] volume snapshot not enabled,delete directly")
 				return mp.dentryTree.tree.Delete(den)
 			}
+			_, doMore, clean = item.(*Dentry).deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList)
 			return den
 		})
-		if item != nil && mp.verSeq != 0 {
-			item, doMore = item.(*Dentry).deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList)
-		}
 	} else {
 		log.LogDebugf("action[fsmDeleteDentry] dentry %v", denParm)
 		if mp.verSeq == 0 {
@@ -178,12 +177,20 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 		} else {
 			item = mp.dentryTree.Get(denParm)
 			if item != nil {
-				item, doMore = item.(*Dentry).deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList)
+				_, doMore, clean = item.(*Dentry).deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList)
 			}
 		}
 	}
 
+	if clean == true {
+		log.LogDebugf("action[fsmDeleteDentry] dnetry %v be deleted", item.(*Dentry))
+		item = mp.dentryTree.Delete(item.(*Dentry))
+	}
+
 	if !doMore {
+		if item != nil {
+			resp.Msg = item.(*Dentry)
+		}
 		log.LogDebugf("action[fsmDeleteDentry] there's nothing to do more denParm %v", denParm)
 		return
 	}

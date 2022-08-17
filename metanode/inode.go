@@ -658,13 +658,13 @@ func (i *Inode)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMul
 		if commit && id == len(verlist)-1 {
 			break
 		}
-		if info.VerSeq > reqVerSeq {
+		if info.VerSeq >= reqVerSeq {
 			return info.VerSeq, true
 		}
 	}
-	vlen := len(verlist)-1
+
 	log.LogErrorf("action[getLastestVer] inode %v reqVerSeq %v not found, the largetst one %v",
-		i.Inode, reqVerSeq, verlist[vlen-1].VerSeq)
+		i.Inode, reqVerSeq, verlist[len(verlist)-1].VerSeq)
 	return 0, false
 }
 
@@ -1029,13 +1029,13 @@ func (i *Inode) ShouldDelayDelete() (ok bool) {
 
 // SetAttr sets the attributes of the inode.
 func (i *Inode) SetAttr(req *SetattrRequest) {
-	i.Lock()
-
+	log.LogDebugf("action[SetAttr] inode %v req seq %v inode seq %v", i.Inode, req.VerSeq, i.verSeq)
 	if req.VerSeq != i.verSeq {
-		log.LogDebugf("action[AppendExtentWithCheck] ver %v inode ver %v", req.VerSeq, i.verSeq)
 		i.CreateVer(req.VerSeq)
 	}
 
+	i.Lock()
+	log.LogDebugf("action[SetAttr] inode %v req seq %v inode seq %v", i.Inode, req.VerSeq, i.verSeq)
 	if req.Valid&proto.AttrMode != 0 {
 		i.Type = req.Mode
 	}
