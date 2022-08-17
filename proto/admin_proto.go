@@ -50,7 +50,6 @@ const (
 	AdminUpdateZoneExcludeRatio     = "/admin/updateZoneExcludeRatio"
 	AdminSetNodeRdOnly              = "/admin/setNodeRdOnly"
 
-
 	//graphql master api
 	AdminClusterAPI = "/api/cluster"
 	AdminUserAPI    = "/api/user"
@@ -97,15 +96,23 @@ const (
 	AdminDeleteMetaReplica         = "/metaReplica/delete"
 
 	//admin multi version snapshot
-	AdminCreateVersion             = "/multiVer/create"
-	AdminDelVersion                = "/multiVer/del"
-	AdminGetVersionInfo            = "/multiVer/get"
-	AdminGetAllVersionInfo         = "/multiVer/getAll"
-	AdminGetVolVer                  = "/vol/getVer"
+	AdminCreateVersion     = "/multiVer/create"
+	AdminDelVersion        = "/multiVer/del"
+	AdminGetVersionInfo    = "/multiVer/get"
+	AdminGetAllVersionInfo = "/multiVer/getAll"
+	AdminGetVolVer         = "/vol/getVer"
+
+	// S3 lifecycle configuration APIS
+	SetBucketLifecycle    = "/s3/setLifecycle"
+	GetBucketLifecycle    = "/s3/getLifecycle"
+	DeleteBucketLifecycle = "/s3/deleteLifecycle"
+
+	AddLcNode = "/lcNode/add"
 
 	// Operation response
 	GetMetaNodeTaskResponse = "/metaNode/response" // Method: 'POST', ContentType: 'application/json'
 	GetDataNodeTaskResponse = "/dataNode/response" // Method: 'POST', ContentType: 'application/json'
+	GetLcNodeTaskResponse   = "/lcNode/response"   // Method: 'POST', ContentType: 'application/json'
 
 	GetTopologyView = "/topo/get"
 	UpdateZone      = "/zone/update"
@@ -149,11 +156,11 @@ type RegisterMetaNodeResp struct {
 }
 
 type VolumeVerInfo struct {
-	Name                string
-	VerSeq				uint64
-	VerSeqPrepare		uint64
-	VerPrepareStatus    uint8
-	Enabled             bool
+	Name             string
+	VerSeq           uint64
+	VerSeqPrepare    uint64
+	VerPrepareStatus uint8
+	Enabled          bool
 }
 
 // ClusterInfo defines the cluster infomation.
@@ -350,6 +357,18 @@ type MetaNodeHeartbeatResponse struct {
 	MetaPartitionReports []*MetaPartitionReport
 	Status               uint8
 	Result               string
+}
+
+type ScanTaskInfo struct {
+	Id        string
+	RoutineId int64
+}
+
+// LcNodeHeartbeatResponse defines the response to the lc node heartbeat.
+type LcNodeHeartbeatResponse struct {
+	ScanningTasks []*ScanTaskInfo
+	Status        uint8
+	Result        string
 }
 
 // DeleteFileRequest defines the request to delete a file.
@@ -556,7 +575,7 @@ type SimpleVolView struct {
 	CacheRule        string
 	PreloadCapacity  uint64
 	// multi version snapsho t
-	LatestVer 		uint64
+	LatestVer uint64
 }
 
 type NodeSetInfo struct {

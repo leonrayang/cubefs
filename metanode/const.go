@@ -87,6 +87,8 @@ type (
 	BatchEvictInodeReq = proto.BatchEvictInodeRequest
 	// Client -> MetaNode
 	SetattrRequest = proto.SetAttrRequest
+	// Client -> MetaNode
+	InodeGetExpirationReqBatch = proto.BatchInodeGetExpirationRequest
 )
 
 const (

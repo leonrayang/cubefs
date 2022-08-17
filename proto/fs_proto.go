@@ -304,7 +304,7 @@ type BatchInodeGetRequest struct {
 	VolName     string   `json:"vol"`
 	PartitionID uint64   `json:"pid"`
 	Inodes      []uint64 `json:"inos"`
-	VerSeq      uint64 	 `json:"seq"`
+	VerSeq      uint64   `json:"seq"`
 }
 
 // BatchInodeGetResponse defines the response to the request of getting the inode in batch.
@@ -337,12 +337,12 @@ type ReadDirOnlyResponse struct {
 
 // ReadDirLimitRequest defines the request to read dir with limited dentries.
 type ReadDirLimitRequest struct {
-	VolName     string               `json:"vol"`
-	PartitionID uint64               `json:"pid"`
-	ParentID    uint64               `json:"pino"`
-	Marker      string               `json:"marker"`
-	Limit       uint64               `json:"limit"`
-	VerSeq      uint64 				 `json:"seq"`
+	VolName     string `json:"vol"`
+	PartitionID uint64 `json:"pid"`
+	ParentID    uint64 `json:"pino"`
+	Marker      string `json:"marker"`
+	Limit       uint64 `json:"limit"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 type ReadDirLimitResponse struct {
@@ -363,8 +363,8 @@ type AppendExtentKeyWithCheckRequest struct {
 	Inode          uint64      `json:"ino"`
 	Extent         ExtentKey   `json:"ek"`
 	DiscardExtents []ExtentKey `json:"dek"`
-	VerSeq      uint64 `json:"seq"`
-	IsSplit     bool
+	VerSeq         uint64      `json:"seq"`
+	IsSplit        bool
 }
 
 // AppendObjExtentKeyRequest defines the request to append an obj extent key.
@@ -377,10 +377,10 @@ type AppendObjExtentKeysRequest struct {
 
 // GetExtentsRequest defines the reques to get extents.
 type GetExtentsRequest struct {
-	VolName     string               `json:"vol"`
-	PartitionID uint64               `json:"pid"`
-	Inode       uint64               `json:"ino"`
-	VerSeq      uint64               `json:"seq"`
+	VolName     string `json:"vol"`
+	PartitionID uint64 `json:"pid"`
+	Inode       uint64 `json:"ino"`
+	VerSeq      uint64 `json:"seq"`
 }
 
 // GetObjExtentsResponse defines the response to the request of getting obj extents.
@@ -574,6 +574,23 @@ type GetMultipartRequest struct {
 
 type GetMultipartResponse struct {
 	Info *MultipartInfo `json:"info"`
+}
+
+type GetExpiredMultipartRequest struct {
+	VolName     string `json:"vol"`
+	Prefix      string `json:"path"`
+	Days        int    `json:"days"`
+	PartitionId uint64 `json:"pid"`
+}
+
+type ExpiredMultipartInfo struct {
+	Path        string   `json:"path"`
+	MultipartId string   `json:"mid"`
+	Inodes      []uint64 `json:"inodes"`
+}
+
+type GetExpiredMultipartResponse struct {
+	Infos []*ExpiredMultipartInfo `json:"infos"`
 }
 
 type AddMultipartPartRequest struct {

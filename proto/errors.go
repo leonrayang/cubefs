@@ -83,6 +83,7 @@ var (
 	ErrIsOwner                         = errors.New("user owns the volume")
 	ErrZoneNum                         = errors.New("zone num not qualified")
 	ErrCodeVersionOp                   = errors.New("version op failed")
+	ErrNoSuchLifecycleConfiguration    = errors.New("The lifecycle configuration does not exist")
 )
 
 // http response error code and error message definitions
@@ -210,7 +211,7 @@ var Err2CodeMap = map[error]int32{
 	ErrInvalidSecretKey:                ErrCodeInvalidSecretKey,
 	ErrIsOwner:                         ErrCodeIsOwner,
 	ErrZoneNum:                         ErrCodeZoneNumError,
-	ErrCodeVersionOp:					ErrCodeVersionOpError,
+	ErrCodeVersionOp:                   ErrCodeVersionOpError,
 }
 
 func ParseErrorCode(code int32) error {
