@@ -22,7 +22,6 @@ import (
 	"github.com/cubefs/cubefs/util/log"
 	"io"
 	"math"
-	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -534,7 +533,7 @@ func (i *Inode) UnmarshalValue(val []byte) (err error) {
 			i.multiVersions = append(i.multiVersions, ino)
 			verCnt--
 		}
-		log.LogInfof("action[UnmarshalValue] inode %v old seq %v hist len %v stack(%v)", i.Inode, i.verSeq, len(i.multiVersions), string(debug.Stack()))
+//		log.LogInfof("action[UnmarshalValue] inode %v old seq %v hist len %v stack(%v)", i.Inode, i.verSeq, len(i.multiVersions), string(debug.Stack()))
 	}
 	return
 }

@@ -139,7 +139,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 		return
 	}
 	inode := item.(*Inode)
-	if inode.ShouldDelete() {
+	if ino.verSeq == 0 && inode.ShouldDelete() {
 		log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
 		resp.Status = proto.OpNotExistErr
 		return

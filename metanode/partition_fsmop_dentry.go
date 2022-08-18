@@ -111,33 +111,6 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 		return den,  proto.OpOk
 	}
 	return den, proto.OpNotExistErr
-
-	//verSeq := item.(*Dentry).getVerSeq()
-	//if dentry.VerSeq == 0 || verSeq <= dentry.VerSeq {
-	//	if item.(*Dentry).isDeleted() {
-	//		log.LogDebug("action[getDentry] dentry[%v] be set delete flag", dentry)
-	//		status = proto.OpNotExistErr
-	//		return nil, status
-	//	}
-	//	log.LogDebug("action[getDentry] dentry[%v] be geted", item.(*Dentry))
-	//	return item.(*Dentry), status
-	//}
-	//for _, d := range item.(*Dentry).dentryList {
-	//	verSeq = d.getVerSeq()
-	//	log.LogDebug("action[getDentry] dentry[%v] in the dentry list ", dentry)
-	//	if verSeq == dentry.VerSeq {
-	//		if d.isDeleted() {
-	//			log.LogDebug("action[getDentry] dentry[%v] in the dentry list and be set delete flag", d)
-	//			status = proto.OpNotExistErr
-	//			return nil, status
-	//		}
-	//		return item.(*Dentry), status
-	//	}
-	//	if verSeq < dentry.VerSeq {
-	//		return nil, proto.OpNotExistErr
-	//	}
-	//}
-	//return nil, proto.OpNotExistErr
 }
 
 // Delete dentry from the dentry tree.
@@ -182,12 +155,12 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 		}
 	}
 
-	if clean == true {
+	if item != nil && (clean == true || (len(item.(*Dentry).dentryList) == 0 && item.(*Dentry).isDeleted())) {
 		log.LogDebugf("action[fsmDeleteDentry] dnetry %v really be deleted", item.(*Dentry))
 		item = mp.dentryTree.Delete(item.(*Dentry))
 	}
 
-	if !doMore {
+	if !doMore {  // not the top layer,do nothing to parent inode
 		if item != nil {
 			resp.Msg = item.(*Dentry)
 		}
@@ -247,7 +220,7 @@ func (mp *metaPartition) getDentryTree() *BTree {
 
 func (mp *metaPartition) getDentryByVerSeq(dy *Dentry, verSeq uint64) (d *Dentry){
 	log.LogInfof("action[getDentryByVerSeq] verseq %v, tmp dentry %v, inode id %v, name %v", verSeq, dy.VerSeq, dy.Inode, dy.Name)
-	d, _ =  dy.getVerSnapshotByVer(verSeq)
+	d, _ =  dy.getDentryByVerSeq(verSeq)
 	return
 }
 
