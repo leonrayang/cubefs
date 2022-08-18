@@ -251,6 +251,9 @@ func doUnlinkInode(inode *Inode) error {
 func cleanDentries() error {
 	//filePath := fmt.Sprintf("_export_%s/%s", VolName, obsoleteDentryDumpFileName)
 	// TODO: send request to meta node directly with pino, name and ino.
+	//if ino, err := gMetaWrapper.Delete_ll_EX(1, child.Name, true, VerSeq); err != nil {
+	//
+	//}
 	return nil
 }
 

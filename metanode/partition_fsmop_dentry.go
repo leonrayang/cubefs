@@ -72,7 +72,7 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 			log.LogDebugf("action[fsmCreateDentry.ver] latest dentry already deleted.Now create new one [%v]", dentry)
 
 			if !forceUpdate {
-				parIno.IncNLink()
+				parIno.IncNLink(mp.verSeq)
 				parIno.SetMtime()
 			}
 			return
@@ -88,7 +88,7 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 
 	} else {
 		if !forceUpdate {
-			parIno.IncNLink()
+			parIno.IncNLink(mp.verSeq)
 			parIno.SetMtime()
 		}
 	}
