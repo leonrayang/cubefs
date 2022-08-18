@@ -66,7 +66,7 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 func (mp *metaPartition) getInodeByVer(ino *Inode) (i *Inode) {
 	item := mp.inodeTree.Get(ino)
 	if item == nil {
-		log.LogDebugf("action[getInodeByVer] not found ino %v verseq", ino.Inode, ino.verSeq)
+		log.LogDebugf("action[getInodeByVer] not found ino %v verseq %v", ino.Inode, ino.verSeq)
 		return
 	}
 	log.LogDebugf("action[getInodeByVer] ino %v verseq %v hist len %v request ino ver %v",
@@ -146,9 +146,6 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 	}
 
 	resp.Msg = inode
-	if inode.IsEmptyDir() {
-		mp.inodeTree.Delete(inode)
-	}
 
 	// create a version if the snapshot be depend on
 	if ino.verSeq == 0  {
@@ -165,6 +162,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 			if !found { // no snapshot depend on this inode
 				log.LogDebugf("action[fsmUnlinkInode] no snapshot available depends on ino %v not found seq %v and return, verlist %v", ino, inode.verSeq, verlist)
 				inode.DecNLink()
+				log.LogDebugf("action[fsmUnlinkInode] inode %v be unlinked", ino.Inode)
 				// operate inode directly
 				goto end
 			}
@@ -174,9 +172,11 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 			if proto.IsDir(inode.Type) { // dir is all info but inode is part,which is quit different
 				inode.CreateVer(mp.verSeq)
 				inode.DecNLink()
+				log.LogDebugf("action[fsmUnlinkInode] inode %v be unlinked, Dir create ver 1st layer", ino.Inode)
 			} else {
 				inode.CreateUnlinkVer(mp.verSeq, verlist)
 				inode.DecNLink()
+				log.LogDebugf("action[fsmUnlinkInode] inode %v be unlinked, File create ver 1st layer", ino.Inode)
 			}
 			return
 		} else {
@@ -189,10 +189,11 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 					log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
 					return
 				}
-
+				log.LogDebugf("action[fsmUnlinkInode] inode %v be unlinked, File restore", ino.Inode)
 				dIno.DecNLink() // dIno should be inode
 
 			} else {
+				log.LogDebugf("action[fsmUnlinkInode] inode %v be unlinked, Dir", ino.Inode)
 				inode.DecNLink()
 			}
 		}
@@ -269,9 +270,15 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 				}
 			}
 			dIno.DecNLink()
+			log.LogDebugf("action[fsmUnlinkInode] inode %v snapshot layer be unlinked", ino.Inode)
 		}
 	}
 end:
+	if inode.IsEmptyDir() {
+		log.LogDebugf("action[fsmUnlinkInode] ino %v really be deleted, empty dir", ino)
+		mp.inodeTree.Delete(inode)
+	}
+
 	//Fix#760: when nlink == 0, push into freeList and delay delete inode after 7 days
 	if inode.IsTempFile() {
 		// all snapshot between create to last deletion cleaned
@@ -341,6 +348,7 @@ func (mp *metaPartition) internalDeleteBatch(val []byte) error {
 }
 
 func (mp *metaPartition) internalDeleteInode(ino *Inode) {
+	log.LogDebugf("action[internalDeleteInode] ino %v really be deleted", ino)
 	mp.inodeTree.Delete(ino)
 	mp.freeList.Remove(ino.Inode)
 	mp.extendTree.Delete(&Extend{inode: ino.Inode}) // Also delete extend attribute.
