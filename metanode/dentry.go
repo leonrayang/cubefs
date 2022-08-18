@@ -64,7 +64,7 @@ func (d *Dentry) setDeleted() {
 	d.VerSeq |= uint64(1)<<63
 }
 
-func (d *Dentry) getVerSnapshotByVer(verSeq uint64) (den *Dentry, idx int) {
+func (d *Dentry) getDentryByVerSeq(verSeq uint64) (den *Dentry, idx int) {
 	log.LogInfof("action[getDentryByVerSeq] verseq %v, tmp dentry %v, inode id %v, name %v", verSeq, d.getVerSeq(), d.Inode, d.Name)
 	if verSeq == 0 || verSeq >= d.getVerSeq() {
 		if d.isDeleted() {
@@ -168,8 +168,9 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 		var (
 			idx int
 			den *Dentry
+			endSeq uint64
 		)
-		if den, idx = d.getVerSnapshotByVer(delVerSeq); den == nil {
+		if den, idx = d.getDentryByVerSeq(delVerSeq); den == nil {
 			log.LogDebugf("action[deleteVerSnapshot.inSnapList_del_%v] den %v not found", delVerSeq, d)
 			return nil, false, false
 		}
@@ -179,8 +180,9 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 			return d, false, false
 		}
 		// if any alive snapshot in mp dimension exist in seq scope from den to next ascend neighbor, dio snapshot be keep or else drop
-		var endSeq uint64
+		startSeq := den.VerSeq
 		realIdx := idx-1
+
 		if realIdx == 0 {
 			endSeq = d.getVerSeq()
 		} else {
@@ -191,11 +193,14 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 		}
 
 		log.LogDebugf("action[deleteVerSnapshot.inSnapList_del_%v] inode %v try drop multiVersion idx %v effective seq scope [%v,%v) ", delVerSeq,
-			d.Inode, realIdx, d.getVerSeq(), endSeq)
+			d.Inode, realIdx, den.getVerSeq(), endSeq)
 
 		for _, info := range verlist {
-			if info.VerSeq >= den.VerSeq && info.VerSeq < endSeq {
+			if info.VerSeq >= startSeq && info.VerSeq < endSeq { // the version itself not include in
 				log.LogDebugf("action[deleteVerSnapshotInList.inSnapList_del_%v] inode %v dir layer idx %v include snapshot %v.don't drop", delVerSeq, den.Inode, realIdx, info.VerSeq)
+				// there's some snapshot depends on the version trying to be deleted,
+				// keep it,all the snapshots which depends on this version will reach here when make snapshot delete, and found the scope is minimized
+				// other versions depends upon this version will be found zero finally after deletions and do clean
 				return den, false, false
 			}
 			if info.VerSeq >= endSeq {

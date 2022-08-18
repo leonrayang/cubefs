@@ -397,6 +397,7 @@ func (mw *MetaWrapper) Delete_ll_EX(parentID uint64, name string, isDir bool, ve
 	log.LogDebugf("action[Delete_ll] parentID %v name %v verSeq %v", parentID, name, verSeq)
 	status, info, err = mw.iunlink(mp, inode, verSeq)
 	if err != nil || status != statusOK {
+		log.LogDebugf("action[Delete_ll] parentID %v name %v verSeq %v err %v", parentID, name, verSeq, err)
 		return nil, nil
 	}
 
