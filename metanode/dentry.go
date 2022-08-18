@@ -65,7 +65,7 @@ func (d *Dentry) setDeleted() {
 }
 
 func (d *Dentry) getVerSnapshotByVer(verSeq uint64) (den *Dentry, idx int) {
-	log.LogInfof("action[getDentryByVerSeq] verseq %v, tmp dentry %v, inode id %v, name %v", verSeq, d.VerSeq, d.Inode, d.Name)
+	log.LogInfof("action[getDentryByVerSeq] verseq %v, tmp dentry %v, inode id %v, name %v", verSeq, d.getVerSeq(), d.Inode, d.Name)
 	if verSeq == 0 || verSeq >= d.getVerSeq() {
 		if d.isDeleted() {
 			log.LogDebugf("action[getDentryByVerSeq] tmp dentry %v, is deleted, seq %v", d, d.getVerSeq())
@@ -129,14 +129,14 @@ func (d *Dentry)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMu
 // if create anther dentry with larger verSeq, put the eleted dentry to the history list.
 // return doMore bool.True means need do next step on caller such as unlink parentIO
 func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []*MetaMultiSnapshotInfo) (rd *Dentry, dmore bool, clean bool) { // bool is doMore
-	log.LogDebugf("action[deleteVerSnapshot] dentry %v delVerSeq %v mpVer %v verList %v", d, delVerSeq, mpVerSeq, verlist)
+	log.LogDebugf("action[deleteVerSnapshot] enter.dentry %v delVerSeq %v mpVer %v verList %v", d, delVerSeq, mpVerSeq, verlist)
 	// create denParm version
 	if delVerSeq > mpVerSeq {
 		panic(fmt.Sprintf("Dentry version %v large than mp %v", delVerSeq, mpVerSeq))
 	}
 	if delVerSeq == 0 {
 		if d.isDeleted() {
-			log.LogDebugf("action[deleteVerSnapshot] dentry %v seq %v be deleted before", d, delVerSeq)
+			log.LogDebugf("action[deleteVerSnapshot] do noting dentry %v seq %v be deleted before", d, delVerSeq)
 			return nil, false, false
 		}
 
@@ -148,6 +148,7 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 			_, found = d.getLastestVer(d.getVerSeq(), false, verlist)
 			if !found { // no snapshot depend on this dentry,could drop it
 				// operate dentry directly
+				log.LogDebugf("action[deleteVerSnapshot] no snapshot depend on this dentry,could drop seq %v dentry %v", delVerSeq, d)
 				return d, true, true
 			}
 		}
@@ -155,7 +156,7 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 			dn := d.Copy()
 			dn.(*Dentry).dentryList = nil
 			d.dentryList = append([]*Dentry{dn.(*Dentry)}, d.dentryList...)
-			log.LogDebugf("action[deleteVerSnapshot] need create on version. push the dentry %v to the dentry list", dn.(*Dentry))
+			log.LogDebugf("action[deleteVerSnapshot] create version and push to dentry list. dentry %v", dn.(*Dentry))
 		}
 		d.VerSeq = mpVerSeq
 		d.setDeleted() // denParm create at the same version.no need to push to history list

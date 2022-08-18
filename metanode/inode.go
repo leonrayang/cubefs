@@ -994,7 +994,7 @@ func (i *Inode) IsTempFile() bool {
 
 func (i *Inode) IsEmptyDir() bool {
 	i.RLock()
-	ok := proto.IsDir(i.Type) && i.NLink <= 2
+	ok := proto.IsDir(i.Type) && i.NLink <= 2 && len(i.multiVersions)==0
 	i.RUnlock()
 	return ok
 }
