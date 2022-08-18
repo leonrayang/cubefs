@@ -58,7 +58,7 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 		return
 	}
 
-	i.IncNLink()
+	i.IncNLink(mp.verSeq)
 	resp.Msg = i
 	return
 }

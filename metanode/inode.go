@@ -848,7 +848,7 @@ func (i *Inode) CreateUnlinkVer(ver uint64, verlist []*MetaMultiSnapshotInfo) {
 	i.verSeq = ver
 	i.Unlock()
 
-	i.IncNLink()
+	//i.IncNLink()
 }
 
 func (i *Inode) CreateVer(ver uint64) {
@@ -866,7 +866,7 @@ func (i *Inode) CreateVer(ver uint64) {
 	i.verSeq = ver
 	i.Unlock()
 
-	i.IncNLink()
+	// i.IncNLink()
 }
 
 func (i *Inode) SplitExtentWithCheck(gVer uint64, ver uint64, ek proto.ExtentKey) (delExtents []proto.ExtentKey, status uint8) {
@@ -944,7 +944,10 @@ func (i *Inode) ExtentsTruncate(length uint64, ct int64) (delExtents []proto.Ext
 }
 
 // IncNLink increases the nLink value by one.
-func (i *Inode) IncNLink() {
+func (i *Inode) IncNLink(verSeq uint64) {
+	if i.verSeq < verSeq {
+		i.CreateVer(verSeq)
+	}
 	i.Lock()
 	i.NLink++
 	i.Unlock()
