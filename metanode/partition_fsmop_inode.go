@@ -37,6 +37,7 @@ func NewInodeResponse() *InodeResponse {
 
 // Create and inode and attach it to the inode tree.
 func (mp *metaPartition) fsmCreateInode(ino *Inode) (status uint8) {
+	log.LogDebugf("action[fsmCreateInode] inode  %v be created", ino)
 	status = proto.OpOk
 	if _, ok := mp.inodeTree.ReplaceOrInsert(ino, false); !ok {
 		status = proto.OpExistErr
@@ -146,7 +147,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 	}
 
 	resp.Msg = inode
-
+	log.LogDebugf("action[fsmUnlinkInode] get inode %v", inode)
 	// create a version if the snapshot be depend on
 	if ino.verSeq == 0  {
 		// if there's no snapshot itself, nor have snapshot after inode's ver then need unlink directly and make no snapshot
@@ -154,11 +155,11 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 		if len(inode.multiVersions) == 0 {
 			var (
 				found bool
-				rspSeq uint64
 			)
-			log.LogDebugf("action[fsmUnlinkInode] check if have snapshot depends on the deleitng ino %v (with no snapshot itself) found seq %v and update to %v, verlist %v", ino, inode.verSeq, rspSeq, verlist)
+			log.LogDebugf("action[fsmUnlinkInode] check if have snapshot depends on the deleitng ino %v (with no snapshot itself) found seq %v, verlist %v",
+				ino, inode.verSeq, verlist)
 			// no matter verSeq of inode is larger than zero,if not be depended then dropped
-			rspSeq, found = inode.getLastestVer(inode.verSeq, true, verlist)
+			_, found = inode.getLastestVer(inode.verSeq, true, verlist)
 			if !found { // no snapshot depend on this inode
 				log.LogDebugf("action[fsmUnlinkInode] no snapshot available depends on ino %v not found seq %v and return, verlist %v", ino, inode.verSeq, verlist)
 				inode.DecNLink()
