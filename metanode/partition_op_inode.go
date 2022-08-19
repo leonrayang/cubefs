@@ -337,7 +337,8 @@ func (mp *metaPartition) EvictInodeBatch(req *BatchEvictInodeReq, p *Packet) (er
 
 // SetAttr set the inode attributes.
 func (mp *metaPartition) SetAttr(req *SetattrRequest, reqData []byte, p *Packet) (err error) {
-	if req.VerSeq != 0 {
+	if mp.verSeq != 0 {
+		req.VerSeq = mp.verSeq
 		reqData, err = json.Marshal(req)
 		if err != nil {
 			log.LogErrorf("setattr: marshal err(%v)", err)

@@ -750,8 +750,8 @@ func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
 func (i *Inode) getAndDelVer(dVer uint64, gVer uint64, verlist []*MetaMultiSnapshotInfo) (delExtents []proto.ExtentKey, ino *Inode) {
 	var err error
 
-	log.LogDebugf("action[getAndDelVer] ino %v verSeq %v request del ver %v hist len %v",
-		i.Inode, i.verSeq, dVer, len(i.multiVersions))
+	log.LogDebugf("action[getAndDelVer] ino %v verSeq %v request del ver %v hist len %v isTmpFile %v",
+		i.Inode, i.verSeq, dVer, len(i.multiVersions), i.IsTempFile())
 
 	// first layer need delete
 	if dVer == 0 {
