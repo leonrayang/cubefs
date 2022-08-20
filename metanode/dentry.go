@@ -217,11 +217,11 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 }
 
 func (d *Dentry) String() string {
-	str := fmt.Sprintf("dentry(name:[%v],parentId:[%v],inode:[%v],type:[%v],seq:[%v],isDeleted:[%v],dentryList_len[%v]",
+	str := fmt.Sprintf("dentry(name:[%v],parentId:[%v],inode:[%v],type:[%v],seq:[%v],isDeleted:[%v],dentryList_len[%v])",
 		d.Name, d.ParentId, d.Inode, d.Type, d.getVerSeq(), d.isDeleted(), len(d.dentryList))
 
 	for idx, den := range d.dentryList {
-		str += fmt.Sprintf("idx:%v,content(%v)", idx, den)
+		str += fmt.Sprintf("idx:%v,content(%v))", idx, den)
 	}
 	return str
 }
