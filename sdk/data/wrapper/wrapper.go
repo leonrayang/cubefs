@@ -63,6 +63,7 @@ type Wrapper struct {
 
 	HostsStatus map[string]bool
 	preload     bool
+	verReadSeq  uint64
 
 	client      *SimpleClientInfo
 }
@@ -83,6 +84,7 @@ func NewDataPartitionWrapper(client SimpleClientInfo, volName string, masters []
 	w.partitions = make(map[uint64]*DataPartition)
 	w.HostsStatus = make(map[string]bool)
 	w.preload = preload
+	w.verReadSeq = verReadSeq
 
 	if err = w.updateClusterInfo(); err != nil {
 		err = errors.Trace(err, "NewDataPartitionWrapper:")
@@ -181,8 +183,14 @@ func (w *Wrapper) updateSimpleVolView(client SimpleClientInfo) (err error) {
 		return
 	}
 
-	if err = client.UpdateLatestVer(view.LatestVer); err != nil {
-		log.LogWarnf("updateSimpleVolView: UpdateLatestVer ver %v faile err %v", view.LatestVer, err)
+	if w.verReadSeq > 0 {
+		if err = w.updateCheckVerList(w.volName, w.verReadSeq); err != nil {
+			log.LogFatal("updateSimpleVolView: readSeq abnormal %v", err)
+		}
+	} else {
+		if err = client.UpdateLatestVer(view.LatestVer); err != nil {
+			log.LogWarnf("updateSimpleVolView: UpdateLatestVer ver %v faile err %v", view.LatestVer, err)
+		}
 	}
 
 	if w.followerRead != view.FollowerRead && !w.followerReadClientCfg {
