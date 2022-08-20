@@ -236,7 +236,6 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 			verMgr.prepareCommit.reset()
 			verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingFinished
 			log.LogWarnf("action[handleTaskRsp] do Del version finished, verMgr %v", verMgr)
-
 		} else if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
 			log.LogInfof("action[handleTaskRsp] ver update prepare sucess. op %v, verseq %v,commit cnt %v",
 				resp.Op, resp.VerSeq, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt))
@@ -245,12 +244,21 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 			log.LogWarnf("action[handleTaskRsp] ver already update all node now! op %v, verseq %v,commit cnt %v",
 				resp.Op, resp.VerSeq, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt))
 			verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingFinished
-			verMgr.prepareCommit.reset()
+			verMgr.wait<-nil
 		}
 	}
 }
 
 func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq uint64, op uint8, force bool) (ver *proto.VolVersionInfo, err error) {
+	if err = verMgr.startWork(); err != nil {
+		return
+	}
+	defer func() {
+		if err != nil {
+			log.LogWarnf("action[createVer2PhaseTask] close lock due to err %v", err)
+			verMgr.finishWork()
+		}
+	}()
 	log.LogWarnf("action[createVer2PhaseTask] verMgr.status %v", verMgr.status)
 	if op == proto.CreateVersion {
 		if err = verMgr.GenerateVer(verSeq, op); err != nil {
@@ -265,28 +273,53 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 		return
 	}
 	verMgr.prepareCommit.op = proto.CreateVersionPrepare
-
-	ticker := time.NewTicker(time.Second)
-	cnt := 0
-	for{
-		select {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() (ver *proto.VolVersionInfo, err error){
+		log.LogInfof("action[createVer2PhaseTask] verseq %v op %v enter wait schedule", verSeq, verMgr.prepareCommit.op)
+		defer func() {
+			log.LogDebugf("action[createVer2PhaseTask] status %v", verMgr.status)
+			log.LogInfof("action[createVer2PhaseTask] verseq %v op %v exit wait schedule", verSeq, verMgr.prepareCommit.op)
+			if err != nil {
+				wg.Done()
+				log.LogInfof("action[createVer2PhaseTask] verseq %v op %v exit schedule with err %v", verSeq, verMgr.prepareCommit.op, err)
+			}
+		}()
+		ticker := time.NewTicker(time.Second)
+		cnt := 0
+		for{
+			select {
 			case err = <-verMgr.wait:
-				log.LogInfof("action[createVer2PhaseTask] verseq %v op %v get err %v", verSeq, verMgr.prepareCommit.op, err)
+				log.LogInfof("action[createVer2PhaseTask] go routine verseq %v op %v get err %v", verSeq, verMgr.prepareCommit.op, err)
 				if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
 					if err == nil {
 						verMgr.verSeq = verSeq
 						verMgr.prepareCommit.reset()
 						verMgr.prepareCommit.op = proto.CreateVersionCommit
 						if err = verMgr.Persist(); err != nil {
+							log.LogErrorf("action[createVer2PhaseTask] err %v", err)
 							return
 						}
 						log.LogInfof("action[createVer2PhaseTask] prepare fin.start commit")
-						return verMgr.createTask(cluster, verSeq, verMgr.prepareCommit.op, force)
+						if ver, err = verMgr.createTask(cluster, verSeq, verMgr.prepareCommit.op, force); err != nil {
+							log.LogInfof("action[createVer2PhaseTask] prepare error %v", err)
+							return
+						}
+						wg.Done()
+					} else {
+						verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
+						log.LogInfof("action[createVer2PhaseTask] prepare error %v", err)
+						return
 					}
-					verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
+				} else if verMgr.prepareCommit.op == proto.CreateVersionCommit {
+					log.LogInfof("action[createVer2PhaseTask] create ver task commit, create 2phase finished")
+					verMgr.prepareCommit.reset()
+					verMgr.finishWork()
+					return
+				} else {
+					log.LogErrorf("action[createVer2PhaseTask] op %v", verMgr.prepareCommit.op)
 					return
 				}
-				return
 			case <-verMgr.cancel:
 				log.LogInfof("action[createVer2PhaseTask.cancel] verseq %v op %v be canceled", verSeq, verMgr.prepareCommit.op)
 				return
@@ -295,11 +328,20 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 				cnt++
 				if cnt > 10 {
 					verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingTimeOut
-					log.LogInfof("action[createVer2PhaseTask] verseq %v op %v be set timeout", verSeq, verMgr.prepareCommit.op)
+					err = fmt.Errorf("verseq %v op %v be set timeout", verSeq, verMgr.prepareCommit.op)
+					log.LogInfof("action[createVer2PhaseTask] close lock due to err %v", err)
+					verMgr.finishWork()
+					if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
+						err = nil
+					}
 					return
 				}
+			}
 		}
-	}
+	}()
+	wg.Wait()
+	log.LogDebugf("action[createVer2PhaseTask] prepare phase finished")
+	return
 }
 
 
@@ -388,11 +430,13 @@ func (verMgr *VolVersionManager) createTaskToMetaNode(cluster *Cluster, verSeq u
 }
 
 func (verMgr *VolVersionManager) finishWork() {
-	verMgr.status = proto.VersionWorkingFinished
+	log.LogDebugf("action[finishWork] VolVersionManager finishWork!")
+	atomic.StoreUint32(&verMgr.status, proto.VersionWorkingFinished)
 }
 
 func (verMgr *VolVersionManager) startWork() (err error) {
 	var status uint32
+	log.LogDebugf("action[VolVersionManager.startWork] status %v", verMgr.status)
 	if status = atomic.LoadUint32(&verMgr.status); status == proto.VersionWorking {
 		err = fmt.Errorf("have task still working,try it later")
 		log.LogWarnf("action[VolVersionManager.startWork] %v", err)
