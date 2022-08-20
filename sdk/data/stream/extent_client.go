@@ -110,8 +110,6 @@ type MultiVerMgr struct {
 	latestVerSeq uint64   // newest verSeq from master for datanode write to check
 }
 
-
-
 // ExtentClient defines the struct of the extent client.
 type ExtentClient struct {
 	streamers    map[uint64]*Streamer
