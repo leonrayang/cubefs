@@ -148,56 +148,13 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 
 	resp.Msg = inode
 	log.LogDebugf("action[fsmUnlinkInode] get inode %v", inode)
+	var (
+		doMore bool
+		status uint8
+	)
 	// create a version if the snapshot be depend on
-	if ino.verSeq == 0  {
-		// if there's no snapshot itself, nor have snapshot after inode's ver then need unlink directly and make no snapshot
-		// just move to upper layer, the behavior looks like that the snapshot be dropped
-		if len(inode.multiVersions) == 0 {
-			var (
-				found bool
-			)
-			log.LogDebugf("action[fsmUnlinkInode] check if have snapshot depends on the deleitng ino %v (with no snapshot itself) found seq %v, verlist %v",
-				ino, inode.verSeq, verlist)
-			// no matter verSeq of inode is larger than zero,if not be depended then dropped
-			_, found = inode.getLastestVer(inode.verSeq, true, verlist)
-			if !found { // no snapshot depend on this inode
-				log.LogDebugf("action[fsmUnlinkInode] no snapshot available depends on ino %v not found seq %v and return, verlist %v", ino, inode.verSeq, verlist)
-				inode.DecNLink()
-				log.LogDebugf("action[fsmUnlinkInode] inode %v be unlinked", ino.Inode)
-				// operate inode directly
-				goto end
-			}
-		}
-		if inode.verSeq != mp.verSeq { // need create version
-			log.LogDebugf("action[fsmUnlinkInode] need create version.ino %v withSeq %v not equal mp seq %v, verlist %v", ino, inode.verSeq, mp.verSeq, verlist)
-			if proto.IsDir(inode.Type) { // dir is all info but inode is part,which is quit different
-				inode.CreateVer(mp.verSeq)
-				inode.DecNLink()
-				log.LogDebugf("action[fsmUnlinkInode] inode %v be unlinked, Dir create ver 1st layer", ino.Inode)
-			} else {
-				inode.CreateUnlinkVer(mp.verSeq, verlist)
-				inode.DecNLink()
-				log.LogDebugf("action[fsmUnlinkInode] inode %v be unlinked, File create ver 1st layer", ino.Inode)
-			}
-			return
-		} else {
-			log.LogDebugf("action[fsmUnlinkInode] need restore.ino %v withSeq %v equal mp seq, verlist %v", ino, inode.verSeq, verlist)
-			// need restore
-			if !proto.IsDir(inode.Type) {
-				var dIno *Inode
-				if ext2Del, dIno = inode.getAndDelVer(ino.verSeq, mp.verSeq, verlist); dIno == nil {
-					resp.Status = proto.OpNotExistErr
-					log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
-					return
-				}
-				log.LogDebugf("action[fsmUnlinkInode] inode %v be unlinked, File restore", ino.Inode)
-				dIno.DecNLink() // dIno should be inode
-
-			} else {
-				log.LogDebugf("action[fsmUnlinkInode] inode %v be unlinked, Dir", ino.Inode)
-				inode.DecNLink()
-			}
-		}
+	if ino.verSeq == 0 {
+		ext2Del, doMore, status =  inode.unlinkVerInTopLayer(ino, mp.verSeq, verlist)
 	} else { // means drop snapshot
 		log.LogDebugf("action[fsmUnlinkInode] req drop assigned snapshot reqseq %v inode seq %v", ino.verSeq, inode.verSeq)
 		if ino.verSeq > inode.verSeq && ino.verSeq != math.MaxUint64 {
@@ -205,76 +162,13 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 				ino.Inode, ino.verSeq, inode.verSeq)
 			return
 		} else {
-			log.LogDebugf("action[fsmUnlinkInode] ino %v try search seq %v isdir %v", ino, ino.verSeq, proto.IsDir(inode.Type))
-			var dIno *Inode
-			if proto.IsDir(inode.Type) { // snapshot dir deletion don't take link into consider, but considers the scope of snapshot contrast to verList
-				var idx int
-				if dIno, idx = inode.getInoByVer(ino.verSeq, false); dIno == nil {
-					resp.Status = proto.OpNotExistErr
-					log.LogDebugf("action[fsmUnlinkInode] ino %v not found", ino)
-					return
-				}
-				if idx == 0 {
-					// header layer do nothing and be depends on should not be dropped
-					log.LogDebugf("action[fsmUnlinkInode] ino %v first layer do nothing", ino)
-					return
-				}
-				// if any alive snapshot in mp dimension exist in seq scope from dino to next ascend neighbor, dio snapshot be keep or else drop
-				var endSeq uint64
-				realIdx := idx-1
-				if realIdx == 0 {
-					endSeq = inode.verSeq
-				} else {
-					endSeq = inode.multiVersions[realIdx-1].verSeq
-				}
-
-				log.LogDebugf("action[fsmUnlinkInode] inode %v try drop multiVersion idx %v effective seq scope [%v,%v) ",
-					inode.Inode, realIdx, dIno.verSeq, endSeq)
-
-				for vidx, info := range verlist {
-					if info.VerSeq >= dIno.verSeq && info.VerSeq < endSeq {
-						log.LogDebugf("action[fsmUnlinkInode] inode %v dir layer idx %v still have effective snapshot seq %v.so don't drop", inode.Inode, realIdx, info.VerSeq)
-						return
-					}
-					if info.VerSeq >= endSeq || vidx == len(verlist)-1 {
-						log.LogDebugf("action[fsmUnlinkInode] inode %v try drop multiVersion idx %v and return", inode.Inode, realIdx)
-						inode.multiVersions = append(inode.multiVersions[:realIdx], inode.multiVersions[realIdx+1:]...)
-						return
-					}
-					log.LogDebugf("action[fsmUnlinkInode] inode %v try drop scope [%v, %v), mp ver %v not suitable", inode.Inode, dIno.verSeq, endSeq, info.VerSeq)
-				}
-			} else {
-				// special case, snapshot is the last one and be depended by upper version,update it's version to the right one
-				// ascend search util to the curr unCommit version in the verList
-				if ino.verSeq == inode.verSeq /*&& len(inode.multiVersions) == 0*/ {
-					if len(verlist) == 0 {
-						resp.Status = proto.OpNotExistErr
-						log.LogErrorf("action[fsmUnlinkInode] inode %v verlist should be larger than 0, return not found", inode.Inode)
-						return
-					}
-
-					// just move to upper layer,the request snapshot be dropped
-					nVerSeq, found := inode.getLastestVer(inode.verSeq, false, verlist)
-					if !found {
-						resp.Status = proto.OpNotExistErr
-						return
-					}
-					inode.verSeq = nVerSeq
-					return
-				} else {
-					// don't unlink if no version satisfied
-					if ext2Del, dIno = inode.getAndDelVer(ino.verSeq, mp.verSeq, verlist); dIno == nil {
-						resp.Status = proto.OpNotExistErr
-						log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
-						return
-					}
-				}
-			}
-			dIno.DecNLink()
-			log.LogDebugf("action[fsmUnlinkInode] inode %v snapshot layer be unlinked", ino.Inode)
+			ext2Del, doMore, status =  inode.unlinkVerInList(ino, mp.verSeq, verlist)
 		}
 	}
-end:
+	if !doMore {
+		resp.Status = status
+		return
+	}
 	if inode.IsEmptyDir() {
 		log.LogDebugf("action[fsmUnlinkInode] ino %v really be deleted, empty dir", ino)
 		mp.inodeTree.Delete(inode)

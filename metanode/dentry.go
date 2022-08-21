@@ -65,8 +65,9 @@ func (d *Dentry) setDeleted() {
 }
 
 func (d *Dentry) getDentryByVerSeq(verSeq uint64) (den *Dentry, idx int) {
+
 	log.LogInfof("action[getDentryByVerSeq] verseq %v, tmp dentry %v, inode id %v, name %v", verSeq, d.getVerSeq(), d.Inode, d.Name)
-	if verSeq == 0 || verSeq >= d.getVerSeq() {
+	if verSeq == 0 || (verSeq >= d.getVerSeq() && verSeq != math.MaxUint64) {
 		if d.isDeleted() {
 			log.LogDebugf("action[getDentryByVerSeq] tmp dentry %v, is deleted, seq %v", d, d.getVerSeq())
 			return
@@ -76,6 +77,9 @@ func (d *Dentry) getDentryByVerSeq(verSeq uint64) (den *Dentry, idx int) {
 
 	// read the oldest version snapshot,the oldest version is 0 should make a different with the lastest uncommit version read(with seq 0)
 	if verSeq == math.MaxUint64 {
+		if d.getVerSeq() == 0 {
+			return d, 0
+		}
 		denListLen := len(d.dentryList)
 		if denListLen == 0 {
 			return
@@ -92,7 +96,6 @@ func (d *Dentry) getDentryByVerSeq(verSeq uint64) (den *Dentry, idx int) {
 		log.LogDebugf("action[getDentryByVerSeq] den in ver list %v, is delete %v, seq %v", lDen, lDen.isDeleted(), lDen.getVerSeq())
 		if verSeq < lDen.getVerSeq() {
 			log.LogDebugf("action[getDentryByVerSeq] den in ver list %v, return nil, request seq %v, history ver seq %v", lDen, verSeq, lDen.getVerSeq())
-			return
 		} else if lDen.isDeleted() {
 			log.LogDebugf("action[getDentryByVerSeq] den in ver list %v, return nil due to latest is deleted", lDen)
 			return
@@ -131,10 +134,10 @@ func (d *Dentry)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMu
 func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []*MetaMultiSnapshotInfo) (rd *Dentry, dmore bool, clean bool) { // bool is doMore
 	log.LogDebugf("action[deleteVerSnapshot] enter.dentry %v delVerSeq %v mpVer %v verList %v", d, delVerSeq, mpVerSeq, verlist)
 	// create denParm version
-	if delVerSeq > mpVerSeq {
+	if delVerSeq != math.MaxUint64 && delVerSeq > mpVerSeq {
 		panic(fmt.Sprintf("Dentry version %v large than mp %v", delVerSeq, mpVerSeq))
 	}
-	if delVerSeq == 0 {
+	if delVerSeq == 0 || (delVerSeq == math.MaxUint64 && d.getVerSeq() == 0) {
 		if d.isDeleted() {
 			log.LogDebugf("action[deleteVerSnapshot.delSeq_0] do noting dentry %v seq %v be deleted before", d, delVerSeq)
 			return nil, false, false

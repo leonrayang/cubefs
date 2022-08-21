@@ -281,7 +281,7 @@ func cleanSnapshot() (err error) {
 
 	log.LogDebugf("action[cleanSnapshot]  parent root verSeq %v Delete_ll_EX children count %v", VerSeq, len(parents))
 	for _, child := range parents {
-		if ino, err = gMetaWrapper.Delete_ll_EX(1, child.Name, proto.IsDir(child.Type), VerSeq); err != nil {
+		if ino, err = gMetaWrapper.Delete_Ver_ll(1, child.Name, proto.IsDir(child.Type), VerSeq); err != nil {
 			log.LogErrorf("action[cleanSnapshot] parent root Delete_ll_EX child name %v verSeq %v err %v", child.Name, VerSeq, err)
 		}
 		log.LogDebugf("action[cleanSnapshot] parent root Delete_ll_EX child name %v verSeq %v ino %v success", child.Name, VerSeq, ino)
@@ -300,7 +300,7 @@ func cleanSnapshot() (err error) {
 				continue
 			}
 			for _, child := range children {
-				if ino, err = gMetaWrapper.Delete_ll_EX(parent.Inode, child.Name, proto.IsDir(child.Type), VerSeq); err != nil || ino == nil {
+				if ino, err = gMetaWrapper.Delete_Ver_ll(parent.Inode, child.Name, proto.IsDir(child.Type), VerSeq); err != nil || ino == nil {
 					log.LogErrorf("action[cleanSnapshot] parent %v Delete_ll_EX child name %v verSeq %v err %v", parent.Name, child.Name, VerSeq, err)
 				} else {
 					log.LogDebugf("action[cleanSnapshot] parent %v Delete_ll_EX child name %v verSeq %v ino %v success", parent.Name, child.Name, VerSeq, ino)
