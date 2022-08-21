@@ -649,7 +649,129 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey, curVer 
 	return
 }
 
-func (i *Inode)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMultiSnapshotInfo) (uint64, bool) {
+func (inode *Inode) unlinkVerInList(ino *Inode, mpVer uint64, verlist []*MetaMultiSnapshotInfo) (ext2Del []proto.ExtentKey, doMore bool, status uint8) {
+	log.LogDebugf("action[unlinkVerInList] ino %v try search seq %v isdir %v", ino, ino.verSeq, proto.IsDir(inode.Type))
+	var dIno *Inode
+	if proto.IsDir(inode.Type) { // snapshot dir deletion don't take link into consider, but considers the scope of snapshot contrast to verList
+		var idx int
+		if dIno, idx = inode.getInoByVer(ino.verSeq, false); dIno == nil {
+			status = proto.OpNotExistErr
+			log.LogDebugf("action[unlinkVerInList] ino %v not found", ino)
+			return
+		}
+		if idx == 0 {
+			// header layer do nothing and be depends on should not be dropped
+			log.LogDebugf("action[unlinkVerInList] ino %v first layer do nothing", ino)
+			return
+		}
+		// if any alive snapshot in mp dimension exist in seq scope from dino to next ascend neighbor, dio snapshot be keep or else drop
+		var endSeq uint64
+		realIdx := idx-1
+		if realIdx == 0 {
+			endSeq = inode.verSeq
+		} else {
+			endSeq = inode.multiVersions[realIdx-1].verSeq
+		}
+
+		log.LogDebugf("action[unlinkVerInList] inode %v try drop multiVersion idx %v effective seq scope [%v,%v) ",
+			inode.Inode, realIdx, dIno.verSeq, endSeq)
+
+		for vidx, info := range verlist {
+			if info.VerSeq >= dIno.verSeq && info.VerSeq < endSeq {
+				log.LogDebugf("action[unlinkVerInList] inode %v dir layer idx %v still have effective snapshot seq %v.so don't drop", inode.Inode, realIdx, info.VerSeq)
+				return
+			}
+			if info.VerSeq >= endSeq || vidx == len(verlist)-1 {
+				log.LogDebugf("action[unlinkVerInList] inode %v try drop multiVersion idx %v and return", inode.Inode, realIdx)
+				inode.multiVersions = append(inode.multiVersions[:realIdx], inode.multiVersions[realIdx+1:]...)
+				return
+			}
+			log.LogDebugf("action[unlinkVerInList] inode %v try drop scope [%v, %v), mp ver %v not suitable", inode.Inode, dIno.verSeq, endSeq, info.VerSeq)
+		}
+		doMore = true
+	} else {
+		// special case, snapshot is the last one and be depended by upper version,update it's version to the right one
+		// ascend search util to the curr unCommit version in the verList
+		if ino.verSeq == inode.verSeq || (ino.verSeq == math.MaxUint64 && inode.verSeq == 0)  {
+			if len(verlist) == 0 {
+				status = proto.OpNotExistErr
+				log.LogErrorf("action[unlinkVerInList] inode %v verlist should be larger than 0, return not found", inode.Inode)
+				return
+			}
+
+			// just move to upper layer,the request snapshot be dropped
+			nVerSeq, found := inode.getLastestVer(inode.verSeq, false, verlist)
+			if !found {
+				status = proto.OpNotExistErr
+				return
+			}
+			inode.verSeq = nVerSeq
+			return
+		} else {
+			// don't unlink if no version satisfied
+			if ext2Del, dIno = inode.getAndDelVer(ino.verSeq, mpVer, verlist); dIno == nil {
+				status = proto.OpNotExistErr
+				log.LogDebugf("action[unlinkVerInList] ino %v", ino)
+				return
+			}
+		}
+	}
+	dIno.DecNLink()
+	log.LogDebugf("action[unlinkVerInList] inode %v snapshot layer be unlinked", ino.Inode)
+	doMore = true
+	return
+}
+
+func (inode* Inode) unlinkVerInTopLayer(ino *Inode, mpVer uint64, verlist []*MetaMultiSnapshotInfo) (ext2Del []proto.ExtentKey, doMore bool, status uint8){
+	// if there's no snapshot itself, nor have snapshot after inode's ver then need unlink directly and make no snapshot
+	// just move to upper layer, the behavior looks like that the snapshot be dropped
+	log.LogDebugf("action[unlinkVerInTopLayer] check if have snapshot depends on the deleitng ino %v (with no snapshot itself) found seq %v, verlist %v",
+		ino, inode.verSeq, verlist)
+	_, found := inode.getLastestVer(inode.verSeq, true, verlist)
+
+	if len(inode.multiVersions) == 0 && !found {
+		log.LogDebugf("action[unlinkVerInTopLayer] no snapshot available depends on ino %v not found seq %v and return, verlist %v", ino, inode.verSeq, verlist)
+		inode.DecNLink()
+		log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked", ino.Inode)
+		// operate inode directly
+		doMore = true
+		return
+	}
+	if inode.verSeq != mpVer && found { // need create version
+		log.LogDebugf("action[unlinkVerInTopLayer] need create version.ino %v withSeq %v not equal mp seq %v, verlist %v", ino, inode.verSeq, mpVer, verlist)
+		if proto.IsDir(inode.Type) { // dir is all info but inode is part,which is quit different
+			inode.CreateVer(mpVer)
+			inode.DecNLink()
+			log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, Dir create ver 1st layer", ino.Inode)
+		} else {
+			inode.CreateUnlinkVer(mpVer, verlist)
+			inode.DecNLink()
+			log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, File create ver 1st layer", ino.Inode)
+		}
+		return
+	} else {
+		log.LogDebugf("action[unlinkVerInTopLayer] need restore.ino %v withSeq %v equal mp seq, verlist %v", ino, inode.verSeq, verlist)
+		// need restore
+		if !proto.IsDir(inode.Type) {
+			var dIno *Inode
+			if ext2Del, dIno = inode.getAndDelVer(ino.verSeq, mpVer, verlist); dIno == nil {
+				status = proto.OpNotExistErr
+				log.LogDebugf("action[unlinkVerInTopLayer] ino %v", ino)
+				return
+			}
+			log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, File restore", ino.Inode)
+			dIno.DecNLink() // dIno should be inode
+
+		} else {
+			log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, Dir", ino.Inode)
+			inode.DecNLink()
+		}
+	}
+	doMore = true
+	return
+}
+
+func (i *Inode) getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMultiSnapshotInfo) (uint64, bool) {
 	if len(verlist) == 0 {
 		return 0, false
 	}
@@ -747,7 +869,7 @@ func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
 
 // only happened while data need migrate form high layer to lower one
 // move data to lower layer according to verlist(current layer), delete all if lower one exceed inode scope
-func (i *Inode) getAndDelVer(dVer uint64, gVer uint64, verlist []*MetaMultiSnapshotInfo) (delExtents []proto.ExtentKey, ino *Inode) {
+func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*MetaMultiSnapshotInfo) (delExtents []proto.ExtentKey, ino *Inode) {
 	var err error
 
 	log.LogDebugf("action[getAndDelVer] ino %v verSeq %v request del ver %v hist len %v isTmpFile %v",
@@ -755,7 +877,7 @@ func (i *Inode) getAndDelVer(dVer uint64, gVer uint64, verlist []*MetaMultiSnaps
 
 	// first layer need delete
 	if dVer == 0 {
-		if delExtents, err = i.RestoreMultiSnapExts(i.Extents.eks, gVer, 0); err != nil {
+		if delExtents, err = i.RestoreMultiSnapExts(i.Extents.eks, mpVer, 0); err != nil {
 			log.LogErrorf("action[getAndDelVer] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
 			return
 		}
@@ -780,7 +902,8 @@ func (i *Inode) getAndDelVer(dVer uint64, gVer uint64, verlist []*MetaMultiSnaps
 
 	for id, mIno := range i.multiVersions {
 		log.LogDebugf("action[getAndDelVer] ino %v multiVersions level %v verseq %v", i.Inode, id, mIno.verSeq)
-		if mIno.verSeq > dVer {
+		if mIno.verSeq < dVer {
+			log.LogDebugf("action[getAndDelVer] ino %v multiVersions level %v verseq %v", i.Inode, id, mIno.verSeq)
 			return
 		}
 		if mIno.verSeq == dVer {

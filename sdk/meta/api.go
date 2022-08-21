@@ -17,6 +17,7 @@ package meta
 import (
 	"fmt"
 	syslog "log"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -330,6 +331,9 @@ func (mw *MetaWrapper) BatchGetXAttr(inodes []uint64, keys []string) ([]*proto.X
 }
 
 func (mw *MetaWrapper) Delete_Ver_ll(parentID uint64, name string, isDir bool, verSeq uint64) (*proto.InodeInfo, error) {
+	if verSeq == 0 {
+		verSeq = math.MaxUint64
+	}
 	return mw.Delete_ll_EX(parentID, name, isDir, verSeq)
 }
 
