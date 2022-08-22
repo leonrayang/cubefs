@@ -649,6 +649,59 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey, curVer 
 	return
 }
 
+
+
+func (inode* Inode) unlinkVerInTopLayer(ino *Inode, mpVer uint64, verlist []*MetaMultiSnapshotInfo) (ext2Del []proto.ExtentKey, doMore bool, status uint8){
+	// if there's no snapshot itself, nor have snapshot after inode's ver then need unlink directly and make no snapshot
+	// just move to upper layer, the behavior looks like that the snapshot be dropped
+	log.LogDebugf("action[unlinkVerInTopLayer] check if have snapshot depends on the deleitng ino %v (with no snapshot itself) found seq %v, verlist %v",
+		ino, inode.verSeq, verlist)
+	_, found := inode.getLastestVer(inode.verSeq, true, verlist)
+	if !found {
+		if len(inode.multiVersions) == 0 {
+			log.LogDebugf("action[unlinkVerInTopLayer] no snapshot available depends on ino %v not found seq %v and return, verlist %v", ino, inode.verSeq, verlist)
+			inode.DecNLink()
+			log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked", ino.Inode)
+			// operate inode directly
+			doMore = true
+			return
+		}
+
+		log.LogDebugf("action[unlinkVerInTopLayer] need restore.ino %v withSeq %v equal mp seq, verlist %v", ino, inode.verSeq, verlist)
+		// need restore
+		if !proto.IsDir(inode.Type) {
+			var dIno *Inode
+			if ext2Del, dIno = inode.getAndDelVer(ino.verSeq, mpVer, verlist); dIno == nil {
+				status = proto.OpNotExistErr
+				log.LogDebugf("action[unlinkVerInTopLayer] ino %v", ino)
+				return
+			}
+			log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, File restore", ino.Inode)
+			dIno.DecNLink() // dIno should be inode
+			doMore = true
+		} else {
+			log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, Dir", ino.Inode)
+			inode.DecNLink()
+			doMore = true
+		}
+		return
+	}
+
+	log.LogDebugf("action[unlinkVerInTopLayer] need create version.ino %v withSeq %v not equal mp seq %v, verlist %v", ino, inode.verSeq, mpVer, verlist)
+	if proto.IsDir(inode.Type) { // dir is all info but inode is part,which is quit different
+		inode.CreateVer(mpVer)
+		inode.DecNLink()
+		log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, Dir create ver 1st layer", ino.Inode)
+	} else {
+		inode.CreateUnlinkVer(mpVer, verlist)
+		inode.DecNLink()
+		log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, File create ver 1st layer", ino.Inode)
+	}
+	return
+
+}
+
+
 func (inode *Inode) unlinkVerInList(ino *Inode, mpVer uint64, verlist []*MetaMultiSnapshotInfo) (ext2Del []proto.ExtentKey, doMore bool, status uint8) {
 	log.LogDebugf("action[unlinkVerInList] ino %v try search seq %v isdir %v", ino, ino.verSeq, proto.IsDir(inode.Type))
 	var dIno *Inode
@@ -705,6 +758,7 @@ func (inode *Inode) unlinkVerInList(ino *Inode, mpVer uint64, verlist []*MetaMul
 				status = proto.OpNotExistErr
 				return
 			}
+			log.LogDebugf("action[unlinkVerInList] inode %v update current verSeq %v to %v", inode.Inode, inode.verSeq, nVerSeq)
 			inode.verSeq = nVerSeq
 			return
 		} else {
@@ -718,55 +772,6 @@ func (inode *Inode) unlinkVerInList(ino *Inode, mpVer uint64, verlist []*MetaMul
 	}
 	dIno.DecNLink()
 	log.LogDebugf("action[unlinkVerInList] inode %v snapshot layer be unlinked", ino.Inode)
-	doMore = true
-	return
-}
-
-func (inode* Inode) unlinkVerInTopLayer(ino *Inode, mpVer uint64, verlist []*MetaMultiSnapshotInfo) (ext2Del []proto.ExtentKey, doMore bool, status uint8){
-	// if there's no snapshot itself, nor have snapshot after inode's ver then need unlink directly and make no snapshot
-	// just move to upper layer, the behavior looks like that the snapshot be dropped
-	log.LogDebugf("action[unlinkVerInTopLayer] check if have snapshot depends on the deleitng ino %v (with no snapshot itself) found seq %v, verlist %v",
-		ino, inode.verSeq, verlist)
-	_, found := inode.getLastestVer(inode.verSeq, true, verlist)
-
-	if len(inode.multiVersions) == 0 && !found {
-		log.LogDebugf("action[unlinkVerInTopLayer] no snapshot available depends on ino %v not found seq %v and return, verlist %v", ino, inode.verSeq, verlist)
-		inode.DecNLink()
-		log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked", ino.Inode)
-		// operate inode directly
-		doMore = true
-		return
-	}
-	if inode.verSeq != mpVer && found { // need create version
-		log.LogDebugf("action[unlinkVerInTopLayer] need create version.ino %v withSeq %v not equal mp seq %v, verlist %v", ino, inode.verSeq, mpVer, verlist)
-		if proto.IsDir(inode.Type) { // dir is all info but inode is part,which is quit different
-			inode.CreateVer(mpVer)
-			inode.DecNLink()
-			log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, Dir create ver 1st layer", ino.Inode)
-		} else {
-			inode.CreateUnlinkVer(mpVer, verlist)
-			inode.DecNLink()
-			log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, File create ver 1st layer", ino.Inode)
-		}
-		return
-	} else {
-		log.LogDebugf("action[unlinkVerInTopLayer] need restore.ino %v withSeq %v equal mp seq, verlist %v", ino, inode.verSeq, verlist)
-		// need restore
-		if !proto.IsDir(inode.Type) {
-			var dIno *Inode
-			if ext2Del, dIno = inode.getAndDelVer(ino.verSeq, mpVer, verlist); dIno == nil {
-				status = proto.OpNotExistErr
-				log.LogDebugf("action[unlinkVerInTopLayer] ino %v", ino)
-				return
-			}
-			log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, File restore", ino.Inode)
-			dIno.DecNLink() // dIno should be inode
-
-		} else {
-			log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, Dir", ino.Inode)
-			inode.DecNLink()
-		}
-	}
 	doMore = true
 	return
 }
