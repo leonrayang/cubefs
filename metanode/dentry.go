@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/util/log"
 	"math"
 )
@@ -108,7 +109,7 @@ func (d *Dentry) getDentryByVerSeq(verSeq uint64) (den *Dentry, idx int) {
 	return
 }
 
-func (d *Dentry)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMultiSnapshotInfo) (uint64, bool) {
+func (d *Dentry)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*proto.VolVersionInfo) (uint64, bool) {
 	if len(verlist) == 0 {
 		return 0, false
 	}
@@ -116,13 +117,13 @@ func (d *Dentry)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMu
 		if commit && id == len(verlist)-1 {
 			break
 		}
-		if info.VerSeq > reqVerSeq {
-			return info.VerSeq, true
+		if info.Ver > reqVerSeq {
+			return info.Ver, true
 		}
 	}
 
 	log.LogErrorf("action[getLastestVer] inode %v reqVerSeq %v not found, the largetst one %v",
-		d.Inode, reqVerSeq, verlist[len(verlist)-1].VerSeq)
+		d.Inode, reqVerSeq, verlist[len(verlist)-1].Ver)
 	return 0, false
 }
 
@@ -131,7 +132,7 @@ func (d *Dentry)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*MetaMu
 // the scope of  deleted happened from the DentryDeleted flag owner(include in) to the file with the same name be created is invisible,
 // if create anther dentry with larger verSeq, put the eleted dentry to the history list.
 // return doMore bool.True means need do next step on caller such as unlink parentIO
-func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []*MetaMultiSnapshotInfo) (rd *Dentry, dmore bool, clean bool) { // bool is doMore
+func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []*proto.VolVersionInfo) (rd *Dentry, dmore bool, clean bool) { // bool is doMore
 	log.LogDebugf("action[deleteVerSnapshot] enter.dentry %v delVerSeq %v mpVer %v verList %v", d, delVerSeq, mpVerSeq, verlist)
 	// create denParm version
 	if delVerSeq != math.MaxUint64 && delVerSeq > mpVerSeq {
@@ -199,17 +200,17 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 			d.Inode, realIdx, den.getVerSeq(), endSeq)
 
 		for _, info := range verlist {
-			if info.VerSeq >= startSeq && info.VerSeq < endSeq { // the version itself not include in
-				log.LogDebugf("action[deleteVerSnapshotInList.inSnapList_del_%v] inode %v dir layer idx %v include snapshot %v.don't drop", delVerSeq, den.Inode, realIdx, info.VerSeq)
+			if info.Ver >= startSeq && info.Ver < endSeq { // the version itself not include in
+				log.LogDebugf("action[deleteVerSnapshotInList.inSnapList_del_%v] inode %v dir layer idx %v include snapshot %v.don't drop", delVerSeq, den.Inode, realIdx, info.Ver)
 				// there's some snapshot depends on the version trying to be deleted,
 				// keep it,all the snapshots which depends on this version will reach here when make snapshot delete, and found the scope is minimized
 				// other versions depends upon this version will be found zero finally after deletions and do clean
 				return den, false, false
 			}
-			if info.VerSeq >= endSeq {
+			if info.Ver >= endSeq {
 				break
 			}
-			log.LogDebugf("action[deleteVerSnapshotInList.inSnapList_del_%v] inode %v try drop scope [%v, %v), mp ver %v not suitable", delVerSeq, den.Inode, den.VerSeq, endSeq, info.VerSeq)
+			log.LogDebugf("action[deleteVerSnapshotInList.inSnapList_del_%v] inode %v try drop scope [%v, %v), mp ver %v not suitable", delVerSeq, den.Inode, den.VerSeq, endSeq, info.Ver)
 		}
 
 		log.LogDebugf("action[deleteVerSnapshotInList.inSnapList_del_%v] inode %v try drop multiVersion idx %v", delVerSeq, den.Inode, realIdx)

@@ -16,6 +16,7 @@ package wrapper
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -392,7 +393,7 @@ func (w *Wrapper) updateCheckVerList(volName string, verReadSeq uint64) error {
 	defer w.RUnlock()
 	verList, err := w.mc.AdminAPI().GetVerList(volName)
 	if err != nil {
-		log.LogErrorf("updateDataNodeStatus: get cluster fail: err(%v)", err)
+		log.LogErrorf("updateCheckVerList: get cluster fail: err(%v)", err)
 		return err
 	}
 
@@ -410,6 +411,9 @@ func (w *Wrapper) updateCheckVerList(volName string, verReadSeq uint64) error {
 		return fmt.Errorf("%v", msg)
 	}
 	if verReadSeq > 0 {
+		if verReadSeq == math.MaxUint64 {
+			verReadSeq = 0
+		}
 		for _, ver := range verList.VerList {
 			log.LogInfof("action[updateCheckVerList] ver %v,%v,%v", ver.Ver, ver.Status, ver.Ctime)
 			if ver.Ver == verReadSeq {
