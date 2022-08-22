@@ -125,7 +125,7 @@ func (mp *metaPartition) Ascend(f func(i BtreeItem) bool) {
 // normal unlink seq is 0
 // snapshot unlink seq is snapshotVersion
 // fsmUnlinkInode delete the specified inode from inode tree.
-func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshotInfo) (resp *InodeResponse) {
+func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*proto.VolVersionInfo) (resp *InodeResponse) {
 	log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
 	var (
 		ext2Del []proto.ExtentKey
@@ -183,7 +183,9 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 			mp.freeList.Push(inode.Inode)
 			log.LogDebugf("action[fsmUnlinkInode] ino %v", inode)
 		}
-	} else {
+	}
+
+	if len(ext2Del) > 0 {
 		log.LogDebugf("action[fsmUnlinkInode] ino %v ext2Del %v", ino, ext2Del)
 		mp.extDelCh <- ext2Del
 	}
@@ -194,7 +196,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*MetaMultiSnapshot
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInodeBatch(ib InodeBatch) (resp []*InodeResponse) {
 	for _, ino := range ib {
-		resp = append(resp, mp.fsmUnlinkInode(ino, mp.multiVersionList))
+		resp = append(resp, mp.fsmUnlinkInode(ino, mp.multiVersionList.VerList))
 	}
 	return
 }

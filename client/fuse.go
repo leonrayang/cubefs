@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	syslog "log"
+	"math"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -700,9 +701,15 @@ func parseMountOption(cfg *config.Config) (*proto.MountOptions, error) {
 	}
 
 	opt.EnableBcache = GlobalMountOptions[proto.EnableBcache].GetBool()
-	//if opt.Rdonly {
-		opt.VerReadSeq = uint64(GlobalMountOptions[proto.SnapshotReadVerSeq].GetInt64())
-	//}
+	if opt.Rdonly {
+		verReadSeq := GlobalMountOptions[proto.SnapshotReadVerSeq].GetInt64()
+		if verReadSeq == -1 {
+			opt.VerReadSeq = math.MaxUint64
+		} else {
+			opt.VerReadSeq  = uint64(verReadSeq)
+		}
+		log.LogDebugf("oonfig.verReadSeq %v opt.VerReadSeq %v",verReadSeq, opt.VerReadSeq)
+	}
 	opt.MetaSendTimeout = GlobalMountOptions[proto.MetaSendTimeout].GetInt64()
 
 	opt.BuffersTotalLimit = GlobalMountOptions[proto.BuffersTotalLimit].GetInt64()

@@ -260,7 +260,7 @@ type metaPartition struct {
 	xattrLock              sync.Mutex
 	//snapshot
 	verSeq                  uint64
-	multiVersionList 		[]*MetaMultiSnapshotInfo
+	multiVersionList 		*proto.VolVersionInfoList
 	versionLock             sync.Mutex
 }
 
@@ -379,6 +379,15 @@ func (mp *metaPartition) onStart() (err error) {
 		log.LogErrorf("action[onStart] GetVolumeSimpleInfo err[%v]", err)
 		return
 	}
+
+	verList, verErr := masterClient.AdminAPI().GetVerList(mp.config.VolName)
+	if verErr != nil {
+		err = verr
+		log.LogErrorf("action[onStart] GetVerList err[%v]", err)
+		return
+	}
+	mp.multiVersionList = verList
+
 	mp.volType = volumeInfo.VolType
 	var ebsClient *blobstore.BlobStoreClient
 	if clusterInfo.EbsAddr != "" {
@@ -854,11 +863,11 @@ func (mp *metaPartition) multiVersionTTLWork() (err error) {
 					log.LogDebugf("[multiVersionTTLWork] partitionId=%d is not leader, skip", mp.config.PartitionId)
 				}
 
-				for _, version := range mp.multiVersionList {
+				for _, version := range mp.multiVersionList.VerList {
 					if version.Status == proto.VersionNormal {
 						continue
 					}
-					go mp.delVersion(version.VerSeq)
+					go mp.delVersion(version.Ver)
 				}
 
 			case <-mp.stopC:

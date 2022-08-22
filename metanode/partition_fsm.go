@@ -61,7 +61,7 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		if err = ino.Unmarshal(msg.V); err != nil {
 			return
 		}
-		resp = mp.fsmUnlinkInode(ino, mp.multiVersionList)
+		resp = mp.fsmUnlinkInode(ino, mp.multiVersionList.VerList)
 	case opFSMUnlinkInodeBatch:
 		inodes, err := InodeBatchUnmarshal(msg.V)
 		if err != nil {
@@ -251,27 +251,27 @@ func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
 	log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v", mp.config.PartitionId, opData.VerSeq, opData.Op)
 
 	if opData.Op == proto.CreateVersionCommit {
-		cnt := len(mp.multiVersionList)
-		if cnt > 0 && mp.multiVersionList[cnt-1].VerSeq >= opData.VerSeq {
+		cnt := len(mp.multiVersionList.VerList)
+		if cnt > 0 && mp.multiVersionList.VerList[cnt-1].Ver >= opData.VerSeq {
 			log.LogErrorf("action[MultiVersionOp] reqeust seq %v lessOrEqual last exist snapshot seq %v",
-				mp.multiVersionList[cnt-1].VerSeq, opData.VerSeq)
+				mp.multiVersionList.VerList[cnt-1].Ver, opData.VerSeq)
 			return
 		}
-		newVer := &MetaMultiSnapshotInfo{
+		newVer := &proto.VolVersionInfo{
 			Status: proto.VersionNormal,
 			Ctime: time.Now(),
-			VerSeq: opData.VerSeq,
+			Ver: opData.VerSeq,
 		}
 		mp.verSeq = opData.VerSeq
-		mp.multiVersionList = append(mp.multiVersionList, newVer)
+		mp.multiVersionList.VerList = append(mp.multiVersionList.VerList, newVer)
 
-		log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v, seqArray size %v", mp.config.PartitionId, opData.VerSeq, opData.Op, len(mp.multiVersionList))
+		log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v, seqArray size %v", mp.config.PartitionId, opData.VerSeq, opData.Op, len(mp.multiVersionList.VerList))
 	} else 	if opData.Op == proto.DeleteVersion {
-		for i, ver := range mp.multiVersionList {
-			if ver.VerSeq == opData.VerSeq {
-				log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v, seqArray size %v", mp.config.PartitionId, opData.VerSeq, opData.Op, len(mp.multiVersionList))
+		for i, ver := range mp.multiVersionList.VerList {
+			if ver.Ver == opData.VerSeq {
+				log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v, seqArray size %v", mp.config.PartitionId, opData.VerSeq, opData.Op, len(mp.multiVersionList.VerList))
 				// mp.multiVersionList = append(mp.multiVersionList[:i], mp.multiVersionList[i+1:]...)
-				mp.multiVersionList = append(mp.multiVersionList[:i], mp.multiVersionList[i+1:]...)
+				mp.multiVersionList.VerList = append(mp.multiVersionList.VerList[:i], mp.multiVersionList.VerList[i+1:]...)
 				break
 			}
 		}
