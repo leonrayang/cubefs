@@ -898,7 +898,7 @@ func (mw *MetaWrapper) batchIget(wg *sync.WaitGroup, mp *MetaPartition, inodes [
 		log.LogErrorf("batchIget: packet(%v) mp(%v) err(%v) PacketData(%v)", packet, mp, err, string(packet.Data))
 		return
 	}
-
+	log.LogDebugf("action[batchIget] resp %v", resp)
 	if len(resp.Infos) == 0 {
 		return
 	}

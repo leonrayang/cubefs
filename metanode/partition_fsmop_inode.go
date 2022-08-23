@@ -140,6 +140,7 @@ func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
 
 	i := mp.getInodeByVer(ino)
 	if i == nil || i.ShouldDelete() {
+		log.LogDebugf("action[getInode] ino  %v not found", ino)
 		resp.Status = proto.OpNotExistErr
 		return
 	}

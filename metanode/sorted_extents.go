@@ -200,6 +200,8 @@ func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []p
 	delKey := *key
 	delKey.ExtentOffset = key.ExtentOffset + (ekSplit.FileOffset - key.FileOffset)
 	delKey.Size = ekSplit.Size
+	delKey.FileOffset = ekSplit.FileOffset
+
 	delExtents = append(delExtents, delKey)
 
 	log.LogDebugf("action[SplitWithCheck] key offset %v, split FileOffset %v, startIndex %v,key [%v], ekSplit[%v] delkey [%v]",
