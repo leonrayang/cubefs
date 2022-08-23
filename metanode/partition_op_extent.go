@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/util/log"
+	"math"
 	"os"
 	"sort"
 )
@@ -141,6 +142,9 @@ func (mp *metaPartition) GetSpecVersionInfo(req *proto.MultiVersionOpRequest, p 
 
 func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest, rsp *proto.GetExtentsResponse) {
 	log.LogInfof("action[GetExtentByVer] read ino %v readseq %v ino seq %v hist len %v", ino.Inode, req.VerSeq, ino.verSeq, len(ino.multiVersions))
+	if req.VerSeq == math.MaxUint64 {
+		req.VerSeq = 0
+	}
 	ino.DoReadFunc(func() {
 		ino.Extents.Range(func(ek proto.ExtentKey) bool {
 			if ek.VerSeq <= req.VerSeq {
@@ -178,12 +182,11 @@ func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest
 
 // ExtentsList returns the list of extents.
 func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (err error) {
-	log.LogDebugf("action[ExtentsList] inode %v verSeq", req.Inode, req.VerSeq)
+	log.LogDebugf("action[ExtentsList] inode %v verSeq %v", req.Inode, req.VerSeq)
 	ino := NewInode(req.Inode, 0)
 	retMsg := mp.getInode(ino)
 
 	//notice.getInode should not set verSeq due to extent need filter from the newest layer to req.VerSeq
-	ino.verSeq = req.VerSeq
 	ino = retMsg.Msg
 	var (
 		reply  []byte
