@@ -55,6 +55,7 @@ type clusterValue struct {
 	ClusterUuid                 string
 	ClusterUuidEnable           bool
 	MetaPartitionInodeIdStep    uint64
+	MaxConcurrentLcNodes        uint64
 }
 
 func newClusterValue(c *Cluster) (cv *clusterValue) {
@@ -79,6 +80,7 @@ func newClusterValue(c *Cluster) (cv *clusterValue) {
 		ClusterUuid:                 c.clusterUuid,
 		ClusterUuidEnable:           c.clusterUuidEnable,
 		MetaPartitionInodeIdStep:    c.cfg.MetaPartitionInodeIdStep,
+		MaxConcurrentLcNodes:        c.cfg.MaxConcurrentLcNodes,
 	}
 	return cv
 }
@@ -919,6 +921,9 @@ func (c *Cluster) loadZoneValue() (err error) {
 
 	return
 }
+func (c *Cluster) updateMaxConcurrentLcNodes(val uint64) {
+	atomic.StoreUint64(&c.cfg.MaxConcurrentLcNodes, val)
+}
 
 //persist cluster value if not persisted; set create time for cluster being created.
 func (c *Cluster) checkPersistClusterValue() {
@@ -973,6 +978,11 @@ func (c *Cluster) loadClusterValue() (err error) {
 
 		log.LogDebugf("action[loadClusterValue] loaded cluster value: %+v", cv)
 		c.CreateTime = cv.CreateTime
+
+		if cv.MaxConcurrentLcNodes == 0 {
+			cv.MaxConcurrentLcNodes = defaultMaxConcurrentLcNodes
+		}
+
 		c.cfg.MetaNodeThreshold = cv.Threshold
 		//c.cfg.DirChildrenNumLimit = cv.DirChildrenNumLimit
 		c.cfg.ClusterLoadFactor = cv.LoadFactor
@@ -1001,6 +1011,7 @@ func (c *Cluster) loadClusterValue() (err error) {
 		}
 		c.updateInodeIdStep(cv.MetaPartitionInodeIdStep)
 
+		c.updateMaxConcurrentLcNodes(cv.MaxConcurrentLcNodes)
 		log.LogInfof("action[loadClusterValue], metaNodeThreshold[%v]", cv.Threshold)
 
 		c.checkDataReplicasEnable = cv.CheckDataReplicasEnable
