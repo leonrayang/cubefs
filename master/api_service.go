@@ -2727,6 +2727,23 @@ func (m *Server) associateVolWithUser(userID, volName string) error {
 	return nil
 }
 
+func (m *Server) setConLcNodeNum(w http.ResponseWriter, r *http.Request) {
+	var (
+		count uint64
+		err   error
+	)
+
+	if count, err = parseRequestToGetConcurrentLcNode(r); err != nil {
+		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
+		return
+	}
+	if err = m.cluster.setMaxConcurrentLcNodes(count); err != nil {
+		sendErrReply(w, r, newErrHTTPReply(err))
+		return
+	}
+	sendOkReply(w, r, newSuccessHTTPReply(fmt.Sprintf("set MaxConcurrentLcNodes to %v successfully", count)))
+}
+
 // handle tasks such as heartbeat，expiration scanning, etc.
 func (m *Server) handleLcNodeTaskResponse(w http.ResponseWriter, r *http.Request) {
 	tr, err := parseRequestToGetTaskResponse(r)

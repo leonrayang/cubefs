@@ -460,10 +460,19 @@ func (c *Cluster) checkMetaNodeHeartbeat() {
 func (c *Cluster) checkLcNodeHeartbeat() {
 	tasks := make([]*proto.AdminTask, 0)
 	diedNodes := make([]string, 0)
+
+	var currentRunningLcnodesNum uint64 = 0
 	c.s3LcMgr.lcNodes.Range(func(addr, lcNode interface{}) bool {
 		node := lcNode.(*LcNode)
 		node.checkLiveness()
 		if !node.IsActive {
+			log.LogInfof("checkLcNodeHeartbeat: lcnode(%v) is inactive", node.Addr)
+			diedNodes = append(diedNodes, node.Addr)
+			return true
+		}
+		currentRunningLcnodesNum++
+		if currentRunningLcnodesNum > c.cfg.MaxConcurrentLcNodes {
+			log.LogInfof("checkLcNodeHeartbeat: max concurrent lcnodes reached, lcnode(%v) is prepare to step down", node.Addr)
 			diedNodes = append(diedNodes, node.Addr)
 			return true
 		}
@@ -2617,6 +2626,14 @@ func (c *Cluster) metaNodeCount() (len int) {
 	return
 }
 
+func (c *Cluster) lcNodeCount() (len int) {
+	c.s3LcMgr.lcNodes.Range(func(key, value interface{}) bool {
+		len++
+		return true
+	})
+	return
+}
+
 func (c *Cluster) allDataNodes() (dataNodes []proto.NodeView) {
 	dataNodes = make([]proto.NodeView, 0)
 	c.dataNodes.Range(func(addr, node interface{}) bool {
@@ -2767,6 +2784,18 @@ func (c *Cluster) setDisableAutoAllocate(disableAutoAllocate bool) (err error) {
 	if err = c.syncPutCluster(); err != nil {
 		log.LogErrorf("action[setDisableAutoAllocate] err[%v]", err)
 		c.DisableAutoAllocate = oldFlag
+		err = proto.ErrPersistenceByRaft
+		return
+	}
+	return
+}
+
+func (c *Cluster) setMaxConcurrentLcNodes(count uint64) (err error) {
+	oldCount := c.cfg.MaxConcurrentLcNodes
+	c.cfg.MaxConcurrentLcNodes = count
+	if err = c.syncPutCluster(); err != nil {
+		log.LogErrorf("action[setMaxConcurrentLcNodes] err[%v]", err)
+		c.cfg.MaxConcurrentLcNodes = oldCount
 		err = proto.ErrPersistenceByRaft
 		return
 	}

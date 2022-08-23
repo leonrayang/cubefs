@@ -50,6 +50,7 @@ const (
 	AdminUpdateZoneExcludeRatio     = "/admin/updateZoneExcludeRatio"
 	AdminSetNodeRdOnly              = "/admin/setNodeRdOnly"
 
+	AdminSetConLcNodeNum = "/admin/setConLcNodeNum"
 	//graphql master api
 	AdminClusterAPI = "/api/cluster"
 	AdminUserAPI    = "/api/user"
@@ -364,9 +365,15 @@ type ScanTaskInfo struct {
 	RoutineId int64
 }
 
+type ScanInfo struct {
+	ScanTaskInfo
+	TaskStatistics
+}
+
 // LcNodeHeartbeatResponse defines the response to the lc node heartbeat.
 type LcNodeHeartbeatResponse struct {
-	ScanningTasks []*ScanTaskInfo
+	//ScanningTasks []*ScanTaskInfo
+	ScanningTasks map[string]*ScanInfo
 	Status        uint8
 	Result        string
 }

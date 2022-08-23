@@ -40,6 +40,7 @@ type clusterValue struct {
 	MetaNodeDeleteWorkerSleepMs uint64
 	DataNodeAutoRepairLimitRate uint64
 	FaultDomain                 bool
+	MaxConcurrentLcNodes        uint64
 }
 
 func newClusterValue(c *Cluster) (cv *clusterValue) {
@@ -53,6 +54,7 @@ func newClusterValue(c *Cluster) (cv *clusterValue) {
 		DataNodeAutoRepairLimitRate: c.cfg.DataNodeAutoRepairLimitRate,
 		DisableAutoAllocate:         c.DisableAutoAllocate,
 		FaultDomain:                 c.FaultDomain,
+		MaxConcurrentLcNodes:        c.cfg.MaxConcurrentLcNodes,
 	}
 	return cv
 }
@@ -628,6 +630,10 @@ func (c *Cluster) updateDataNodeDeleteLimitRate(val uint64) {
 	atomic.StoreUint64(&c.cfg.DataNodeDeleteLimitRate, val)
 }
 
+func (c *Cluster) updateMaxConcurrentLcNodes(val uint64) {
+	atomic.StoreUint64(&c.cfg.MaxConcurrentLcNodes, val)
+}
+
 func (c *Cluster) loadClusterValue() (err error) {
 	result, err := c.fsm.store.SeekForPrefix([]byte(clusterPrefix))
 	if err != nil {
@@ -640,6 +646,11 @@ func (c *Cluster) loadClusterValue() (err error) {
 			log.LogErrorf("action[loadClusterValue], unmarshal err:%v", err.Error())
 			return err
 		}
+
+		if cv.MaxConcurrentLcNodes == 0 {
+			cv.MaxConcurrentLcNodes = defaultMaxConcurrentLcNodes
+		}
+
 		c.cfg.MetaNodeThreshold = cv.Threshold
 		c.cfg.ClusterLoadFactor = cv.LoadFactor
 		c.DisableAutoAllocate = cv.DisableAutoAllocate
@@ -647,6 +658,7 @@ func (c *Cluster) loadClusterValue() (err error) {
 		c.updateMetaNodeDeleteWorkerSleepMs(cv.MetaNodeDeleteWorkerSleepMs)
 		c.updateDataNodeDeleteLimitRate(cv.DataNodeDeleteLimitRate)
 		c.updateDataNodeAutoRepairLimit(cv.DataNodeAutoRepairLimitRate)
+		c.updateMaxConcurrentLcNodes(cv.MaxConcurrentLcNodes)
 		log.LogInfof("action[loadClusterValue], metaNodeThreshold[%v]", cv.Threshold)
 	}
 	return
