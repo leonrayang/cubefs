@@ -28,12 +28,12 @@ import (
 )
 
 type Ver2PhaseCommit struct {
-	op              uint8
-	prepareInfo     *proto.VolVersionInfo
-	commitCnt    	uint32
-	nodeCnt      	uint32
-	dataNodeArray   *sync.Map
-	metaNodeArray   *sync.Map
+	op            uint8
+	prepareInfo   *proto.VolVersionInfo
+	commitCnt     uint32
+	nodeCnt       uint32
+	dataNodeArray *sync.Map
+	metaNodeArray *sync.Map
 }
 
 func (commit *Ver2PhaseCommit) String() string {
@@ -61,26 +61,26 @@ type VolVersionManager struct {
 	cancel           chan bool
 	verSeq           uint64
 	enabled          bool
-	c          		 *Cluster
+	c                *Cluster
 	sync.RWMutex
 }
 
 func newVersionMgr(vol *Vol) *VolVersionManager {
 	return &VolVersionManager{
-		vol:vol,
-		wait:make(chan error, 1),
-		cancel:make(chan bool,1),
-		prepareCommit:&Ver2PhaseCommit{
+		vol:    vol,
+		wait:   make(chan error, 1),
+		cancel: make(chan bool, 1),
+		prepareCommit: &Ver2PhaseCommit{
 			dataNodeArray: new(sync.Map),
 			metaNodeArray: new(sync.Map),
 		},
 	}
 }
-func(verMgr * VolVersionManager) String() string{
+func (verMgr *VolVersionManager) String() string {
 	return fmt.Sprintf("mgr:{vol[%v],status[%v] verSeq [%v], prepareinfo [%v]}",
 		verMgr.vol.Name, verMgr.status, verMgr.verSeq, verMgr.prepareCommit)
 }
-func(verMgr * VolVersionManager) Persist() (err error){
+func (verMgr *VolVersionManager) Persist() (err error) {
 	var val []byte
 	if val, err = json.Marshal(verMgr.multiVersionList); err != nil {
 		return
@@ -91,21 +91,21 @@ func(verMgr * VolVersionManager) Persist() (err error){
 	return
 }
 
-func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo){
+func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo) {
 	log.LogInfof("action[CommitVer] %v", verMgr)
 	if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
 		ver = verMgr.prepareCommit.prepareInfo
 		commitVer := &proto.VolVersionInfo{
-			Ver:ver.Ver,
-			Ctime: ver.Ctime,
+			Ver:    ver.Ver,
+			Ctime:  ver.Ctime,
 			Status: proto.VersionNormal,
 		}
 		verMgr.multiVersionList = append(verMgr.multiVersionList, commitVer)
 		verMgr.verSeq = ver.Ver
 		log.LogInfof("action[CommitVer] ask mgr do commit in next step version %v", ver)
-		verMgr.wait<-nil
+		verMgr.wait <- nil
 	} else if verMgr.prepareCommit.op == proto.DeleteVersion {
-		idx, found  := verMgr.getLayInfo(verMgr.prepareCommit.prepareInfo.Ver)
+		idx, found := verMgr.getLayInfo(verMgr.prepareCommit.prepareInfo.Ver)
 		if !found {
 			log.LogErrorf("action[CommitVer] vol %v not found seq %v in list but commit", verMgr.vol.Name, verMgr.prepareCommit.prepareInfo.Ver)
 			return
@@ -121,23 +121,23 @@ func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo){
 	return
 }
 
-func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error){
+func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error) {
 	log.LogInfof("action[GenerateVer] vol %v  enter verseq %v", verSeq)
 	verMgr.Lock()
 	defer verMgr.Unlock()
 	tm := time.Now()
 	verMgr.enabled = true
 	if len(verMgr.multiVersionList) > MaxSnapshotCount {
-		err =  fmt.Errorf("too much version exceed %v in list", MaxSnapshotCount)
+		err = fmt.Errorf("too much version exceed %v in list", MaxSnapshotCount)
 		log.LogErrorf("action[GenerateVer] err %v", err)
 		return
 	}
 
 	verMgr.prepareCommit.reset()
-	verMgr.prepareCommit.prepareInfo =  &proto.VolVersionInfo{
-		Ver:	verSeq,
-		Ctime:	tm,
-		Status:	proto.VersionNormal,
+	verMgr.prepareCommit.prepareInfo = &proto.VolVersionInfo{
+		Ver:    verSeq,
+		Ctime:  tm,
+		Status: proto.VersionNormal,
 	}
 
 	verMgr.prepareCommit.op = op
@@ -151,7 +151,7 @@ func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error
 	return
 }
 
-func (verMgr *VolVersionManager) DelVer() (err error){
+func (verMgr *VolVersionManager) DelVer() (err error) {
 	verMgr.Lock()
 	defer verMgr.Unlock()
 
@@ -165,8 +165,8 @@ func (verMgr *VolVersionManager) DelVer() (err error){
 }
 
 const (
-	TypeNoReply = 0
-	TypeReply   = 1
+	TypeNoReply      = 0
+	TypeReply        = 1
 	MaxSnapshotCount = 30
 )
 
@@ -190,7 +190,7 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 
 	dFunc := func(pType uint32, array *sync.Map) {
 		if val, ok := array.Load(resp.Addr); ok {
-			if rType,rok := val.(int); rok && rType == TypeNoReply {
+			if rType, rok := val.(int); rok && rType == TypeNoReply {
 				log.LogInfof("action[handleTaskRsp] node %v partitionType %v,op %v, inner op %v",
 					resp.Addr, partitionType, resp.Op, verMgr.prepareCommit.op)
 				array.Store(resp.Addr, TypeReply)
@@ -201,7 +201,7 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 
 					if verMgr.prepareCommit.prepareInfo.Status == proto.VersionWorking {
 						verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
-						verMgr.wait<-fmt.Errorf("pType %v node %v error %v", pType, resp.Addr, resp.Status)
+						verMgr.wait <- fmt.Errorf("pType %v node %v error %v", pType, resp.Addr, resp.Status)
 						log.LogErrorf("action[handleTaskRsp] type %v commit cnt %v, rsp status %v mgr status %v result %v",
 							pType, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt), resp.Status, verMgr.status, resp.Result)
 						return
@@ -244,7 +244,7 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 			log.LogWarnf("action[handleTaskRsp] ver already update all node now! op %v, verseq %v,commit cnt %v",
 				resp.Op, resp.VerSeq, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt))
 			verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingFinished
-			verMgr.wait<-nil
+			verMgr.wait <- nil
 		}
 	}
 }
@@ -275,7 +275,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 	verMgr.prepareCommit.op = proto.CreateVersionPrepare
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	go func() (ver *proto.VolVersionInfo, err error){
+	go func() (ver *proto.VolVersionInfo, err error) {
 		log.LogInfof("action[createVer2PhaseTask] verseq %v op %v enter wait schedule", verSeq, verMgr.prepareCommit.op)
 		defer func() {
 			log.LogDebugf("action[createVer2PhaseTask] status %v", verMgr.status)
@@ -287,7 +287,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 		}()
 		ticker := time.NewTicker(time.Second)
 		cnt := 0
-		for{
+		for {
 			select {
 			case err = <-verMgr.wait:
 				log.LogInfof("action[createVer2PhaseTask] go routine verseq %v op %v get err %v", verSeq, verMgr.prepareCommit.op, err)
@@ -344,8 +344,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 	return
 }
 
-
-func (verMgr *VolVersionManager) createTaskToDataNode(cluster *Cluster, verSeq uint64, op uint8, force bool) (err error){
+func (verMgr *VolVersionManager) createTaskToDataNode(cluster *Cluster, verSeq uint64, op uint8, force bool) (err error) {
 	var (
 		dpHost sync.Map
 	)
@@ -370,7 +369,7 @@ func (verMgr *VolVersionManager) createTaskToDataNode(cluster *Cluster, verSeq u
 			verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
 			return false
 		}
-		verMgr.prepareCommit.dataNodeArray.Store(node.Addr,TypeNoReply)
+		verMgr.prepareCommit.dataNodeArray.Store(node.Addr, TypeNoReply)
 		verMgr.prepareCommit.nodeCnt++
 		log.LogInfof("action[createTaskToDataNode] volume %v addr %v op %v verseq %v", verMgr.vol.Name, addr.(string), op, verSeq)
 		task := node.createVersionTask(verMgr.vol.Name, verSeq, op, addr.(string))
@@ -391,7 +390,7 @@ func (verMgr *VolVersionManager) createTaskToDataNode(cluster *Cluster, verSeq u
 func (verMgr *VolVersionManager) createTaskToMetaNode(cluster *Cluster, verSeq uint64, op uint8, force bool) (err error) {
 	var (
 		mpHost sync.Map
-		ok bool
+		ok     bool
 	)
 	log.LogInfof("action[verManager.createTaskToMetaNode] vol %v verSeq %v, dp cnt %v", verMgr.vol.Name, verSeq, len(verMgr.vol.MetaPartitions))
 	verMgr.vol.mpsLock.RLock()
@@ -415,7 +414,7 @@ func (verMgr *VolVersionManager) createTaskToMetaNode(cluster *Cluster, verSeq u
 			return false
 		}
 		verMgr.prepareCommit.nodeCnt++
-		verMgr.prepareCommit.metaNodeArray.Store(node.Addr,TypeNoReply)
+		verMgr.prepareCommit.metaNodeArray.Store(node.Addr, TypeNoReply)
 		task := node.createVersionTask(verMgr.vol.Name, verSeq, op, addr.(string))
 		tasks = append(tasks, task)
 		return true
@@ -442,7 +441,7 @@ func (verMgr *VolVersionManager) startWork() (err error) {
 		log.LogWarnf("action[VolVersionManager.startWork] %v", err)
 		return
 	}
-	if !atomic.CompareAndSwapUint32(&verMgr.status, status, proto.VersionWorking)  {
+	if !atomic.CompareAndSwapUint32(&verMgr.status, status, proto.VersionWorking) {
 		err = fmt.Errorf("have task still working,try it later")
 		log.LogWarnf("action[VolVersionManager.startWork] %v", err)
 		return
@@ -468,7 +467,7 @@ func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op 
 	// del operation commit directly don't have prepare step to build prepare info,thus init here
 	if op == proto.DeleteVersion {
 		var (
-			idx int
+			idx   int
 			found bool
 		)
 		if idx, found = verMgr.getLayInfo(verSeq); !found {
@@ -476,7 +475,7 @@ func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op 
 			log.LogErrorf("action[VolVersionManager.createTask] vol %v op %v verSeq %v not found", verMgr.vol.Name, op, verSeq)
 			return nil, fmt.Errorf("not found")
 		}
-		if idx == len(verMgr.multiVersionList) -1 {
+		if idx == len(verMgr.multiVersionList)-1 {
 			verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
 			log.LogErrorf("action[VolVersionManager.createTask] vol %v op %v verSeq %v is uncommitted", verMgr.vol.Name, op, verSeq)
 			return nil, fmt.Errorf("uncommited version")
@@ -493,8 +492,8 @@ func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op 
 		verMgr.prepareCommit.op = op
 		verMgr.prepareCommit.prepareInfo =
 			&proto.VolVersionInfo{
-				Ver:verSeq,
-				Ctime: time.Now(),
+				Ver:    verSeq,
+				Ctime:  time.Now(),
 				Status: proto.VersionWorking,
 			}
 	}
@@ -517,9 +516,9 @@ func (verMgr *VolVersionManager) init(cluster *Cluster) error {
 	verMgr.c = cluster
 	log.LogWarnf("action[VolVersionManager.init]")
 	verMgr.multiVersionList = append(verMgr.multiVersionList, &proto.VolVersionInfo{
-		Ver:0,
-		Ctime:time.Now(),
-		Status:1,
+		Ver:    0,
+		Ctime:  time.Now(),
+		Status: 1,
 	})
 	if cluster.partition.IsRaftLeader() {
 		return verMgr.Persist()
@@ -568,8 +567,8 @@ func (verMgr *VolVersionManager) getVersionList() *proto.VolVersionInfoList {
 	verMgr.RLock()
 	defer verMgr.RUnlock()
 
-	return &proto.VolVersionInfoList {
-		VerList : verMgr.multiVersionList,
+	return &proto.VolVersionInfoList{
+		VerList: verMgr.multiVersionList,
 	}
 }
 
@@ -635,7 +634,7 @@ type Vol struct {
 	domainId           uint64
 	qosManager         *QosCtrlManager
 
-	VersionMgr         *VolVersionManager
+	VersionMgr *VolVersionManager
 
 	volLock sync.RWMutex
 }
@@ -1412,6 +1411,8 @@ func (vol *Vol) deleteVolFromStore(c *Cluster) (err error) {
 	// then delete the volume
 	c.deleteVol(vol.Name)
 	c.volStatInfo.Delete(vol.Name)
+
+	c.DelBucketLifecycle(vol.Name)
 	return
 }
 

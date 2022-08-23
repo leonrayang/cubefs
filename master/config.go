@@ -76,6 +76,7 @@ const (
 	defaultNodeSetGrpStep                              = 1
 	defaultMasterMinQosAccept                          = 20000
 	defaultIntervalToScanS3Expiration                  = 12 * 3600
+	defaultMaxConcurrentLcNodes                        = 3
 )
 
 // AddrDatabase is a map that stores the address of a given host (e.g., the leader)
@@ -112,6 +113,7 @@ type clusterConfig struct {
 	DataPartitionUsageThreshold         float64
 	QosMasterAcceptLimit                uint64
 	IntervalToScanS3Expiration          int64
+	MaxConcurrentLcNodes                uint64
 }
 
 func newClusterConfig() (cfg *clusterConfig) {
@@ -132,6 +134,7 @@ func newClusterConfig() (cfg *clusterConfig) {
 	cfg.diffSpaceUsage = defaultDiffSpaceUsage
 	cfg.QosMasterAcceptLimit = defaultMasterMinQosAccept
 	cfg.IntervalToScanS3Expiration = defaultIntervalToScanS3Expiration
+	cfg.MaxConcurrentLcNodes = defaultMaxConcurrentLcNodes
 	return
 }
 
