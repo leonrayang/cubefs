@@ -595,7 +595,7 @@ func (i *Inode) MultiLayerClearExtByVer(layer int, dVerSeq uint64) (delExtents [
 		ino = i.multiVersions[layer-1]
 	}
 	for idx, ek := range ino.Extents.eks {
-		if ek.VerSeq == dVerSeq {
+		if ek.VerSeq > dVerSeq {
 			delExtents = append(delExtents, ek)
 			ino.Extents.eks = append(ino.Extents.eks[idx:], ino.Extents.eks[:idx+1]...)
 		}
@@ -603,8 +603,11 @@ func (i *Inode) MultiLayerClearExtByVer(layer int, dVerSeq uint64) (delExtents [
 	return
 }
 
-// restore ext info to older version or deleted if no right version
-func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey, curVer uint64, idx int) (delExtents []proto.ExtentKey, err error){
+// Restore ext info to older version or deleted if no right version
+// The list(multiVersions) contains all point of modification on inode, each ext must belong to one layer.
+// Once the layer be deleted and layer ver be changed to upper layer, the ext belongs is not exist and can be dropped
+// So it's safe to restore to the next layer and ignore the middle layers(system view) that may be exist between the two layers in list
+func  (i *Inode) RestoreExts2NextLayer(delExtentsOrigin []proto.ExtentKey, curVer uint64, idx int) (delExtents []proto.ExtentKey, err error){
 	log.LogInfof("action[RestoreMultiSnapExts] curVer [%v] delExtents size [%v] hist len [%v]", curVer, len(delExtentsOrigin), len(i.multiVersions))
 	// no version left.all old versions be deleted
 	if len(i.multiVersions) == 0 {
@@ -619,7 +622,7 @@ func (i *Inode) RestoreMultiSnapExts(delExtentsOrigin []proto.ExtentKey, curVer 
 		// versions,so try to delete it
 		log.LogDebugf("action[RestoreMultiSnapExts] ext split [%v] with seq[%v] gSeq[%v] try to del.the last seq [%v], ek details[%v]",
 			delExt.IsSplit, delExt.VerSeq, curVer, lastSeq, delExt)
-		if delExt.VerSeq == curVer {
+		if delExt.VerSeq > lastSeq {
 			delExtents = append(delExtents, delExt)
 		} else {
 			log.LogInfof("action[RestoreMultiSnapExts] move to level 1 delExt [%v] specSnapExtent size [%v]", delExt, len(specSnapExtent))
@@ -870,8 +873,11 @@ func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
 	return
 }
 
-// only happened while data need migrate form high layer to lower one
-// move data to lower layer according to verlist(current layer), delete all if lower one exceed inode scope
+// 1. dVer be depended on by B snapshot 1)the B not exist in inode then update ver of dVer layer   2) exist go to 2
+// 2. check if dVer layer is the last layer of the system  1)true,drop it all 2) false goto 3
+// 3. if have system layer between dVer and next older inode's layer(not exist is ok), drop dVer related exts and update ver
+// 4. else Restore to next inode's Layer
+
 func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVersionInfo) (delExtents []proto.ExtentKey, ino *Inode) {
 	var err error
 
@@ -880,7 +886,7 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 
 	// first layer need delete
 	if dVer == 0 {
-		if delExtents, err = i.RestoreMultiSnapExts(i.Extents.eks, mpVer, 0); err != nil {
+		if delExtents, err = i.RestoreExts2NextLayer(i.Extents.eks, mpVer, 0); err != nil {
 			log.LogErrorf("action[getAndDelVer] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
 			return
 		}
@@ -909,33 +915,56 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 			log.LogDebugf("action[getAndDelVer] ino %v multiVersions level %v verseq %v", i.Inode, id, mIno.verSeq)
 			return
 		}
+
 		if mIno.verSeq == dVer {
 			if id == len(i.multiVersions) - 1 { // last layer then need delete all and unlink inode
 				i.multiVersions = i.multiVersions[:id]
 				return mIno.Extents.eks, mIno
 			}
-
-			// get next version should according to verList not self managed with hole
+			// 1.
+			if lVer, found := i.getLastestVer(dVer, true, verlist); found {
+				log.LogDebugf("action[getAndDelVer] ino %v multiVersions get last commited ver %v be update to verseq %v and do nothing", i.Inode, mIno.verSeq, lVer)
+				if id == 0 {
+					if lVer != i.verSeq {
+						log.LogDebugf("action[getAndDelVer] ino %v lver %v inode seq %v update mino verseq %v",  i.Inode, lVer, i.verSeq, mIno.verSeq)
+						mIno.verSeq = lVer
+						return
+					}
+				} else if lVer != i.multiVersions[id-1].verSeq {
+					log.LogDebugf("action[getAndDelVer] ino %v multiVersions get last commited ver %v be update to verseq %v", i.Inode, mIno.verSeq, lVer)
+					mIno.verSeq = lVer
+					return
+				}
+			}
+			log.LogDebugf("action[getAndDelVer] ino %v step 3", i.Inode, mIno.verSeq)
+			// 2. get next version should according to verList but not only self multi list
 			var vId int
 			if vId, err = i.getNextOlderVer(dVer, verlist); id == -1 || err != nil {
-				log.LogErrorf("action[getAndDelVer] get next version failed, err %v", err)
+				log.LogDebugf("action[getAndDelVer] get next version failed, err %v", err)
 				return
 			}
 
-			// next layer not exist. update curr layer to next layer and filter out ek with verSeq
+			log.LogDebugf("action[getAndDelVer] ino %v step 3 ver ", i.Inode, mIno.verSeq, vId)
+			// 3. system next layer not exist in inode ver list. update curr layer to next layer and filter out ek with verSeq
 			// change id layer verSeq to neighbor layer info, omit version delete process
-			if verlist[vId].Ver != i.multiVersions[id+1].verSeq {
+			if id == len(i.multiVersions)-1 || verlist[vId].Ver != i.multiVersions[id+1].verSeq {
+				log.LogDebugf("action[getAndDelVer] ino %v  get next version in verList update ver from %v to %v.And delete exts with ver %v", i.Inode, i.multiVersions[id].verSeq, verlist[vId].Ver, dVer)
 				i.multiVersions[id].verSeq = verlist[vId].Ver
-				return i.MultiLayerClearExtByVer(id+1, dVer), i.multiVersions[id]
-			} else {
-				// next layer exist. the deleted version and  next version are neighbor in verlist, thus need restore and delete
-				if delExtents, err = i.RestoreMultiSnapExts(i.Extents.eks, dVer, id+1); err != nil {
-					log.LogErrorf("action[getAndDelVer] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
+				delExtents, ino = i.MultiLayerClearExtByVer(id, verlist[vId].Ver), i.multiVersions[id]
+				if len(i.multiVersions[id].Extents.eks) != 0 {
+					log.LogDebugf("action[getAndDelVer] ino %v   after clear self still have ext and left", i.Inode)
 					return
 				}
-				// delete layer id
-				i.multiVersions = append(i.multiVersions[:id], i.multiVersions[id+1:]...)
+			} else {
+				log.LogDebugf("action[getAndDelVer] ino %v step 3 ver ", i.Inode, mIno.verSeq, vId)
+				// 4. next layer exist. the deleted version and  next version are neighbor in verlist, thus need restore and delete
+				if delExtents, err = i.RestoreExts2NextLayer(mIno.Extents.eks, dVer, id+1); err != nil {
+					log.LogDebugf("action[getAndDelVer] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
+					return
+				}
 			}
+			// delete layer id
+			i.multiVersions = append(i.multiVersions[:id], i.multiVersions[id+1:]...)
 
 			log.LogDebugf("action[getAndDelVer] ino %v verSeq %v get del exts %v", i.Inode, i.verSeq, delExtents)
 			return delExtents, mIno
@@ -946,11 +975,14 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 
 func (i *Inode) getNextOlderVer(ver uint64, verlist []*proto.VolVersionInfo) (id int, err error){
 	for idx,info := range verlist {
-		if info.Ver == ver {
-			if idx == len(verlist)-1 {
-				return -1, nil
+		if info.Ver > ver {
+			if idx == 0 {
+				return -1, fmt.Errorf("not found")
 			}
-			return idx+1, nil
+			if verlist[idx].Ver == ver {
+				return -1, fmt.Errorf("shouldn't have the deleted layer")
+			}
+			return idx-1, nil
 		}
 	}
 	return -1, fmt.Errorf("not found")
@@ -1011,7 +1043,7 @@ func (i *Inode) SplitExtentWithCheck(gVer uint64, ver uint64, ek proto.ExtentKey
 		return
 	}
 
-	if delExtents, err = i.RestoreMultiSnapExts(delExtents, gVer, 0); err != nil {
+	if delExtents, err = i.RestoreExts2NextLayer(delExtents, gVer, 0); err != nil {
 		log.LogErrorf("action[fsmAppendExtentWithCheck] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
 		return
 	}
@@ -1041,7 +1073,7 @@ func (i *Inode) AppendExtentWithCheck(gVer uint64, iVer uint64, ek proto.ExtentK
 	// multi version take effect
 	if i.verSeq > 0 {
 		var err error
-		if delExtents, err = i.RestoreMultiSnapExts(delExtents, gVer, 0); err != nil {
+		if delExtents, err = i.RestoreExts2NextLayer(delExtents, gVer, 0); err != nil {
 			log.LogErrorf("action[AppendExtentWithCheck] RestoreMultiSnapExts err %v", err)
 			return nil, proto.OpErr
 		}
