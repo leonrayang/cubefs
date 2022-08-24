@@ -245,7 +245,7 @@ run_test() {
     pre_build_server
     pushd $SrcPath >/dev/null
     echo -n "${TPATH}"
-#    go test $MODFLAGS -ldflags "${LDFlags}" -cover ./master
+    #go test $MODFLAGS -ldflags "${LDFlags}" -cover ./metanode
 
     go test -cover -v -coverprofile=cover.output $(go list ./... | grep -v depends | grep -v master) | tee cubefs_unittest.output
     ret=$?

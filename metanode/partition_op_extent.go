@@ -104,7 +104,7 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 	// use inode verSeq instead
 	ino.verSeq = mp.verSeq
 	ino.Extents.Append(ext)
-	log.LogDebugf("ExtentAppendWithCheck: ino(%v) mp(%v) verSeq (%v)", req.Inode, req.PartitionID, mp.verSeq)
+	log.LogDebugf("ExtentAppendWithCheck: ino(%v) mp(%v) verSeq (%v) ext(%v)", req.Inode, req.PartitionID, mp.verSeq, ext)
 	// Store discard extents right after the append extent key.
 	if len(req.DiscardExtents) != 0 {
 		ino.Extents.eks = append(ino.Extents.eks, req.DiscardExtents...)
@@ -178,6 +178,9 @@ func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest
 		})
 
 		for _, snapIno := range ino.multiVersions {
+			rsp.Generation = snapIno.Generation
+			rsp.Size = snapIno.Size
+
 			if req.VerSeq > snapIno.verSeq {
 				log.LogInfof("action[GetExtentByVer] finish read ino %v readseq %v snapIno ino seq %v", ino.Inode, req.VerSeq, snapIno.verSeq)
 				break
@@ -213,8 +216,10 @@ func (mp *metaPartition) GetUidInfo() (info []*proto.UidReportSpaceInfo) {
 // ExtentsList returns the list of extents.
 func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (err error) {
 	log.LogDebugf("action[ExtentsList] inode %v verSeq %v", req.Inode, req.VerSeq)
+
+	// note:don't need set reqSeq, extents get be done in next step
 	ino := NewInode(req.Inode, 0)
-	retMsg := mp.getInode(ino)
+	retMsg := mp.getInodeTopLayer(ino)
 
 	//notice.getInode should not set verSeq due to extent need filter from the newest layer to req.VerSeq
 	ino = retMsg.Msg
@@ -225,7 +230,7 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 
 	if status == proto.OpOk {
 		resp := &proto.GetExtentsResponse{}
-		log.LogInfof("action[ExtentsList] inode %v request verseq %v ino ver %v extent size %v ino.Size %v hist len %v",
+		log.LogInfof("action[ExtentsList] inode %v request verseq %v ino ver %v extent size %v ino.Size %v ino %v hist len %v",
 			req.Inode, req.VerSeq, ino.verSeq, len(ino.Extents.eks), ino.Size, ino, len(ino.multiVersions))
 
 		if req.VerSeq > 0 && ino.verSeq > 0 {
