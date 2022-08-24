@@ -151,12 +151,17 @@ func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error
 	return
 }
 
-func (verMgr *VolVersionManager) DelVer() (err error) {
+func (verMgr *VolVersionManager) DelVer(verSeq uint64) (err error){
 	verMgr.Lock()
 	defer verMgr.Unlock()
 
 	for i, ver := range verMgr.multiVersionList {
-		if ver.Ver == verMgr.prepareCommit.prepareInfo.Ver {
+		if ver.Ver == verSeq {
+			if ver.Status != proto.VersionDeleting {
+				err  = fmt.Errorf("with seq %v but it's status is %v", verSeq, ver.Status)
+				log.LogErrorf("action[VolVersionManager.DelVer] err %v", err)
+				return
+			}
 			verMgr.multiVersionList = append(verMgr.multiVersionList[:i], verMgr.multiVersionList[i+1:]...)
 			break
 		}
