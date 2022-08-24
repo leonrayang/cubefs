@@ -74,7 +74,31 @@ func (mp *metaPartition) getInodeByVer(ino *Inode) (i *Inode) {
 		ino.Inode, item.(*Inode).verSeq, len(item.(*Inode).multiVersions), ino.verSeq)
 	i, _ = item.(*Inode).getInoByVer(ino.verSeq, false)
 
-	log.LogDebugf("action[getInodeByVer] ino %v verseq %v fin", ino.Inode, item.(*Inode).verSeq)
+	log.LogDebugf("action[getInodeByVer] ino %v verseq %v fin,i %v", ino.Inode, item.(*Inode).verSeq, i)
+	return
+}
+
+func (mp *metaPartition) getInodeTopLayer(ino *Inode) (resp *InodeResponse) {
+	resp = NewInodeResponse()
+	resp.Status = proto.OpOk
+
+	item := mp.inodeTree.Get(ino)
+	if item == nil {
+		resp.Status = proto.OpNotExistErr
+		log.LogDebugf("action[getInodeTopLayer] not found ino %v verseq %v", ino.Inode, ino.verSeq)
+		return
+	}
+	i := item.(*Inode)
+	ctime := Now.GetCurrentTime().Unix()
+	/*
+	 * FIXME: not protected by lock yet, since nothing is depending on atime.
+	 * Shall add inode lock in the future.
+	 */
+	if ctime > i.AccessTime {
+		i.AccessTime = ctime
+	}
+
+	resp.Msg = i
 	return
 }
 

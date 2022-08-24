@@ -845,10 +845,12 @@ func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
 	if verSeq == math.MaxUint64 {
 		listLen := len(ino.multiVersions)
 		if listLen == 0 {
+			log.LogDebugf("action[getInoByVer]  ino %v no multiversion", ino.Inode)
 			return
 		}
 		i = ino.multiVersions[listLen-1]
 		if i.verSeq != 0 {
+			log.LogDebugf("action[getInoByVer]  ino %v lay seq %v", ino.Inode, i.verSeq)
 			return nil, 0
 		}
 		return
@@ -856,17 +858,20 @@ func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
 	if verSeq > 0 && ino.verSeq > verSeq {
 		for id, iTmp := range ino.multiVersions {
 			if verSeq == iTmp.verSeq {
+				log.LogDebugf("action[getInoByVer]  ino %v get in multiversion id %v", ino.Inode, id)
 				return iTmp,id
 			} else if verSeq > iTmp.verSeq{
 				if !equal {
+					log.LogDebugf("action[getInoByVer]  ino %v get in multiversion id %v, %v, %v", ino.Inode,id, verSeq, iTmp.verSeq)
 					return iTmp,id
 				}
+				log.LogDebugf("action[getInoByVer]  ino %v get in multiversion id %v", id)
 				return
 			}
-
 		}
 	} else {
 		if !equal {
+			log.LogDebugf("action[getInoByVer]  ino %v", ino.Inode)
 			return ino, 0
 		}
 	}
@@ -901,12 +906,16 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 	}
 	// delete snapshot version
 	if dVer == math.MaxUint64 {
-		 inode := i.multiVersions[verLen-1]
-		 if inode.verSeq != 0 {
-		 	return
-		 }
-		 i.multiVersions = i.multiVersions[:verLen-1]
-		 return inode.Extents.eks, inode
+		inode := i.multiVersions[verLen-1]
+		if inode.verSeq != 0 {
+			log.LogDebugf("action[getAndDelVer] ino %v idx %v is %v and cann't be dropped", i.Inode, verLen-1, inode.verSeq)
+			return
+		}
+		i.multiVersions = i.multiVersions[:verLen-1]
+		// delete layer id
+		i.multiVersions = append(i.multiVersions[:verLen-1], i.multiVersions[verLen:]...)
+		log.LogDebugf("action[getAndDelVer] ino %v idx %v be dropped", i.Inode, verLen-1)
+		return inode.Extents.eks, inode
 	}
 
 	for id, mIno := range i.multiVersions {
@@ -993,9 +1002,9 @@ func (i *Inode) CreateUnlinkVer(ver uint64, verlist []*proto.VolVersionInfo) {
 	ino := i.Copy().(*Inode)
 	i.Extents = NewSortedExtents()
 	i.ObjExtents = NewSortedObjExtents()
-	i.multiVersions = nil
 	i.SetDeleteMark()
 
+	ino.multiVersions = nil
 
 	log.LogDebugf("action[CreateVer] inode %v create new version [%v] and store old one [%v], hist len [%v]",
 		i.Inode, ver, i.verSeq, len(i.multiVersions))
