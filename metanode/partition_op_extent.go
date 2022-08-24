@@ -183,8 +183,10 @@ func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest
 // ExtentsList returns the list of extents.
 func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (err error) {
 	log.LogDebugf("action[ExtentsList] inode %v verSeq %v", req.Inode, req.VerSeq)
+
+	// note:don't need set reqSeq, extents get be done in next step
 	ino := NewInode(req.Inode, 0)
-	retMsg := mp.getInode(ino)
+	retMsg := mp.getInodeTopLayer(ino)
 
 	//notice.getInode should not set verSeq due to extent need filter from the newest layer to req.VerSeq
 	ino = retMsg.Msg
