@@ -111,6 +111,7 @@ func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo) {
 			return
 		}
 		verMgr.multiVersionList[idx].Status = proto.VersionDeleting
+		verMgr.multiVersionList[idx].DelTime = time.Now()
 		if err := verMgr.Persist(); err != nil {
 			log.LogErrorf("action[CommitVer] vol %v del seq %v persist error %v", verMgr.vol.Name, verMgr.prepareCommit.prepareInfo.Ver, err)
 		}
@@ -157,13 +158,28 @@ func (verMgr *VolVersionManager) DelVer(verSeq uint64) (err error){
 
 	for i, ver := range verMgr.multiVersionList {
 		if ver.Ver == verSeq {
-			if ver.Status != proto.VersionDeleting {
+			if ver.Status != proto.VersionDeleting && ver.Status != proto.VersionDeleteAbnormal{
 				err  = fmt.Errorf("with seq %v but it's status is %v", verSeq, ver.Status)
 				log.LogErrorf("action[VolVersionManager.DelVer] err %v", err)
 				return
 			}
 			verMgr.multiVersionList = append(verMgr.multiVersionList[:i], verMgr.multiVersionList[i+1:]...)
 			break
+		}
+	}
+	return
+}
+
+func (verMgr *VolVersionManager) UpdateVerStatus(verSeq uint64, status uint8) (err error){
+	verMgr.Lock()
+	defer verMgr.Unlock()
+
+	for _, ver := range verMgr.multiVersionList {
+		if ver.Ver == verSeq {
+			ver.Status = status
+		}
+		if ver.Ver > verSeq {
+			return fmt.Errorf("not found")
 		}
 	}
 	return
