@@ -220,6 +220,7 @@ const (
 	VersionNormal   = 1
 	VersionDeleted  = 2
 	VersionDeleting = 3
+	VersionDeleteAbnormal = 4
 )
 
 const (
