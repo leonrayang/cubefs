@@ -175,7 +175,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*proto.VolVersionI
 	log.LogDebugf("action[fsmUnlinkInode] get inode %v", inode)
 	var (
 		doMore bool
-		status uint8
+		status = proto.OpOk
 	)
 	// create a version if the snapshot be depend on
 	if ino.verSeq == 0 {

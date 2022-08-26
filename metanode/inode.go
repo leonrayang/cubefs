@@ -706,6 +706,7 @@ func (inode* Inode) unlinkVerInTopLayer(ino *Inode, mpVer uint64, verlist []*pro
 func (inode *Inode) unlinkVerInList(ino *Inode, mpVer uint64, verlist []*proto.VolVersionInfo) (ext2Del []proto.ExtentKey, doMore bool, status uint8) {
 	log.LogDebugf("action[unlinkVerInList] ino %v try search seq %v isdir %v", ino, ino.verSeq, proto.IsDir(inode.Type))
 	var dIno *Inode
+	status = proto.OpOk
 	if proto.IsDir(inode.Type) { // snapshot dir deletion don't take link into consider, but considers the scope of snapshot contrast to verList
 		var idx int
 		if dIno, idx = inode.getInoByVer(ino.verSeq, false); dIno == nil {
