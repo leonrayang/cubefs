@@ -661,13 +661,13 @@ func (p *Packet) ReadFromConnWithVer(c net.Conn, timeoutSec int) (err error) {
 	log.LogDebugf("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
 
 	if p.ExtentType&MultiVersionFlag > 0 {
-		log.LogDebug("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
+		log.LogDebugf("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
 		ver := make([]byte, 8)
 		if _, err = io.ReadFull(c, ver); err != nil {
 			return
 		}
 		p.VerSeq = binary.BigEndian.Uint64(ver)
-		log.LogDebug("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
+		log.LogDebugf("action[ReadFromConnWithVer] verseq %v", p.VerSeq)
 	}
 
 	if p.ArgLen > 0 {

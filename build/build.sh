@@ -240,12 +240,12 @@ pre_build() {
 
 run_test() {
     pre_build
-#    pre_build_server
+    pre_build_server
     pushd $SrcPath >/dev/null
     echo -n "${TPATH}"
-#    go test $MODFLAGS -ldflags "${LDFlags}" -cover ./master
+    go test $MODFLAGS -ldflags "${LDFlags}" -cover ./metanode
 
-    go test  $(go list ./... | grep -v depends)
+#    go test  $(go list ./... | grep -v depends)
     ret=$?
     popd >/dev/null
     exit $ret
