@@ -104,7 +104,7 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 		status = proto.OpNotExistErr
 		return nil, status
 	}
-	log.LogDebug("action[getDentry] dentry[%v]", dentry)
+	log.LogDebugf("action[getDentry] dentry[%v]", dentry)
 
 	den := mp.getDentryByVerSeq(item.(*Dentry), dentry.VerSeq)
 	if den != nil {

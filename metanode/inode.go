@@ -865,7 +865,7 @@ func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
 					log.LogDebugf("action[getInoByVer]  ino %v get in multiversion id %v, %v, %v", ino.Inode,id, verSeq, iTmp.verSeq)
 					return iTmp,id
 				}
-				log.LogDebugf("action[getInoByVer]  ino %v get in multiversion id %v", id)
+				log.LogDebugf("action[getInoByVer]  ino %v get in multiversion id %v", ino.Inode, id)
 				return
 			}
 		}
@@ -945,7 +945,7 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 					return
 				}
 			}
-			log.LogDebugf("action[getAndDelVer] ino %v step 3", i.Inode, mIno.verSeq)
+			log.LogDebugf("action[getAndDelVer] ino %v ver %v step 3", i.Inode, mIno.verSeq)
 			// 2. get next version should according to verList but not only self multi list
 			var vId int
 			if vId, err = i.getNextOlderVer(dVer, verlist); id == -1 || err != nil {
@@ -953,7 +953,7 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 				return
 			}
 
-			log.LogDebugf("action[getAndDelVer] ino %v step 3 ver ", i.Inode, mIno.verSeq, vId)
+			log.LogDebugf("action[getAndDelVer] ino %v ver %v id %v step 3 ver ", i.Inode, mIno.verSeq, vId)
 			// 3. system next layer not exist in inode ver list. update curr layer to next layer and filter out ek with verSeq
 			// change id layer verSeq to neighbor layer info, omit version delete process
 			if id == len(i.multiVersions)-1 || verlist[vId].Ver != i.multiVersions[id+1].verSeq {
@@ -965,7 +965,7 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 					return
 				}
 			} else {
-				log.LogDebugf("action[getAndDelVer] ino %v step 3 ver ", i.Inode, mIno.verSeq, vId)
+				log.LogDebugf("action[getAndDelVer] ino %v ver %v id %v step 3 ver ", i.Inode, mIno.verSeq, vId)
 				// 4. next layer exist. the deleted version and  next version are neighbor in verlist, thus need restore and delete
 				if delExtents, err = i.RestoreExts2NextLayer(mIno.Extents.eks, dVer, id+1); err != nil {
 					log.LogDebugf("action[getAndDelVer] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
@@ -1035,13 +1035,13 @@ func (i *Inode) CreateVer(ver uint64) {
 	// i.IncNLink()
 }
 
-func (i *Inode) SplitExtentWithCheck(gVer uint64, ver uint64, ek proto.ExtentKey) (delExtents []proto.ExtentKey, status uint8) {
+func (i *Inode) SplitExtentWithCheck(mpVer uint64, reqVer uint64, ek proto.ExtentKey) (delExtents []proto.ExtentKey, status uint8) {
 	var err error
-	ek.VerSeq = ver
-	log.LogDebugf("action[SplitExtentWithCheck] inode %v,ver %v,ek %v,hist len %v", i.Inode, ver, ek, len(i.multiVersions))
-	if ver != i.verSeq {
-		log.LogDebugf("action[SplitExtentWithCheck] CreateVer ver %v", ver)
-		i.CreateVer(ver)
+	ek.VerSeq = reqVer
+	log.LogDebugf("action[SplitExtentWithCheck] inode %v,ver %v,ek %v,hist len %v", i.Inode, reqVer, ek, len(i.multiVersions))
+	if reqVer != i.verSeq {
+		log.LogDebugf("action[SplitExtentWithCheck] CreateVer ver %v", reqVer)
+		i.CreateVer(reqVer)
 	}
 
 	i.Lock()
@@ -1052,7 +1052,7 @@ func (i *Inode) SplitExtentWithCheck(gVer uint64, ver uint64, ek proto.ExtentKey
 		return
 	}
 
-	if delExtents, err = i.RestoreExts2NextLayer(delExtents, gVer, 0); err != nil {
+	if delExtents, err = i.RestoreExts2NextLayer(delExtents, mpVer, 0); err != nil {
 		log.LogErrorf("action[fsmAppendExtentWithCheck] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
 		return
 	}
@@ -1060,12 +1060,12 @@ func (i *Inode) SplitExtentWithCheck(gVer uint64, ver uint64, ek proto.ExtentKey
 	return
 }
 
-func (i *Inode) AppendExtentWithCheck(gVer uint64, iVer uint64, ek proto.ExtentKey, ct int64, discardExtents []proto.ExtentKey, volType int) (delExtents []proto.ExtentKey, status uint8) {
-	ek.VerSeq = iVer
-	log.LogDebugf("action[AppendExtentWithCheck] inode %v,ver %v,ek %v,hist len %v", i.Inode, iVer, ek, len(i.multiVersions))
-	if iVer != i.verSeq {
-		log.LogDebugf("action[AppendExtentWithCheck] ver %v inode ver %v", iVer, i.verSeq)
-		i.CreateVer(iVer)
+func (i *Inode) AppendExtentWithCheck(mpVer uint64, reqVer uint64, ek proto.ExtentKey, ct int64, discardExtents []proto.ExtentKey, volType int) (delExtents []proto.ExtentKey, status uint8) {
+	ek.VerSeq = reqVer
+	log.LogDebugf("action[AppendExtentWithCheck] inode %v,ver %v,ek %v,hist len %v", i.Inode, reqVer, ek, len(i.multiVersions))
+	if reqVer != i.verSeq {
+		log.LogDebugf("action[AppendExtentWithCheck] ver %v inode ver %v", reqVer, i.verSeq)
+		i.CreateVer(reqVer)
 	}
 
 	i.Lock()
@@ -1082,7 +1082,7 @@ func (i *Inode) AppendExtentWithCheck(gVer uint64, iVer uint64, ek proto.ExtentK
 	// multi version take effect
 	if i.verSeq > 0 {
 		var err error
-		if delExtents, err = i.RestoreExts2NextLayer(delExtents, gVer, 0); err != nil {
+		if delExtents, err = i.RestoreExts2NextLayer(delExtents, mpVer, 0); err != nil {
 			log.LogErrorf("action[AppendExtentWithCheck] RestoreMultiSnapExts err %v", err)
 			return nil, proto.OpErr
 		}

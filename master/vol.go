@@ -118,12 +118,12 @@ func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo) {
 	} else {
 		log.LogErrorf("action[CommitVer] vol %v with seq %v wrong step", verMgr.vol.Name, verMgr.prepareCommit.prepareInfo.Ver)
 	}
-	log.LogInfof("action[CommitVer] verseq %v exit")
+	log.LogInfof("action[CommitVer] verseq %v exit", verMgr.verSeq)
 	return
 }
 
 func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error) {
-	log.LogInfof("action[GenerateVer] vol %v  enter verseq %v", verSeq)
+	log.LogInfof("action[GenerateVer] vol %v  enter verseq %v", verMgr.vol.Name, verSeq)
 	verMgr.Lock()
 	defer verMgr.Unlock()
 	tm := time.Now()
@@ -370,7 +370,7 @@ func (verMgr *VolVersionManager) createTaskToDataNode(cluster *Cluster, verSeq u
 		dpHost sync.Map
 	)
 
-	log.LogWarnf("action[createTaskToDataNode] vol %v verMgr.status %v verSeq %v op force %v", verMgr.vol.Name, verMgr.status, verSeq, op, force)
+	log.LogWarnf("action[createTaskToDataNode] vol %v verMgr.status %v verSeq %v op %v force %v", verMgr.vol.Name, verMgr.status, verSeq, op, force)
 	for _, dp := range verMgr.vol.dataPartitions.clonePartitions() {
 		for _, host := range dp.Hosts {
 			dpHost.Store(host, nil)
