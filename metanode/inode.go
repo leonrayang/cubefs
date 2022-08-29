@@ -657,6 +657,7 @@ func (inode* Inode) unlinkVerInTopLayer(ino *Inode, mpVer uint64, verlist []*pro
 	// just move to upper layer, the behavior looks like that the snapshot be dropped
 	log.LogDebugf("action[unlinkVerInTopLayer] check if have snapshot depends on the deleitng ino %v (with no snapshot itself) found seq %v, verlist %v",
 		ino, inode.verSeq, verlist)
+	status = proto.OpOk
 	_, found := inode.getLastestVer(inode.verSeq, true, verlist)
 	if !found {
 		if len(inode.multiVersions) == 0 {
@@ -708,37 +709,38 @@ func (inode *Inode) unlinkVerInList(ino *Inode, mpVer uint64, verlist []*proto.V
 	var dIno *Inode
 	status = proto.OpOk
 	if proto.IsDir(inode.Type) { // snapshot dir deletion don't take link into consider, but considers the scope of snapshot contrast to verList
-		var idx int
-		if dIno, idx = inode.getInoByVer(ino.verSeq, false); dIno == nil {
+		var idxWithTopLayer int
+		if dIno, idxWithTopLayer = inode.getInoByVer(ino.verSeq, false); dIno == nil {
 			status = proto.OpNotExistErr
 			log.LogDebugf("action[unlinkVerInList] ino %v not found", ino)
 			return
 		}
-		if idx == 0 {
+		var endSeq uint64
+		if idxWithTopLayer == 0 {
 			// header layer do nothing and be depends on should not be dropped
 			log.LogDebugf("action[unlinkVerInList] ino %v first layer do nothing", ino)
 			return
 		}
 		// if any alive snapshot in mp dimension exist in seq scope from dino to next ascend neighbor, dio snapshot be keep or else drop
-		var endSeq uint64
-		realIdx := idx-1
-		if realIdx == 0 {
+
+		mIdx := idxWithTopLayer-1
+		if mIdx == 0 {
 			endSeq = inode.verSeq
 		} else {
-			endSeq = inode.multiVersions[realIdx-1].verSeq
+			endSeq = inode.multiVersions[mIdx-1].verSeq
 		}
 
 		log.LogDebugf("action[unlinkVerInList] inode %v try drop multiVersion idx %v effective seq scope [%v,%v) ",
-			inode.Inode, realIdx, dIno.verSeq, endSeq)
+			inode.Inode, mIdx, dIno.verSeq, endSeq)
 
 		for vidx, info := range verlist {
 			if info.Ver >= dIno.verSeq && info.Ver < endSeq {
-				log.LogDebugf("action[unlinkVerInList] inode %v dir layer idx %v still have effective snapshot seq %v.so don't drop", inode.Inode, realIdx, info.Ver)
+				log.LogDebugf("action[unlinkVerInList] inode %v dir layer idx %v still have effective snapshot seq %v.so don't drop", inode.Inode, mIdx, info.Ver)
 				return
 			}
 			if info.Ver >= endSeq || vidx == len(verlist)-1 {
-				log.LogDebugf("action[unlinkVerInList] inode %v try drop multiVersion idx %v and return", inode.Inode, realIdx)
-				inode.multiVersions = append(inode.multiVersions[:realIdx], inode.multiVersions[realIdx+1:]...)
+				log.LogDebugf("action[unlinkVerInList] inode %v try drop multiVersion idx %v and return", inode.Inode, mIdx)
+				inode.multiVersions = append(inode.multiVersions[:mIdx], inode.multiVersions[mIdx+1:]...)
 				return
 			}
 			log.LogDebugf("action[unlinkVerInList] inode %v try drop scope [%v, %v), mp ver %v not suitable", inode.Inode, dIno.verSeq, endSeq, info.Ver)
@@ -836,7 +838,8 @@ func (i *Inode) ShouldDelVer(mpVer uint64, delVer uint64) (ok bool, err error) {
 	}
 	return false, fmt.Errorf("not found")
 }
-
+//note:search all layers.
+//idx need calc include nclude top layer. index in multiVersions need add by 1
 func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
 	log.LogDebugf("action[getInodeByVer] ino %v verseq %v hist len %v request ino ver %v",
 		ino.Inode, ino.verSeq, ino.multiVersions, verSeq)
@@ -854,17 +857,17 @@ func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
 			log.LogDebugf("action[getInoByVer]  ino %v lay seq %v", ino.Inode, i.verSeq)
 			return nil, 0
 		}
-		return
+		return i, listLen
 	}
 	if verSeq > 0 && ino.verSeq > verSeq {
 		for id, iTmp := range ino.multiVersions {
 			if verSeq == iTmp.verSeq {
 				log.LogDebugf("action[getInoByVer]  ino %v get in multiversion id %v", ino.Inode, id)
-				return iTmp,id
+				return iTmp,id+1
 			} else if verSeq > iTmp.verSeq{
 				if !equal {
 					log.LogDebugf("action[getInoByVer]  ino %v get in multiversion id %v, %v, %v", ino.Inode,id, verSeq, iTmp.verSeq)
-					return iTmp,id
+					return iTmp,id+1
 				}
 				log.LogDebugf("action[getInoByVer]  ino %v get in multiversion id %v", ino.Inode, id)
 				return
@@ -927,10 +930,6 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 		}
 
 		if mIno.verSeq == dVer {
-			if id == len(i.multiVersions) - 1 { // last layer then need delete all and unlink inode
-				i.multiVersions = i.multiVersions[:id]
-				return mIno.Extents.eks, mIno
-			}
 			// 1.
 			if lVer, found := i.getLastestVer(dVer, true, verlist); found {
 				log.LogDebugf("action[getAndDelVer] ino %v multiVersions get last commited ver %v be update to verseq %v and do nothing", i.Inode, mIno.verSeq, lVer)
@@ -945,6 +944,10 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 					mIno.verSeq = lVer
 					return
 				}
+			}
+			if id == len(i.multiVersions) - 1 { // last layer then need delete all and unlink inode
+				i.multiVersions = i.multiVersions[:id]
+				return mIno.Extents.eks, mIno
 			}
 			log.LogDebugf("action[getAndDelVer] ino %v ver %v step 3", i.Inode, mIno.verSeq)
 			// 2. get next version should according to verList but not only self multi list

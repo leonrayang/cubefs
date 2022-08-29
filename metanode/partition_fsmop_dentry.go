@@ -106,7 +106,7 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 		status = proto.OpNotExistErr
 		return nil, status
 	}
-	log.LogDebugf("action[getDentry] dentry[%v]", dentry)
+	log.LogDebugf("action[getDentry] dentry[%v]", item.(*Dentry))
 
 	den := mp.getDentryByVerSeq(item.(*Dentry), dentry.VerSeq)
 	if den != nil {
@@ -118,7 +118,7 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 // Delete dentry from the dentry tree.
 func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp *DentryResponse) {
 
-	log.LogDebugf("action[fsmDeleteDentry] dentry(%v)", denParm)
+	log.LogDebugf("action[fsmDeleteDentry] delete param (%v)", denParm)
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
 
@@ -128,7 +128,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 		clean bool
 	)
 	if checkInode {
-		log.LogDebugf("action[fsmDeleteDentry] dentry %v", denParm)
+		log.LogDebugf("action[fsmDeleteDentry] delete param %v", denParm)
 		item = mp.dentryTree.Execute(func(tree *btree.BTree) interface{} {
 			d := tree.CopyGet(denParm)
 			if d == nil {
@@ -142,11 +142,11 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 				log.LogDebugf("action[fsmDeleteDentry] volume snapshot not enabled,delete directly")
 				return mp.dentryTree.tree.Delete(den)
 			}
-			_, doMore, clean = item.(*Dentry).deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList.VerList)
+			_, doMore, clean = den.deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList.VerList)
 			return den
 		})
 	} else {
-		log.LogDebugf("action[fsmDeleteDentry] dentry %v", denParm)
+		log.LogDebugf("action[fsmDeleteDentry] denParm dentry %v", denParm)
 		if mp.verSeq == 0 {
 			item = mp.dentryTree.tree.Delete(denParm)
 		} else {
@@ -281,6 +281,7 @@ func (mp *metaPartition) readDir(req *ReadDirReq) (resp *ReadDirResp) {
 // else if req.Marker != "" and req.Limit != 0, return dentries from pid:marker to pid:xxxx with limit count
 //
 func (mp *metaPartition) readDirLimit(req *ReadDirLimitReq) (resp *ReadDirLimitResp) {
+	log.LogDebugf("action[readDirLimit] req %v", req)
 	resp = &ReadDirLimitResp{}
 	startDentry := &Dentry{
 		ParentId: req.ParentID,
@@ -307,5 +308,6 @@ func (mp *metaPartition) readDirLimit(req *ReadDirLimitReq) (resp *ReadDirLimitR
 		}
 		return true
 	})
+	log.LogDebugf("action[readDirLimit] resp %v", resp)
 	return
 }

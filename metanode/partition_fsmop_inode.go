@@ -151,7 +151,7 @@ func (mp *metaPartition) Ascend(f func(i BtreeItem) bool) {
 // snapshot unlink seq is snapshotVersion
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*proto.VolVersionInfo) (resp *InodeResponse) {
-	log.LogDebugf("action[fsmUnlinkInode] ino %v", ino)
+	log.LogDebugf("action[fsmUnlinkInode] pa ino %v", ino)
 	var (
 		ext2Del []proto.ExtentKey
 	)
