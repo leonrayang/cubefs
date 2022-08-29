@@ -54,6 +54,7 @@ func newPartition(conf *MetaPartitionConfig, manager *metadataManager) (mp *meta
 		manager:       manager,
 		verSeq:        conf.VerSeq,
 	}
+	mp.config.Cursor = 0
 	mp.config.End = 100000
 	return mp
 }
@@ -69,21 +70,16 @@ func init() {
 		return
 	}
 	log.LogDebugf("action start")
-	mp = newPartition(metaConf, manager)
-
-	mp.multiVersionList = &proto.VolVersionInfoList{}
-	for _, verSeq := range seqAllArr {
-		verInfo := &proto.VolVersionInfo{
-			Ver:verSeq,
-			Ctime:time.Unix(int64(verSeq),0),
-			Status: proto.VersionNormal,
-		}
-		mp.multiVersionList.VerList = append(mp.multiVersionList.VerList, verInfo)
-	}
-	createInode(nil, ModeDirType)
 	return
 }
 
+func initMp(t *testing.T) {
+	mp = newPartition(metaConf, manager)
+	mp.multiVersionList = &proto.VolVersionInfoList{}
+	ino := createInode(nil, ModeDirType)
+	t.Logf("cursor %v create ino %v", mp.config.Cursor, ino)
+	mp.config.Cursor=1000
+}
 
 func buildExtentKey(seq uint64, foffset uint64, extid uint64, exteoffset uint64, size uint32 ) proto.ExtentKey{
 	return proto.ExtentKey{
@@ -218,7 +214,8 @@ func createVer() (verSeq uint64){
 }
 
 func readDirAll(t *testing.T, verSeq uint64, parentId uint64) (resp *ReadDirLimitResp){
-	t.Logf("[readDirAll] get seq %v parentId %v", verSeq, parentId)
+	printAllDentry(t)
+	t.Logf("[readDirAll] with seq %v parentId %v", verSeq, parentId)
 	req := &ReadDirLimitReq{
 		PartitionID:partitionId,
 		VolName: mp.GetVolName(),
@@ -226,15 +223,12 @@ func readDirAll(t *testing.T, verSeq uint64, parentId uint64) (resp *ReadDirLimi
 		Limit: math.MaxUint64,
 		VerSeq: verSeq,
 	}
-	mp.dentryTree.Ascend(func(i BtreeItem) bool {
-		den := i.(*Dentry)
-		t.Logf("dentry:%v", den)
-		return true
-	})
 	return mp.readDirLimit(req)
 }
 
-func verListRemoveVer(verSeq uint64) bool {
+
+func verListRemoveVer(t *testing.T, verSeq uint64) bool {
+	printAllSysVerList(t)
 	for i, ver := range mp.multiVersionList.VerList {
 		if ver.Ver == verSeq {
 			// mp.multiVersionList = append(mp.multiVersionList[:i], mp.multiVersionList[i+1:]...)
@@ -249,6 +243,16 @@ var ct  = uint64(time.Now().Unix())
 var seqAllArr = []uint64{0, ct, ct+2111,ct+10333, ct+53456, ct+60000, ct+72344,  ct+234424, ct+334424}
 
 func TestAppendList(t *testing.T) {
+	initMp(t)
+	for _, verSeq := range seqAllArr {
+		verInfo := &proto.VolVersionInfo{
+			Ver:verSeq,
+			Ctime:time.Unix(int64(verSeq),0),
+			Status: proto.VersionNormal,
+		}
+		mp.multiVersionList.VerList = append(mp.multiVersionList.VerList, verInfo)
+	}
+
 	var ino = createInode(t, 0)
 	t.Logf("enter TestAppendList")
 	index := 5
@@ -405,63 +409,117 @@ func TestAppendList(t *testing.T) {
 //	return len(data), nil
 //}
 
+func printAllSysVerList(t *testing.T) {
+	for idx, info := range mp.multiVersionList.VerList {
+		t.Logf("printAllSysVerList idx %v, info %v", idx, info)
+	}
+}
+
 func printAllDentry(t *testing.T) {
 	mp.dentryTree.Ascend(func(i BtreeItem) bool {
 		den := i.(*Dentry)
-		t.Logf("dentry:%v", den)
+		t.Logf("printAllDentry name %v top layer dentry:%v", den.Name, den)
+		for id, info := range den.dentryList {
+			t.Logf("printAllDentry name %v layer %v, denSeq %v den %v", den.Name, id, info.VerSeq, info)
+		}
 		return true
 	})
 }
+
+func PrintAllInodeInfo(t *testing.T) {
+	mp.inodeTree.Ascend(func(item BtreeItem) bool {
+		i := item.(*Inode)
+		t.Logf("action[PrintAllVersionInfo] toplayer inode [%v] verSeq [%v] hist len [%v]", i, i.verSeq, len(i.multiVersions))
+		for id, info := range i.multiVersions {
+			t.Logf("action[PrintAllVersionInfo] layer [%v]  verSeq [%v] inode [%v]", id, info.verSeq, info)
+		}
+		return true
+	})
+}
+
+func PrintInodeInfo(t *testing.T, ino *Inode) {
+
+	i := mp.inodeTree.Get(ino).(*Inode)
+	t.Logf("action[PrintAllVersionInfo] toplayer inode [%v] verSeq [%v] hist len [%v]", i, i.verSeq, len(i.multiVersions))
+	for id, info := range i.multiVersions {
+		t.Logf("action[PrintAllVersionInfo] layer [%v]  verSeq [%v] inode [%v]", id, info.verSeq, info)
+	}
+
+}
+
 func DelVersion(t *testing.T, verSeq uint64, dirIno *Inode, dirDentry *Dentry) {
+	if verSeq != 0 {
+		assert.True(t, verListRemoveVer(t, verSeq))
+	}
 
-	verListRemoveVer(verSeq)
 	rspReadDir := readDirAll(t, verSeq, dirIno.Inode)
+	printAllDentry(t)
 
-	dirIno.verSeq = verSeq
-	rspDelIno := mp.fsmUnlinkInode(dirIno, mp.multiVersionList.VerList)
+	rDirIno := dirIno.Copy().(*Inode)
+	rDirIno.verSeq = verSeq
+	rspDelIno := mp.fsmUnlinkInode(rDirIno, mp.multiVersionList.VerList)
 	t.Logf("rspDelinfo ret %v content %v", rspDelIno.Status, rspDelIno)
 	assert.True(t, rspDelIno.Status == proto.OpOk)
-	dirDentry.VerSeq = verSeq
-	rspDelDen := mp.fsmDeleteDentry(dirDentry, false)
+
+	rDirDentry := dirDentry.Copy().(*Dentry)
+	rDirDentry.VerSeq = verSeq
+	rspDelDen := mp.fsmDeleteDentry(rDirDentry, false)
 	assert.True(t, rspDelDen.Status == proto.OpOk)
 
 	for idx, info := range rspReadDir.Children {
-		t.Logf("DelVersion: get idx %v infof %v", idx, info)
+		t.Logf("DelVersion: delSeq %v  to del idx %v infof %v", verSeq, idx, info)
 		rino := &Inode{
 			Inode:info.Inode,
 			Type:ModFileType,
 			verSeq: verSeq,
 		}
+		PrintInodeInfo(t, rino)
+		log.LogDebugf("DelVersion get rino %v start", rino)
+		t.Logf("DelVersion get rino %v start", rino)
 		ino := mp.getInode(rino)
+		log.LogDebugf("DelVersion get rino %v end", ino)
+		t.Logf("DelVersion get rino %v end", rino)
 		assert.True(t, ino.Status == proto.OpOk)
-
+		if ino.Status != proto.OpOk {
+			panic(nil)
+		}
 		rino.verSeq = verSeq
-		rspDelIno := mp.fsmUnlinkInode(rino, mp.multiVersionList.VerList)
-		assert.True(t, rspDelIno.Status == proto.OpOk)
+		rspDelIno = mp.fsmUnlinkInode(rino, mp.multiVersionList.VerList)
 
+		assert.True(t, rspDelIno.Status == proto.OpOk || rspDelIno.Status == proto.OpNotExistErr)
+		if rspDelIno.Status != proto.OpOk && rspDelIno.Status != proto.OpNotExistErr {
+			t.Logf("DelVersion: rspDelIno %v return st %v", rspDelIno, proto.ParseErrorCode(int32(rspDelIno.Status)))
+			panic(nil)
+		}
 		dentry := &Dentry{
-			ParentId: dirIno.Inode,
+			ParentId: rDirIno.Inode,
 			Name:     info.Name,
 			Type: ModFileType,
 			VerSeq:   verSeq,
 			Inode: rino.Inode,
 		}
-		log.LogDebugf("test.DelVersion: dentry %v ", dentry)
-		// printAllDentry(t)
+		log.LogDebugf("test.DelVersion: dentry param %v ", dentry)
+		printAllDentry(t)
 		iden, st := mp.getDentry(dentry)
-		t.Logf("DelVersion: dentry %v return st %v", dentry, proto.ParseErrorCode(int32(st)))
+		if st != proto.OpOk {
+			t.Logf("DelVersion: dentry %v return st %v", dentry, proto.ParseErrorCode(int32(st)))
+		}
+		log.LogDebugf("test.DelVersion: get dentry %v ", iden)
 		assert.True(t, st == proto.OpOk)
 
-		iden.VerSeq = verSeq
-		rspDelDen := mp.fsmDeleteDentry(iden, false)
+		rDen := iden.Copy().(*Dentry)
+		rDen.VerSeq = verSeq
+		rspDelDen = mp.fsmDeleteDentry(rDen, false)
 		assert.True(t, rspDelDen.Status == proto.OpOk)
 	}
 }
 
 func TestDentry(t *testing.T) {
+	initMp(t)
+
 	var denArry []*Dentry
 	//err := gohook.HookMethod(mp, "submit", MockSubmitTrue, nil)
-
+	mp.config.Cursor = 1100
 	//--------------------build dir and it's child on different version ------------------
 	seq0 := createVer()
 	dirIno := createInode(t, ModeDirType)
@@ -478,14 +536,14 @@ func TestDentry(t *testing.T) {
 	//--------------------------------------
 	seq1 := createVer()
 	fIno1 := createInode(t, ModFileType)
-	fDen1 := createDentry(t, dirIno.Inode, fIno.Inode, "testfile2", ModFileType)
+	fDen1 := createDentry(t, dirIno.Inode, fIno1.Inode, "testfile2", ModFileType)
 	denArry = append(denArry, fDen1)
 	time.Sleep(time.Second)
 
 	//--------------------------------------
 	seq2 := createVer()
 	fIno2 := createInode(t, ModFileType)
-	fDen2 := createDentry(t, dirIno.Inode, fIno.Inode, "testfile3", ModFileType)
+	fDen2 := createDentry(t, dirIno.Inode, fIno2.Inode, "testfile3", ModFileType)
 	denArry = append(denArry, fDen2)
 	time.Sleep(time.Second)
 
@@ -524,8 +582,52 @@ func TestDentry(t *testing.T) {
 	assert.True(t, len(rspReadDir.Children) == 1)
 	assert.True(t, isDentryEqual(&rspReadDir.Children[0], fDen))
 
+
+	printAllDentry(t)
+
 	//--------------------del snapshot and read dir and it's child on different version(cann't be work on interfrace) ------------------
+	t.Logf("try DelVersion %v", seq0)
+	log.LogDebugf("try DelVersion %v", seq0)
+
+	DelVersion(t, seq0, dirIno, dirDen)
+	rspReadDir = readDirAll(t, seq0, dirIno.Inode)
+	assert.True(t, len(rspReadDir.Children) == 1)
+
+	printAllDentry(t)
+	//---------------------------------------------
+	t.Logf("try DelVersion 0 top layer")
+	log.LogDebugf("try DelVersion 0")
+	DelVersion(t, 0, dirIno, dirDen)
+	rspReadDir = readDirAll(t, 0, dirIno.Inode)
+	t.Logf("after  DelVersion 0 can see file %v %v", len(rspReadDir.Children), rspReadDir.Children)
+	assert.True(t, len(rspReadDir.Children) == 0)
+	rspReadDir = readDirAll(t, seq1, dirIno.Inode)
+	t.Logf("after  DelVersion 0 can see file %v %v", len(rspReadDir.Children), rspReadDir.Children)
+	assert.True(t, len(rspReadDir.Children) == 2)
+
+	//---------------------------------------------
+	t.Logf("try DelVersion %v", seq1)
+	log.LogDebugf("try DelVersion %v", seq1)
 	DelVersion(t, seq1, dirIno, dirDen)
+
+	rspReadDir = readDirAll(t, seq1, dirIno.Inode)
+	t.Logf("after  DelVersion %v can see file %v %v", seq1, len(rspReadDir.Children), rspReadDir.Children)
+	assert.True(t, len(rspReadDir.Children) == 2)
+	printAllSysVerList(t)
+
+	//---------------------------------------------
+	t.Logf("try DelVersion %v", seq2)
+	log.LogDebugf("try DelVersion %v", seq2)
+	DelVersion(t, seq2, dirIno, dirDen)
+
+	rspReadDir = readDirAll(t, seq2, dirIno.Inode)
+	t.Logf("after  DelVersion %v can see file %v %v", seq1, len(rspReadDir.Children), rspReadDir.Children)
+	assert.True(t, len(rspReadDir.Children) == 0)
+
+	t.Logf("printAllSysVerList")
+	printAllSysVerList(t)
+	t.Logf("PrintAllInodeInfo")
+	PrintAllInodeInfo(t)
 
 	assert.True(t, false)
 }
