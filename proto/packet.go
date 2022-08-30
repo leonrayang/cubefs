@@ -117,8 +117,9 @@ const (
 	OpMetaPartitionTryToLeader      uint8 = 0x48
 
 	// Operations: Master -> LcNode
-	OpLcNodeHeartbeat uint8 = 0x50
-	OpLcNodeScan      uint8 = 0x51
+	OpLcNodeHeartbeat      uint8 = 0x50
+	OpLcNodeScan           uint8 = 0x51
+	OpLcNodeSnapshotVerDel uint8 = 0x52
 
 	// Operations: Master -> DataNode
 	OpCreateDataPartition           uint8 = 0x60
@@ -216,9 +217,9 @@ const (
 
 // status of version
 const (
-	VersionNormal   = 1
-	VersionDeleted  = 2
-	VersionDeleting = 3
+	VersionNormal         = 1
+	VersionDeleted        = 2
+	VersionDeleting       = 3
 	VersionDeleteAbnormal = 4
 )
 

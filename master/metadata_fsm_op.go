@@ -1077,7 +1077,7 @@ func (c *Cluster) loadLcNodes() (err error) {
 
 		lcNode := newLcNode(lnv.Addr, c.Name)
 		lcNode.ID = lnv.ID
-		oldln, ok := c.s3LcMgr.lcNodes.Load(lcNode.Addr)
+		oldln, ok := c.lcMgr.lcNodes.Load(lcNode.Addr)
 		if ok {
 			if oldln.(*LcNode).ID <= lcNode.ID {
 				continue
@@ -1127,7 +1127,7 @@ func (c *Cluster) loadLcConfs() (err error) {
 			return
 		}
 
-		_ = c.s3LcMgr.SetBucketLifecycle(lcConf)
+		_ = c.lcMgr.SetS3BucketLifecycle(lcConf)
 		log.LogInfof("action[loadLcConfs],vol[%v]", lcConf.VolName)
 	}
 	return
