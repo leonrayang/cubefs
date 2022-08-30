@@ -557,13 +557,15 @@ func (verMgr *VolVersionManager) loadMultiVersion(val []byte) (err error) {
 func (verMgr *VolVersionManager) getVersionInfo(verGet uint64) (verInfo *proto.VolVersionInfo, err error) {
 	verMgr.RLock()
 	defer verMgr.RUnlock()
-
+	log.LogDebugf("action[getVersionInfo] verGet %v", verGet)
 	for _, ver := range verMgr.multiVersionList {
-		if ver.Ctime.Unix() == int64(verGet) {
+		if ver.Ver == verGet {
+			log.LogDebugf("action[getVersionInfo] ver %v", ver)
 			return ver, nil
 		}
-
-		if ver.Ctime.Unix() > int64(verGet) {
+		log.LogDebugf("action[getVersionInfo] ver %v", ver)
+		if ver.Ver > verGet {
+			log.LogDebugf("action[getVersionInfo] ver %v", ver)
 			break
 		}
 	}

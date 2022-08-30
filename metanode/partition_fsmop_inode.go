@@ -307,9 +307,9 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		status = proto.OpNotExistErr
 		return
 	}
-	log.LogDebugf("action[fsmAppendExtentsWithCheck] inode %v hist len %v", ino.Inode, len(ino.multiVersions))
 
 	ino2 := item.(*Inode)
+	log.LogDebugf("action[fsmAppendExtentsWithCheck] inode %v hist len %v", ino2.Inode, len(ino2.multiVersions))
 	if ino2.ShouldDelete() {
 		status = proto.OpNotExistErr
 		return
@@ -318,6 +318,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		discardExtentKey []proto.ExtentKey
 	)
 	eks := ino.Extents.CopyExtents()
+	log.LogDebugf("action[fsmAppendExtentsWithCheck] inode %v hist len %v,eks %v", ino2.Inode, len(ino2.multiVersions), eks)
 	if len(eks) < 1 {
 		return
 	}
@@ -325,16 +326,16 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		discardExtentKey = eks[1:]
 	}
 
-	log.LogDebugf("action[fsmAppendExtentWithCheck] ino %v isSplit %v ek %v hist len %v", ino2, isSplit, eks[0], len(ino2.multiVersions))
+	log.LogDebugf("action[fsmAppendExtentsWithCheck] ino %v isSplit %v ek %v hist len %v", ino2, isSplit, eks[0], len(ino2.multiVersions))
 	if !isSplit {
 		delExtents, status = ino2.AppendExtentWithCheck(mp.verSeq, ino.verSeq, eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
 		if status == proto.OpOk {
-			log.LogInfof("action[fsmAppendExtentWithCheck] delExtents [%v]", delExtents)
+			log.LogInfof("action[fsmAppendExtentsWithCheck] delExtents [%v]", delExtents)
 			mp.extDelCh <- delExtents
 		}
 		// conflict need delete eks[0], to clear garbage data
 		if status == proto.OpConflictExtentsErr {
-			log.LogInfof("action[fsmAppendExtentWithCheck] OpConflictExtentsErr [%v]", eks[:1])
+			log.LogInfof("action[fsmAppendExtentsWithCheck] OpConflictExtentsErr [%v]", eks[:1])
 			mp.extDelCh <- eks[:1]
 		}
 	} else {
@@ -343,6 +344,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		// inconsistent between raft pairs
 		delExtents, status = ino2.SplitExtentWithCheck(mp.verSeq, ino.verSeq, eks[0])
 		mp.extDelCh <- delExtents
+		log.LogDebugf("fsmAppendExtentsWithCheck delExtents inode(%v) ek(%v)", delExtents)
 	}
 
 	log.LogInfof("fsmAppendExtentWithCheck inode(%v) ek(%v) deleteExtents(%v) discardExtents(%v) status(%v) isSplit(%v), extents(%v)",
@@ -398,10 +400,11 @@ func (mp *metaPartition) fsmAppendObjExtents(ino *Inode) (status uint8) {
 // }
 
 func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
+	var err error
 	resp = NewInodeResponse()
 
 	resp.Status = proto.OpOk
-	item := mp.inodeTree.CopyGet(ino)
+	item := mp.inodeTree.Get(ino)
 	if item == nil {
 		resp.Status = proto.OpNotExistErr
 		return
@@ -415,9 +418,13 @@ func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 		resp.Status = proto.OpArgMismatchErr
 		return
 	}
-
+	if i.verSeq != mp.verSeq {
+		i.CreateVer(mp.verSeq)
+	}
 	delExtents := i.ExtentsTruncate(ino.Size, ino.ModifyTime)
-
+	if delExtents, err = i.RestoreExts2NextLayer(delExtents, mp.verSeq, 0); err != nil {
+		panic("RestoreExts2NextLayer should not be error")
+	}
 	// now we should delete the extent
 	log.LogInfof("fsmExtentsTruncate inode(%v) exts(%v)", i.Inode, delExtents)
 	mp.extDelCh <- delExtents

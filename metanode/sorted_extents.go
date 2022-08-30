@@ -270,7 +270,7 @@ func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []p
 func (se *SortedExtents) AppendWithCheck(ek proto.ExtentKey, discard []proto.ExtentKey) (deleteExtents []proto.ExtentKey, status uint8) {
 	status = proto.OpOk
 	endOffset := ek.FileOffset + uint64(ek.Size)
-	log.LogInfof("action[AppendWithCheck]")
+	log.LogDebugf("action[AppendWithCheck] ek %v", ek)
 	se.Lock()
 	defer se.Unlock()
 
@@ -286,12 +286,14 @@ func (se *SortedExtents) AppendWithCheck(ek proto.ExtentKey, discard []proto.Ext
 		log.LogInfof("action[AppendWithCheck] eks do append cleanly and directly")
 		return
 	}
+
 	firstKey := se.eks[0]
 	if firstKey.FileOffset >= endOffset {
 		eks := se.doCopyExtents()
 		se.eks = se.eks[:0]
 		se.eks = append(se.eks, ek)
 		se.eks = append(se.eks, eks...)
+		log.LogDebugf("action[AppendWithCheck] ek %v", ek)
 		return
 	}
 
@@ -312,6 +314,7 @@ func (se *SortedExtents) AppendWithCheck(ek proto.ExtentKey, discard []proto.Ext
 
 	// Makes the request idempotent, just in case client retries.
 	if len(invalidExtents) == 1 && invalidExtents[0] == ek {
+		log.LogDebugf("action[AppendWithCheck] ek %v", ek)
 		return
 	}
 
@@ -331,10 +334,12 @@ func (se *SortedExtents) AppendWithCheck(ek proto.ExtentKey, discard []proto.Ext
 		}
 		for i := 0; i < len(discard); i++ {
 			if deleteExtents[i].PartitionId != discard[i].PartitionId || deleteExtents[i].ExtentId != discard[i].ExtentId || deleteExtents[i].ExtentOffset != discard[i].ExtentOffset {
+				log.LogDebugf("action[AppendWithCheck] ek %v", ek)
 				return deleteExtents, proto.OpConflictExtentsErr
 			}
 		}
 	} else if len(deleteExtents) != 0 {
+		log.LogDebugf("action[AppendWithCheck] ek %v", ek)
 		return deleteExtents, proto.OpConflictExtentsErr
 	}
 

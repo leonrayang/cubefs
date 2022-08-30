@@ -690,7 +690,7 @@ func (inode* Inode) unlinkVerInTopLayer(ino *Inode, mpVer uint64, verlist []*pro
 	}
 
 	log.LogDebugf("action[unlinkVerInTopLayer] need create version.ino %v withSeq %v not equal mp seq %v, verlist %v", ino, inode.verSeq, mpVer, verlist)
-	if proto.IsDir(inode.Type) { // dir is all info but inode is part,which is quit different
+	if proto.IsDir(inode.Type) { // dir is whole info but inode is partition,which is quit different
 		inode.CreateVer(mpVer)
 		inode.DecNLink()
 		log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, Dir create ver 1st layer", ino.Inode)
@@ -793,7 +793,7 @@ func (i *Inode) getLastestVer(reqVerSeq uint64, commit bool, verlist []*proto.Vo
 		}
 	}
 
-	log.LogErrorf("action[getLastestVer] inode %v reqVerSeq %v not found, the largetst one %v",
+	log.LogDebugf("action[getLastestVer] inode %v reqVerSeq %v not found, the largetst one %v",
 		i.Inode, reqVerSeq, verlist[len(verlist)-1].Ver)
 	return 0, false
 }
@@ -1065,9 +1065,10 @@ func (i *Inode) SplitExtentWithCheck(mpVer uint64, reqVer uint64, ek proto.Exten
 }
 
 func (i *Inode) AppendExtentWithCheck(mpVer uint64, reqVer uint64, ek proto.ExtentKey, ct int64, discardExtents []proto.ExtentKey, volType int) (delExtents []proto.ExtentKey, status uint8) {
-	ek.VerSeq = reqVer
-	log.LogDebugf("action[AppendExtentWithCheck] inode %v,ver %v,ek %v,hist len %v", i.Inode, reqVer, ek, len(i.multiVersions))
-	if reqVer != i.verSeq {
+	ek.VerSeq = mpVer
+	log.LogDebugf("action[AppendExtentWithCheck] mpVer %v inode %v,mpver %v,inode ver %v,ek %v,hist len %v", mpVer, i.Inode, i.verSeq, reqVer, ek, len(i.multiVersions))
+
+	if mpVer != i.verSeq {
 		log.LogDebugf("action[AppendExtentWithCheck] ver %v inode ver %v", reqVer, i.verSeq)
 		i.CreateVer(reqVer)
 	}
@@ -1080,11 +1081,9 @@ func (i *Inode) AppendExtentWithCheck(mpVer uint64, reqVer uint64, ek proto.Exte
 		log.LogErrorf("action[AppendExtentWithCheck] status %v", status)
 		return
 	}
-	for _, ek = range i.Extents.eks {
-		log.LogDebugf("action[AppendExtentWithCheck] inode %v extent %v", i.Inode, ek.String())
-	}
+
 	// multi version take effect
-	if i.verSeq > 0 {
+	if i.verSeq > 0 && len(delExtents) > 0 {
 		var err error
 		if delExtents, err = i.RestoreExts2NextLayer(delExtents, mpVer, 0); err != nil {
 			log.LogErrorf("action[AppendExtentWithCheck] RestoreMultiSnapExts err %v", err)

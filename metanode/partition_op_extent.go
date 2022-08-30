@@ -84,7 +84,7 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 	// use inode verSeq instead
 	ino.verSeq = mp.verSeq
 	ino.Extents.Append(ext)
-	log.LogDebugf("ExtentAppendWithCheck: ino(%v) mp(%v) verSeq (%v)", req.Inode, req.PartitionID, mp.verSeq)
+	log.LogDebugf("ExtentAppendWithCheck: ino(%v) mp(%v) verSeq (%v) ext(%v)", req.Inode, req.PartitionID, mp.verSeq, ext)
 	// Store discard extents right after the append extent key.
 	if len(req.DiscardExtents) != 0 {
 		ino.Extents.eks = append(ino.Extents.eks, req.DiscardExtents...)
