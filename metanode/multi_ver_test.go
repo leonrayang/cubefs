@@ -3,11 +3,10 @@ package metanode
 import (
 	"fmt"
 	"github.com/cubefs/cubefs/proto"
-	"math"
-
 	"github.com/cubefs/cubefs/util/config"
 	"github.com/cubefs/cubefs/util/log"
 	"github.com/stretchr/testify/assert"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -197,7 +196,11 @@ func createDentry(t *testing.T, parentId uint64, inodeId uint64, name string, mo
 		Type:	  mod,
 		VerSeq:   mp.verSeq,
 	}
-	assert.True(t, proto.OpOk == mp.fsmCreateDentry(dentry,false))
+	ret := mp.fsmCreateDentry(dentry,false)
+	assert.True(t, proto.OpOk == ret)
+	if ret != proto.OpOk {
+		panic(nil)
+	}
 	return dentry
 }
 
@@ -214,8 +217,8 @@ func createVer() (verSeq uint64){
 }
 
 func readDirAll(t *testing.T, verSeq uint64, parentId uint64) (resp *ReadDirLimitResp){
-	printAllDentry(t)
-	t.Logf("[readDirAll] with seq %v parentId %v", verSeq, parentId)
+	//printAllDentry(t)
+//	t.Logf("[readDirAll] with seq %v parentId %v", verSeq, parentId)
 	req := &ReadDirLimitReq{
 		PartitionID:partitionId,
 		VolName: mp.GetVolName(),
@@ -453,7 +456,7 @@ func DelVersion(t *testing.T, verSeq uint64, dirIno *Inode, dirDentry *Dentry) {
 	}
 
 	rspReadDir := readDirAll(t, verSeq, dirIno.Inode)
-	printAllDentry(t)
+	//printAllDentry(t)
 
 	rDirIno := dirIno.Copy().(*Inode)
 	rDirIno.verSeq = verSeq
@@ -499,7 +502,7 @@ func DelVersion(t *testing.T, verSeq uint64, dirIno *Inode, dirDentry *Dentry) {
 			Inode: rino.Inode,
 		}
 		log.LogDebugf("test.DelVersion: dentry param %v ", dentry)
-		printAllDentry(t)
+		//printAllDentry(t)
 		iden, st := mp.getDentry(dentry)
 		if st != proto.OpOk {
 			t.Logf("DelVersion: dentry %v return st %v", dentry, proto.ParseErrorCode(int32(st)))
@@ -628,6 +631,80 @@ func TestDentry(t *testing.T) {
 	printAllSysVerList(t)
 	t.Logf("PrintAllInodeInfo")
 	PrintAllInodeInfo(t)
+}
+
+func  PrintDirTree(t *testing.T, parentId uint64, path string) {
+	rspReadDir := readDirAll(t, 0, parentId)
+	for _, child := range rspReadDir.Children {
+		pathInner := fmt.Sprintf("%v/%v", path, child.Name)
+		if proto.IsDir(child.Type) {
+			PrintDirTree(t, child.Inode, pathInner)
+			t.Logf("dir:%v", pathInner)
+		} else {
+			t.Logf("file:%v", pathInner)
+		}
+	}
+}
+
+// create
+func TestComplicateSnapshotDeletion(t *testing.T) {
+	initMp(t)
+
+	//err := gohook.HookMethod(mp, "submit", MockSubmitTrue, nil)
+	mp.config.Cursor = 1100
+	//--------------------build dir and it's child on different version ------------------
+
+	dirLayCnt := 6
+	var dirName string
+	var dirInoId  uint64 = 1
+	var renameDen *Dentry
+	var renameDstIno uint64
+	for layIdx:=0; layIdx < dirLayCnt; layIdx++ {
+		t.Logf("build tree:layer %v,last dir name %v inodeid %v",layIdx, dirName, dirInoId)
+		dirIno := createInode(t, ModeDirType)
+		assert.True(t, dirIno != nil)
+		dirName = fmt.Sprintf("dir_layer_%v_1", layIdx)
+		dirDen := createDentry(t, dirInoId, dirIno.Inode, dirName, ModeDirType)
+		assert.True(t, dirDen != nil)
+		if dirDen == nil {
+			panic(nil)
+		}
+		dirIno1 := createInode(t, ModeDirType)
+		assert.True(t, dirIno1 != nil)
+		dirName1 := fmt.Sprintf("dir_layer_%v_2", layIdx)
+		dirDen1 := createDentry(t, dirInoId, dirIno1.Inode, dirName1, ModeDirType)
+		assert.True(t, dirDen1 != nil)
+
+		if layIdx == 2 {
+			renameDen = dirDen.Copy().(*Dentry)
+		}
+		if layIdx == 1 {
+			renameDstIno = dirIno1.Inode
+		}
+		for fileIdx:=0; fileIdx < layIdx * 2; fileIdx++ {
+			fileIno := createInode(t, ModFileType)
+			assert.True(t, dirIno != nil)
+
+			fileName := fmt.Sprintf("layer_%v_file_%v", layIdx, fileIdx)
+			dirDen = createDentry(t, dirIno.Inode, fileIno.Inode, fileName, ModFileType)
+			assert.True(t, dirDen != nil)
+		}
+		dirInoId = dirIno.Inode
+		createVer()
+	}
+
+	PrintDirTree(t, 1, "root")
+	t.Logf("----------------------------------------------")
+
+	t.Logf("try to move dir %v", renameDen)
+	renameDen.VerSeq = 0
+	assert.True(t, nil != mp.fsmDeleteDentry(renameDen, false))
+	renameDen.Name = fmt.Sprintf("rename_from_%v", renameDen.Name)
+	renameDen.ParentId = renameDstIno
+
+	t.Logf("try to move to dir %v", renameDen)
+	assert.True(t, mp.fsmCreateDentry(renameDen,false) == proto.OpOk)
+	PrintDirTree(t, 1, "root")
 
 	assert.True(t, false)
 }
