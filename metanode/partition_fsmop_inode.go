@@ -344,7 +344,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		// inconsistent between raft pairs
 		delExtents, status = ino2.SplitExtentWithCheck(mp.verSeq, ino.verSeq, eks[0])
 		mp.extDelCh <- delExtents
-		log.LogDebugf("fsmAppendExtentsWithCheck delExtents inode(%v) ek(%v)", delExtents)
+		log.LogDebugf("fsmAppendExtentsWithCheck delExtents inode(%v) ek(%v)", ino2, delExtents)
 	}
 
 	log.LogInfof("fsmAppendExtentWithCheck inode(%v) ek(%v) deleteExtents(%v) discardExtents(%v) status(%v) isSplit(%v), extents(%v)",
