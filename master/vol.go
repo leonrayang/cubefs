@@ -208,7 +208,7 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 			resp.Op, resp.VerSeq, verMgr.prepareCommit.prepareInfo.Ver)
 		return
 	}
-
+	var needCommit bool
 	dFunc := func(pType uint32, array *sync.Map) {
 		if val, ok := array.Load(resp.Addr); ok {
 			if rType, rok := val.(int); rok && rType == TypeNoReply {
@@ -229,7 +229,9 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 					}
 					return
 				}
-				atomic.AddUint32(&verMgr.prepareCommit.commitCnt, 1)
+				if verMgr.prepareCommit.nodeCnt == atomic.AddUint32(&verMgr.prepareCommit.commitCnt, 1) {
+					needCommit = true
+				}
 				log.LogInfof("action[handleTaskRsp] type %v node %v rsp sucess. op %v, verseq %v,commit cnt %v",
 					pType, resp.Addr, resp.Op, resp.VerSeq, atomic.LoadUint32(&verMgr.prepareCommit.commitCnt))
 			} else {
@@ -251,7 +253,7 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 	log.LogInfof("action[handleTaskRsp] commit cnt %v, node cnt %v, operation %v", atomic.LoadUint32(&verMgr.prepareCommit.commitCnt),
 		atomic.LoadUint32(&verMgr.prepareCommit.nodeCnt), verMgr.prepareCommit.op)
 
-	if atomic.LoadUint32(&verMgr.prepareCommit.commitCnt) == verMgr.prepareCommit.nodeCnt {
+	if atomic.LoadUint32(&verMgr.prepareCommit.commitCnt) == verMgr.prepareCommit.nodeCnt && needCommit{
 		if verMgr.prepareCommit.op == proto.DeleteVersion {
 			verMgr.CommitVer()
 			verMgr.prepareCommit.reset()
