@@ -98,6 +98,31 @@ func (i *InodeBatch) Clone() InodeBatch {
 	return rB
 }
 
+func (ino* Inode) getAllLayerEks() (rsp []proto.LayerInfo){
+	ino.RLock()
+	defer ino.RUnlock()
+
+	rspInodeInfo := &proto.InodeInfo{}
+	replyInfo(rspInodeInfo, ino)
+
+	layerInfo := proto.LayerInfo{
+		LayerIdx:0,
+		Info:rspInodeInfo,
+		Eks: ino.Extents.eks,
+	}
+	rsp = append(rsp, layerInfo)
+	for idx, info := range ino.multiVersions {
+		rspInodeInfo := &proto.InodeInfo{}
+		replyInfo(rspInodeInfo, info)
+		layerInfo := proto.LayerInfo{
+			LayerIdx:uint32(idx+1),
+			Info:rspInodeInfo,
+			Eks: info.Extents.eks,
+		}
+		rsp = append(rsp, layerInfo)
+	}
+	return
+}
 // String returns the string format of the inode.
 func (i *Inode) String() string {
 	i.RLock()
