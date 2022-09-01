@@ -15,6 +15,7 @@
 package proto
 
 import (
+	"sync"
 	"time"
 )
 
@@ -261,5 +262,6 @@ type VolVersionInfo struct {
 
 type VolVersionInfoList struct {
 	VerList []*VolVersionInfo
+	sync.RWMutex
 }
 

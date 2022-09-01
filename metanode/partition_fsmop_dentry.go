@@ -142,7 +142,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 				log.LogDebugf("action[fsmDeleteDentry] volume snapshot not enabled,delete directly")
 				return mp.dentryTree.tree.Delete(den)
 			}
-			_, doMore, clean = den.deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList.VerList)
+			_, doMore, clean = den.deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.getVerList())
 			return den
 		})
 	} else {
@@ -152,7 +152,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 		} else {
 			item = mp.dentryTree.Get(denParm)
 			if item != nil {
-				_, doMore, clean = item.(*Dentry).deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.multiVersionList.VerList)
+				_, doMore, clean = item.(*Dentry).deleteVerSnapshot(denParm.VerSeq, mp.verSeq, mp.getVerList())
 			}
 		}
 	}

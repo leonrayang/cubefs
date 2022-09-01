@@ -221,7 +221,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*proto.VolVersionI
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInodeBatch(ib InodeBatch) (resp []*InodeResponse) {
 	for _, ino := range ib {
-		resp = append(resp, mp.fsmUnlinkInode(ino, mp.multiVersionList.VerList))
+		resp = append(resp, mp.fsmUnlinkInode(ino, mp.getVerList()))
 	}
 	return
 }
