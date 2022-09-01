@@ -540,7 +540,7 @@ func (c *Cluster) loadMultiVersion(vol *Vol) (err error) {
 		return vol.VersionMgr.init(c)
 	}
 	for _, value := range result {
-		return vol.VersionMgr.loadMultiVersion(value)
+		return vol.VersionMgr.loadMultiVersion(c, value)
 	}
 	return
 }

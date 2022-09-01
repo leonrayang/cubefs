@@ -549,7 +549,8 @@ func (verMgr *VolVersionManager) init(cluster *Cluster) error {
 	return nil
 }
 
-func (verMgr *VolVersionManager) loadMultiVersion(val []byte) (err error) {
+func (verMgr *VolVersionManager) loadMultiVersion(c *Cluster, val []byte) (err error) {
+	verMgr.c = c
 	if err = json.Unmarshal(val, &verMgr.multiVersionList); err != nil {
 		return
 	}
