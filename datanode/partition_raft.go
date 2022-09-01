@@ -259,7 +259,7 @@ func (dp *DataPartition) StartRaftLoggingSchedule() {
 // When the repair is finished, the local dp.partitionSize is same as the leader's dp.partitionSize.
 // The repair task can be done in statusUpdateScheduler->LaunchRepair.
 func (dp *DataPartition) StartRaftAfterRepair() {
-
+	log.LogDebugf("StartRaftAfterRepair enter")
 	// cache or preload partition not support raft and repair.
 	if !dp.isNormalType() {
 		return
@@ -284,7 +284,7 @@ func (dp *DataPartition) StartRaftAfterRepair() {
 				log.LogDebugf("PartitionID(%v) leader started.", dp.partitionID)
 				return
 			}
-
+			log.LogDebugf("StartRaftAfterRepair enter")
 			// wait for dp.replicas to be updated
 			if dp.getReplicaLen() == 0 {
 				timer.Reset(5 * time.Second)
@@ -664,15 +664,12 @@ func (dp *DataPartition) getLeaderPartitionSize(maxExtentID uint64) (size uint64
 	return
 }
 
-// Get the MaxExtentID partition  from the leader.
-func (dp *DataPartition) getLeaderMaxExtentIDAndPartitionSize() (maxExtentID, PartitionSize uint64, err error) {
+func (dp *DataPartition) getMaxExtentIDAndPartitionSize(target string) (maxExtentID, PartitionSize uint64, err error) {
 	var (
 		conn *net.TCPConn
 	)
-
 	p := NewPacketToGetMaxExtentIDAndPartitionSIze(dp.partitionID)
 
-	target := dp.getReplicaAddr(0)
 	conn, err = gConnPool.GetConnect(target) //get remote connect
 	if err != nil {
 		err = errors.Trace(err, " partition(%v) get host(%v) connect", dp.partitionID, target)
@@ -700,8 +697,19 @@ func (dp *DataPartition) getLeaderMaxExtentIDAndPartitionSize() (maxExtentID, Pa
 	PartitionSize = binary.BigEndian.Uint64(p.Data[8:16])
 
 	log.LogInfof("partition(%v) maxExtentID(%v) PartitionSize(%v) on leader", dp.partitionID, maxExtentID, PartitionSize)
-
 	return
+}
+
+// Get the MaxExtentID partition  from the leader.
+func (dp *DataPartition) getLeaderMaxExtentIDAndPartitionSize() (maxExtentID, PartitionSize uint64, err error) {
+	target := dp.getReplicaAddr(0)
+	return dp.getMaxExtentIDAndPartitionSize(target)
+}
+
+// Get the MaxExtentID partition  from the leader.
+func (dp *DataPartition) getMemberExtentIDAndPartitionSize() (maxExtentID, PartitionSize uint64, err error) {
+	target := dp.getReplicaAddr(1)
+	return dp.getMaxExtentIDAndPartitionSize(target)
 }
 
 func (dp *DataPartition) broadcastMinAppliedID(minAppliedID uint64) (err error) {

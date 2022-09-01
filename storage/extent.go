@@ -43,14 +43,14 @@ const (
 )
 
 type ExtentInfo struct {
-	FileID     uint64 `json:"fileId"`
-	Size       uint64 `json:"size"`
-	Crc        uint32 `json:"Crc"`
-	IsDeleted  bool   `json:"deleted"`
-	ModifyTime int64  `json:"modTime"` // random write not update modify time
-	AccessTime int64  `json:"accessTime"`
-	Source     string `json:"src"`
-	SnapshotDataSize int64 `json:"snapSize"`
+	FileID          uint64 `json:"fileId"`
+	Size            uint64 `json:"size"`
+	Crc             uint32 `json:"Crc"`
+	IsDeleted       bool   `json:"deleted"`
+	ModifyTime      int64  `json:"modTime"` // random write not update modify time
+	AccessTime      int64  `json:"accessTime"`
+	Source          string `json:"src"`
+	SnapshotDataOff uint64  `json:"snapSize"`
 }
 
 func (ei *ExtentInfo) String() (m string) {
@@ -58,7 +58,7 @@ func (ei *ExtentInfo) String() (m string) {
 	if source == "" {
 		source = "none"
 	}
-	return fmt.Sprintf("%v_%v_%v_%v_%v_%d_%d_%d", ei.FileID, ei.Size, ei.SnapshotDataSize, ei.IsDeleted, source, ei.ModifyTime, ei.AccessTime, ei.Crc)
+	return fmt.Sprintf("%v_%v_%v_%v_%v_%d_%d_%d", ei.FileID, ei.Size, ei.SnapshotDataOff, ei.IsDeleted, source, ei.ModifyTime, ei.AccessTime, ei.Crc)
 }
 
 // SortedExtentInfos defines an array sorted by AccessTime
@@ -80,15 +80,15 @@ func (extInfos SortedExtentInfos) Swap(i, j int) {
 // This extent implementation manages all header info and data body in one single entry file.
 // Header of extent include inode value of this extent block and Crc blocks of data blocks.
 type Extent struct {
-	file       *os.File
-	filePath   string
-	extentID   uint64
-	modifyTime int64
-	accessTime int64
-	dataSize   int64
-	hasClose   int32
-	header     []byte
-	snapshotDataSize int64
+	file            *os.File
+	filePath        string
+	extentID        uint64
+	modifyTime      int64
+	accessTime      int64
+	dataSize        int64
+	hasClose        int32
+	header          []byte
+	snapshotDataOff uint64
 	sync.Mutex
 }
 
@@ -97,12 +97,12 @@ func NewExtentInCore(name string, extentID uint64) *Extent {
 	e := new(Extent)
 	e.extentID = extentID
 	e.filePath = name
-	e.snapshotDataSize = util.ExtentSize
+	e.snapshotDataOff = util.ExtentSize
 	return e
 }
 
 func (e *Extent) String() string {
-	return fmt.Sprintf("%v_%v_%v", e.filePath, e.dataSize, e.snapshotDataSize)
+	return fmt.Sprintf("%v_%v_%v", e.filePath, e.dataSize, e.snapshotDataOff)
 }
 
 func (e *Extent) HasClosed() bool {
@@ -192,7 +192,6 @@ func (e *Extent) GetDataSize(statSize int64) (dataSize int64) {
 	return
 }
 
-
 // RestoreFromFS restores the entity data and status from the file stored on the filesystem.
 func (e *Extent) RestoreFromFS() (err error) {
 	if e.file, err = os.OpenFile(e.filePath, os.O_RDWR, 0666); err != nil {
@@ -218,10 +217,11 @@ func (e *Extent) RestoreFromFS() (err error) {
 	}
 
 	e.dataSize = e.GetDataSize(info.Size())
-	e.snapshotDataSize = util.ExtentSize
+	e.snapshotDataOff = util.ExtentSize
 	if info.Size() > util.ExtentSize {
-		e.snapshotDataSize = info.Size()
+		e.snapshotDataOff = uint64(info.Size())
 	}
+
 	atomic.StoreInt64(&e.modifyTime, info.ModTime().Unix())
 
 	ts := info.Sys().(*syscall.Stat_t)
@@ -308,12 +308,14 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 		log.LogErrorf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
 			offset, size, writeType, err)
 		return
-	} else if IsAppendRandomWrite(writeType) && e.snapshotDataSize != offset {
-		err = NewParameterMismatchErr(fmt.Sprintf("extent current snapshot size = %v write offset=%v write size=%v", e.snapshotDataSize, offset, size))
-		log.LogErrorf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
-			offset, size, writeType, err)
-		return
 	}
+	// snapshot append is triggered by raft,need idempotent
+	//else if IsAppendRandomWrite(writeType) && e.snapshotDataOff != uint64(offset) {
+	//	err = NewParameterMismatchErr(fmt.Sprintf("extent current snapshot size = %v write offset=%v write size=%v", e.snapshotDataOff, offset, size))
+	//	log.LogErrorf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
+	//		offset, size, writeType, err)
+	//	return
+	//}
 	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	if _, err = e.file.WriteAt(data[:size], int64(offset)); err != nil {
 		log.LogErrorf("action[Extent.Write] offset %v size %v writeType %v err %v", offset, size, writeType, err)
@@ -330,14 +332,14 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 			log.LogDebugf("action[Extent.Write] e %v offset %v size %v writeType %v", e, offset, size, writeType)
 		} else if IsAppendRandomWrite(writeType) {
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
-			index := int64(math.Max(float64(e.snapshotDataSize), float64(offset+size)))
+			index := int64(math.Max(float64(e.snapshotDataOff), float64(offset+size)))
 			if index%PageSize != 0 {
 				index = index + (PageSize - index%PageSize)
 			}
-			e.snapshotDataSize = index
+			e.snapshotDataOff = uint64(index)
 		}
-		log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v dataSize %v snapshotDataSize %v",
-			offset, size, writeType, e.dataSize, e.snapshotDataSize)
+		log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v dataSize %v snapshotDataOff %v",
+			offset, size, writeType, e.dataSize, e.snapshotDataOff)
 	}()
 	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	if isSync {
@@ -401,9 +403,9 @@ func (e *Extent) ReadTiny(data []byte, offset, size int64, isRepairRead bool) (c
 }
 
 func (e *Extent) checkReadOffsetAndSize(offset, size int64) error {
-	if (e.snapshotDataSize == util.ExtentSize && offset > e.Size()) ||
-		(e.snapshotDataSize > util.ExtentSize && offset > e.snapshotDataSize )  {
-		return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v snapshotDataSize=%v", offset, size, e.snapshotDataSize))
+	if (e.snapshotDataOff == util.ExtentSize && offset > e.Size()) ||
+		(e.snapshotDataOff > util.ExtentSize && uint64(offset) > e.snapshotDataOff)  {
+		return NewParameterMismatchErr(fmt.Sprintf("offset=%v size=%v snapshotDataOff=%v", offset, size, e.snapshotDataOff))
 	}
 	return nil
 }
