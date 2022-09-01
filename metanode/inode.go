@@ -491,6 +491,9 @@ func (i *Inode) UnmarshalInodeValue(buff *bytes.Buffer) (err error) {
 	if i.Extents == nil {
 		i.Extents = NewSortedExtents()
 	}
+	if i.ObjExtents == nil {
+		i.ObjExtents = NewSortedObjExtents()
+	}
 	log.LogInfof("action[UnmarshalInodeValue] inode %v Reserved %v", i.Inode, i.Reserved)
 	v3 := i.Reserved & V3EnableSnapInodeFlag > 0
 	if (i.Reserved & V2EnableColdInodeFlag > 0) ||  v3 {
@@ -511,9 +514,7 @@ func (i *Inode) UnmarshalInodeValue(buff *bytes.Buffer) (err error) {
 
 	if i.Reserved & V2EnableColdInodeFlag > 0 {
 		// unmarshal ObjExtentsKey
-		if i.ObjExtents == nil {
-			i.ObjExtents = NewSortedObjExtents()
-		}
+
 		ObjExtSize := uint32(0)
 		if err = binary.Read(buff, binary.BigEndian, &ObjExtSize); err != nil {
 			return

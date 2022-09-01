@@ -221,7 +221,7 @@ type OpPartition interface {
 
 // MetaPartition defines the interface for the meta partition operations.
 type MetaPartition interface {
-	Start() error
+	Start(create bool) error
 	Stop()
 	DataSize() uint64
 	OpMeta
@@ -302,7 +302,7 @@ func (mp *metaPartition) DataSize() uint64 {
 }
 
 // Start starts a meta partition.
-func (mp *metaPartition) Start() (err error) {
+func (mp *metaPartition) Start(create bool) (err error) {
 	if atomic.CompareAndSwapUint32(&mp.state, common.StateStandby, common.StateStart) {
 		defer func() {
 			var newState uint32
@@ -316,9 +316,14 @@ func (mp *metaPartition) Start() (err error) {
 		if mp.config.BeforeStart != nil {
 			mp.config.BeforeStart()
 		}
-		if err = mp.onStart(); err != nil {
+		if err = mp.onStart(create); err != nil {
 			err = errors.NewErrorf("[Start]->%s", err.Error())
 			return
+		}
+		if create {
+			if err = mp.storeInitMultiversion(); err != nil {
+				return
+			}
 		}
 		if mp.config.AfterStart != nil {
 			mp.config.AfterStart()
@@ -343,13 +348,16 @@ func (mp *metaPartition) Stop() {
 	}
 }
 
-func (mp *metaPartition) onStart() (err error) {
+func (mp *metaPartition) onStart(create bool) (err error) {
 	defer func() {
 		if err == nil {
 			return
 		}
 		mp.onStop()
 	}()
+
+	mp.multiVersionList = &proto.VolVersionInfoList{}
+
 	if err = mp.load(); err != nil {
 		err = errors.NewErrorf("[onStart] load partition id=%d: %s",
 			mp.config.PartitionId, err.Error())
@@ -381,14 +389,16 @@ func (mp *metaPartition) onStart() (err error) {
 		return
 	}
 
-	verList, verErr := masterClient.AdminAPI().GetVerList(mp.config.VolName)
-	if verErr != nil {
-		err = verr
-		log.LogErrorf("action[onStart] GetVerList err[%v]", err)
-		return
+	if create {
+		verList, verErr := masterClient.AdminAPI().GetVerList(mp.config.VolName)
+		if verErr != nil {
+			err = verr
+			log.LogErrorf("action[onStart] GetVerList err[%v]", err)
+			return
+		}
+		mp.multiVersionList = verList
+		log.LogDebugf("action[onStart] verList %v", verList)
 	}
-	mp.multiVersionList = verList
-	log.LogDebugf("action[onStart] verList %v", verList)
 
 	mp.volType = volumeInfo.VolType
 	var ebsClient *blobstore.BlobStoreClient
@@ -593,7 +603,10 @@ func (mp *metaPartition) LoadSnapshot(snapshotPath string) (err error) {
 	if err = mp.loadMultipart(snapshotPath); err != nil {
 		return
 	}
-	err = mp.loadApplyID(snapshotPath)
+	if err = mp.loadApplyID(snapshotPath); err != nil {
+		return
+	}
+	err = mp.loadMultiVer(snapshotPath)
 	return
 }
 
@@ -602,6 +615,10 @@ func (mp *metaPartition) load() (err error) {
 		return
 	}
 	snapshotPath := path.Join(mp.config.RootDir, snapshotDir)
+	if err = mp.loadMultiVer(snapshotPath); err != nil {
+		log.LogErrorf("laod error %v", err)
+		return
+	}
 	if err = mp.loadInode(snapshotPath); err != nil {
 		return
 	}
@@ -614,7 +631,10 @@ func (mp *metaPartition) load() (err error) {
 	if err = mp.loadMultipart(snapshotPath); err != nil {
 		return
 	}
-	err = mp.loadApplyID(snapshotPath)
+	if err = mp.loadApplyID(snapshotPath); err != nil {
+		return
+	}
+
 	return
 }
 
@@ -642,6 +662,7 @@ func (mp *metaPartition) store(sm *storeMsg) (err error) {
 		mp.storeExtend,
 		mp.storeMultipart,
 	}
+	mp.storeMultiversion(tmpDir, sm)
 	for _, storeFunc := range storeFuncs {
 		var crc uint32
 		if crc, err = storeFunc(tmpDir, sm); err != nil {
@@ -805,7 +826,7 @@ func (mp *metaPartition) Reset() (err error) {
 	mp.applyID = 0
 
 	// remove files
-	filenames := []string{applyIDFile, dentryFile, inodeFile, extendFile, multipartFile}
+	filenames := []string{applyIDFile, dentryFile, inodeFile, extendFile, multipartFile, verdataFile}
 	for _, filename := range filenames {
 		filepath := path.Join(mp.config.RootDir, filename)
 		if err = os.Remove(filepath); err != nil {

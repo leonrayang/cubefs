@@ -139,6 +139,7 @@ const (
 	opFSMVersionOp
 	opFSMExtentSplit
 	opFSMDelVer
+	opFSMStoreTickV1
 )
 
 var (

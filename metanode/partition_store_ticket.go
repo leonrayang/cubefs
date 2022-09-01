@@ -16,6 +16,7 @@ package metanode
 
 import (
 	"encoding/binary"
+	"github.com/cubefs/cubefs/proto"
 	"time"
 
 	"github.com/cubefs/cubefs/cmd/common"
@@ -31,6 +32,7 @@ type storeMsg struct {
 	dentryTree    *BTree
 	extendTree    *BTree
 	multipartTree *BTree
+	multiVerList  []*proto.VolVersionInfo
 }
 
 func (mp *metaPartition) startSchedule(curIndex uint64) {
