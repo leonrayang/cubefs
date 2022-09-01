@@ -139,7 +139,6 @@ type MetaWrapper struct {
 	partCond  *sync.Cond
 
 	// Allocated to trigger and throttle instant partition updates
-
 	forceUpdate         chan struct{}
 	forceUpdateLimit    *rate.Limiter
 	EnableSummary       bool

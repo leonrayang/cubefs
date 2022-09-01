@@ -28,7 +28,7 @@ func (mp *metaPartition) batchSetInodeQuota(req *proto.BatchSetMetaserverQuotaRe
 		var extend = NewExtend(ino)
 		treeItem := mp.extendTree.Get(extend)
 		inode := NewInode(ino, 0)
-		retMsg := mp.getInode(inode)
+		retMsg := mp.getInode(inode, true)
 		if retMsg.Status != proto.OpOk {
 			log.LogErrorf("batchSetInodeQuota get inode [%v] fail.", ino)
 			continue
@@ -103,7 +103,7 @@ func (mp *metaPartition) batchDeleteInodeQuota(req *proto.BatchDeleteMetaserverQ
 		var value []byte
 		treeItem := mp.extendTree.Get(extend)
 		inode := NewInode(ino, 0)
-		retMsg := mp.getInode(inode)
+		retMsg := mp.getInode(inode, true)
 		if retMsg.Status != proto.OpOk {
 			log.LogErrorf("batchDeleteInodeQuota get inode [%v] fail.", ino)
 			continue
@@ -333,7 +333,7 @@ func (mp *metaPartition) getQuotaReportInfos() (infos []*proto.QuotaReportInfo) 
 func (mp *metaPartition) statisticExtendByLoad(extend *Extend) {
 	mqMgr := mp.mqMgr
 	ino := NewInode(extend.GetInode(), 0)
-	retMsg := mp.getInode(ino)
+	retMsg := mp.getInode(ino, true)
 	if retMsg.Status != proto.OpOk {
 		log.LogErrorf("statisticExtendByLoad get inode [%v] fail [%v].", extend.GetInode(), retMsg.Status)
 		return
@@ -363,7 +363,7 @@ func (mp *metaPartition) statisticExtendByLoad(extend *Extend) {
 func (mp *metaPartition) statisticExtendByStore(extend *Extend) {
 	mqMgr := mp.mqMgr
 	ino := NewInode(extend.GetInode(), 0)
-	retMsg := mp.getInode(ino)
+	retMsg := mp.getInode(ino, true)
 	if retMsg.Status != proto.OpOk {
 		log.LogErrorf("statisticExtendByStore get inode [%v] fail [%v].", extend.GetInode(), retMsg.Status)
 		return

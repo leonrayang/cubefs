@@ -213,6 +213,7 @@ type OpMultiVersion interface {
 	GetAllVersionInfo(req *proto.MultiVersionOpRequest, p *Packet) (err error)
 	GetSpecVersionInfo(req *proto.MultiVersionOpRequest, p *Packet) (err error)
 	GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest, rsp *proto.GetExtentsResponse)
+	checkVerList(info *proto.VolVersionInfoList) (err error)
 }
 
 // OpMeta defines the interface for the metadata operations.
@@ -231,6 +232,7 @@ type OpMeta interface {
 // OpPartition defines the interface for the partition operations.
 type OpPartition interface {
 	GetVolName() (volName string)
+	GetVerSeq() uint64
 	IsLeader() (leaderAddr string, isLeader bool)
 	IsFollowerRead() bool
 	SetFollowerRead(bool)
@@ -506,7 +508,11 @@ func (mp *metaPartition) acucumUidSizeByStore(ino *Inode) {
 func (mp *metaPartition) acucumUidSizeByLoad(ino *Inode) {
 	mp.uidManager.accumInoUidSize(ino, mp.uidManager.accumBase)
 }
-
+func (mp *metaPartition) getVerList() []*proto.VolVersionInfo {
+	mp.multiVersionList.RLock()
+	defer mp.multiVersionList.RUnlock()
+	return mp.multiVersionList.VerList
+}
 func (mp *metaPartition) updateSize() {
 	timer := time.NewTicker(time.Minute * 2)
 	go func() {
@@ -566,6 +572,7 @@ func (mp *metaPartition) Start(isCreate bool) (err error) {
 			err = errors.NewErrorf("[Start]->%s", err.Error())
 			return
 		}
+
 		if mp.config.AfterStart != nil {
 			mp.config.AfterStart()
 		}
@@ -596,6 +603,7 @@ func (mp *metaPartition) onStart(isCreate bool) (err error) {
 		}
 		mp.onStop()
 	}()
+	mp.multiVersionList = &proto.VolVersionInfoList{}
 	if err = mp.load(isCreate); err != nil {
 		err = errors.NewErrorf("[onStart] load partition id=%d: %s",
 			mp.config.PartitionId, err.Error())
@@ -627,14 +635,31 @@ func (mp *metaPartition) onStart(isCreate bool) (err error) {
 		return
 	}
 
-	verList, verErr := masterClient.AdminAPI().GetVerList(mp.config.VolName)
-	if verErr != nil {
-		err = verr
-		log.LogErrorf("action[onStart] GetVerList err[%v]", err)
-		return
+	if isCreate || len(mp.multiVersionList.VerList) == 0 {
+		verList, verErr := masterClient.AdminAPI().GetVerList(mp.config.VolName)
+		if verErr != nil {
+			err = verr
+			log.LogErrorf("action[onStart] GetVerList err[%v]", err)
+			return
+		}
+
+		for _, info := range verList.VerList {
+			if info.Status != proto.VersionNormal {
+				continue
+			}
+			mp.multiVersionList.VerList = append(mp.multiVersionList.VerList, info)
+		}
+
+		log.LogDebugf("action[onStart] verList %v", mp.multiVersionList.VerList)
+		if err = mp.storeInitMultiversion(); err != nil {
+			return
+		}
 	}
-	mp.multiVersionList = verList
-	log.LogDebugf("action[onStart] verList %v", verList)
+
+	vlen := len(mp.multiVersionList.VerList)
+	if vlen > 0 {
+		mp.verSeq = mp.multiVersionList.VerList[vlen-1].Ver
+	}
 
 	mp.volType = volumeInfo.VolType
 	var ebsClient *blobstore.BlobStoreClient
@@ -784,6 +809,10 @@ func (mp *metaPartition) GetVolName() (volName string) {
 	return mp.config.VolName
 }
 
+func (mp *metaPartition) GetVerSeq() uint64 {
+	return atomic.LoadUint64(&mp.verSeq)
+}
+
 // IsLeader returns the raft leader address and if the current meta partition is the leader.
 func (mp *metaPartition) SetFollowerRead(fRead bool) {
 	if mp.raftPartition == nil {
@@ -926,14 +955,17 @@ func (mp *metaPartition) LoadSnapshot(snapshotPath string) (err error) {
 		}
 	}
 
-	return mp.loadApplyID(snapshotPath)
+	if err = mp.loadApplyID(snapshotPath); err != nil {
+		return
+	}
+	err = mp.loadMultiVer(snapshotPath)
+	return
 }
 
 func (mp *metaPartition) load(isCreate bool) (err error) {
 	if err = mp.loadMetadata(); err != nil {
 		return
 	}
-
 	// 1. create new metaPartition, no need to load snapshot
 	// 2. store the snapshot files for new mp, because
 	// mp.load() will check all the snapshot files when mn startup
@@ -950,6 +982,10 @@ func (mp *metaPartition) load(isCreate bool) (err error) {
 		log.LogErrorf("load snapshot failed, err: %s", err.Error())
 		return nil
 
+	}
+	if err = mp.loadMultiVer(snapshotPath); err != nil {
+		log.LogErrorf("laod error %v", err)
+		return
 	}
 	return mp.LoadSnapshot(snapshotPath)
 }
@@ -982,6 +1018,7 @@ func (mp *metaPartition) store(sm *storeMsg) (err error) {
 		mp.storeTxRbInode,
 		mp.storeTxRbDentry,
 	}
+	mp.storeMultiversion(tmpDir, sm)
 	for _, storeFunc := range storeFuncs {
 		var crc uint32
 		if crc, err = storeFunc(tmpDir, sm); err != nil {
@@ -1160,7 +1197,7 @@ func (mp *metaPartition) Reset() (err error) {
 	//mp.txProcessor.txResource.Unlock()
 
 	// remove files
-	filenames := []string{applyIDFile, dentryFile, inodeFile, extendFile, multipartFile, txInfoFile, txRbInodeFile, txRbDentryFile, TxIDFile}
+	filenames := []string{applyIDFile, dentryFile, inodeFile, extendFile, multipartFile, verdataFile, txInfoFile, txRbInodeFile, txRbDentryFile, TxIDFile}
 	for _, filename := range filenames {
 		filepath := path.Join(mp.config.RootDir, filename)
 		if err = os.Remove(filepath); err != nil {

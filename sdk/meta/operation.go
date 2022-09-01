@@ -458,7 +458,7 @@ func (mw *MetaWrapper) dcreate(mp *MetaPartition, parentID uint64, name string, 
 		Name:        name,
 		Mode:        mode,
 		QuotaIds:    quotaIds,
-		VerSeq:      mw.LastVerSeq,
+		VerSeq:      mw.Client.GetLatestVer(),
 	}
 
 	packet := proto.NewPacketReqID()
@@ -1022,7 +1022,7 @@ func (mw *MetaWrapper) readDir(mp *MetaPartition, parentID uint64) (status int, 
 }
 
 // read limit dentries start from
-func (mw *MetaWrapper) readDirLimit(mp *MetaPartition, parentID uint64, from string, limit uint64, verSeq uint64) (status int, children []proto.Dentry, err error) {
+func (mw *MetaWrapper) readDirLimit(mp *MetaPartition, parentID uint64, from string, limit uint64, verSeq uint64, verDel bool) (status int, children []proto.Dentry, err error) {
 	req := &proto.ReadDirLimitRequest{
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
@@ -1030,6 +1030,7 @@ func (mw *MetaWrapper) readDirLimit(mp *MetaPartition, parentID uint64, from str
 		Marker:      from,
 		Limit:       limit,
 		VerSeq:      verSeq,
+		VerDel:      verDel,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -2506,10 +2507,11 @@ func (mw *MetaWrapper) getInodeQuota(mp *MetaPartition, inode uint64) (quotaInfo
 }
 
 func (mw *MetaWrapper) checkVerFromMeta(packet *proto.Packet) {
-	if packet.VerSeq > atomic.LoadUint64(&mw.LastVerSeq) {
-		mw.LastVerSeq = packet.VerSeq
-		if mw.Client != nil {
-			mw.Client.UpdateLatestVer(mw.LastVerSeq)
-		}
+
+	if packet.VerSeq <= mw.Client.GetLatestVer() {
+		return
 	}
+
+	log.LogDebugf("checkVerFromMeta.try update meta wrapper verSeq from %v to %v", mw.Client.GetLatestVer(), packet.VerSeq)
+	mw.Client.UpdateLatestVer(packet.VerSeq)
 }
