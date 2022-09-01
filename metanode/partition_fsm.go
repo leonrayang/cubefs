@@ -178,6 +178,7 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		dentryTree := mp.getDentryTree()
 		extendTree := mp.extendTree.GetTree()
 		multipartTree := mp.multipartTree.GetTree()
+		multiVersion := mp.multiVersionList.VerList
 		msg := &storeMsg{
 			command:       opFSMStoreTick,
 			applyIndex:    index,
@@ -185,6 +186,7 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 			dentryTree:    dentryTree,
 			extendTree:    extendTree,
 			multipartTree: multipartTree,
+			multiVerList: multiVersion,
 		}
 		mp.storeChan <- msg
 	case opFSMInternalDeleteInode:
@@ -357,6 +359,7 @@ func (mp *metaPartition) ApplySnapshot(peers []raftproto.Peer, iter raftproto.Sn
 				dentryTree:    mp.dentryTree,
 				extendTree:    mp.extendTree,
 				multipartTree: mp.multipartTree,
+				multiVerList: mp.multiVersionList.VerList,
 			}
 			select {
 			case mp.extReset <- struct{}{}:
