@@ -25,6 +25,27 @@ import (
 	"github.com/cubefs/cubefs/proto"
 )
 
+func replyInfoNoCheck(info *proto.InodeInfo, ino *Inode) bool {
+	ino.RLock()
+	defer ino.RUnlock()
+
+	info.Inode = ino.Inode
+	info.Mode = ino.Type
+	info.Size = ino.Size
+	info.Nlink = ino.NLink
+	info.Uid = ino.Uid
+	info.Gid = ino.Gid
+	info.Generation = ino.Generation
+	if length := len(ino.LinkTarget); length > 0 {
+		info.Target = make([]byte, length)
+		copy(info.Target, ino.LinkTarget)
+	}
+	info.CreateTime = time.Unix(ino.CreateTime, 0)
+	info.AccessTime = time.Unix(ino.AccessTime, 0)
+	info.ModifyTime = time.Unix(ino.ModifyTime, 0)
+	return true
+}
+
 func replyInfo(info *proto.InodeInfo, ino *Inode) bool {
 	ino.RLock()
 	defer ino.RUnlock()
@@ -200,8 +221,11 @@ func (mp *metaPartition) InodeGet(req *InodeGetReq, p *Packet) (err error) {
 	ino := NewInode(req.Inode, 0)
 	ino.verSeq = req.VerSeq
 	getAllVerInfo := req.VerAll
-	log.LogDebugf("action[Inode] %v seq %v", ino.Inode, req.VerSeq)
-	retMsg := mp.getInode(ino)
+	retMsg := mp.getInode(ino, getAllVerInfo)
+
+	log.LogDebugf("action[Inode] %v seq %v retMsg.Status %v, getAllVerInfo %v",
+		ino.Inode, req.VerSeq, retMsg.Status, getAllVerInfo)
+
 	ino = retMsg.Msg
 	var (
 		reply  []byte
@@ -211,19 +235,27 @@ func (mp *metaPartition) InodeGet(req *InodeGetReq, p *Packet) (err error) {
 		resp := &proto.InodeGetResponse{
 			Info: &proto.InodeInfo{},
 		}
-		if replyInfo(resp.Info, retMsg.Msg) {
-			status = proto.OpOk
-			if getAllVerInfo {
-				inode := mp.getInodeTopLayer(ino)
-				log.LogDebugf("req ino %v, toplayer ino %v", retMsg.Msg, inode)
-				resp.LayAll = inode.Msg.getAllLayerEks()
-			}
-			reply, err = json.Marshal(resp)
-			if err != nil {
-				status = proto.OpErr
-				reply = []byte(err.Error())
+		if getAllVerInfo {
+			replyInfoNoCheck(resp.Info, retMsg.Msg)
+		} else {
+			if !replyInfo(resp.Info, retMsg.Msg) {
+				p.PacketErrorWithBody(status, reply)
+				return
 			}
 		}
+
+		status = proto.OpOk
+		if getAllVerInfo {
+			inode := mp.getInodeTopLayer(ino)
+			log.LogDebugf("req ino %v, toplayer ino %v", retMsg.Msg, inode)
+			resp.LayAll = inode.Msg.getAllInodesInfo()
+		}
+		reply, err = json.Marshal(resp)
+		if err != nil {
+			status = proto.OpErr
+			reply = []byte(err.Error())
+		}
+
 	}
 	p.PacketErrorWithBody(status, reply)
 	return
@@ -308,7 +340,7 @@ func (mp *metaPartition) InodeExpirationGetBatch(req *InodeGetExpirationReqBatch
 	ino := NewInode(0, 0)
 	for _, dentry := range req.Dentries {
 		ino.Inode = dentry.Inode
-		retMsg := mp.getInode(ino)
+		retMsg := mp.getInode(ino, false)
 		expireInfo := &proto.ExpireInfo{
 			Dentry:  dentry,
 			Expired: false,
@@ -338,7 +370,7 @@ func (mp *metaPartition) InodeGetBatch(req *InodeGetReqBatch, p *Packet) (err er
 	for _, inoId := range req.Inodes {
 		ino.Inode = inoId
 		ino.verSeq = req.VerSeq
-		retMsg := mp.getInode(ino)
+		retMsg := mp.getInode(ino, false)
 		if retMsg.Status == proto.OpOk {
 			inoInfo := &proto.InodeInfo{}
 			if replyInfo(inoInfo, retMsg.Msg) {

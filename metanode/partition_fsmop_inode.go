@@ -102,12 +102,12 @@ func (mp *metaPartition) getInodeTopLayer(ino *Inode) (resp *InodeResponse) {
 	return
 }
 
-func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
+func (mp *metaPartition) getInode(ino *Inode, listAll bool) (resp *InodeResponse) {
 	resp = NewInodeResponse()
 	resp.Status = proto.OpOk
 
 	i := mp.getInodeByVer(ino)
-	if i == nil || i.ShouldDelete() {
+	if i == nil || (listAll == false && i.ShouldDelete()) {
 		log.LogDebugf("action[getInode] ino  %v not found", ino)
 		resp.Status = proto.OpNotExistErr
 		return

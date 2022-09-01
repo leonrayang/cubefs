@@ -97,12 +97,24 @@ func (i *InodeBatch) Clone() InodeBatch {
 	return rB
 }
 
+func (ino* Inode) getAllInodesInfo() (rsp []proto.InodeInfo){
+	ino.RLock()
+	defer ino.RUnlock()
+
+	for _, info := range ino.multiVersions {
+		rspInodeInfo := &proto.InodeInfo{}
+		replyInfoNoCheck(rspInodeInfo, info)
+		rsp = append(rsp, *rspInodeInfo)
+	}
+	return
+}
+
 func (ino* Inode) getAllLayerEks() (rsp []proto.LayerInfo){
 	ino.RLock()
 	defer ino.RUnlock()
 
 	rspInodeInfo := &proto.InodeInfo{}
-	replyInfo(rspInodeInfo, ino)
+	replyInfoNoCheck(rspInodeInfo, ino)
 
 	layerInfo := proto.LayerInfo{
 		LayerIdx:0,

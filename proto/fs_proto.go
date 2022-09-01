@@ -304,7 +304,7 @@ type LayerInfo struct {
 // InodeGetResponse defines the response to the InodeGetRequest.
 type InodeGetResponse struct {
 	Info *InodeInfo `json:"info"`
-	LayAll []LayerInfo `json:"layerInfo"`
+	LayAll []InodeInfo `json:"layerInfo"`
 }
 
 // BatchInodeGetRequest defines the request to get the inode in batch.
@@ -389,6 +389,7 @@ type GetExtentsRequest struct {
 	PartitionID uint64 `json:"pid"`
 	Inode       uint64 `json:"ino"`
 	VerSeq      uint64 `json:"seq"`
+	VerAll      bool
 }
 
 // GetObjExtentsResponse defines the response to the request of getting obj extents.
@@ -404,6 +405,7 @@ type GetExtentsResponse struct {
 	Generation uint64      `json:"gen"`
 	Size       uint64      `json:"sz"`
 	Extents    []ExtentKey `json:"eks"`
+	LayerInfo  []LayerInfo `json:"layer"`
 	Status     int
 }
 

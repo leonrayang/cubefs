@@ -216,7 +216,9 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 				})
 			})
 		}
-
+		if req.VerAll {
+			resp.LayerInfo = retMsg.Msg.getAllLayerEks()
+		}
 		reply, err = json.Marshal(resp)
 		if err != nil {
 			status = proto.OpErr
@@ -231,7 +233,7 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 func (mp *metaPartition) ObjExtentsList(req *proto.GetExtentsRequest, p *Packet) (err error) {
 	ino := NewInode(req.Inode, 0)
 	ino.verSeq = req.VerSeq
-	retMsg := mp.getInode(ino)
+	retMsg := mp.getInode(ino, false)
 	ino = retMsg.Msg
 	var (
 		reply  []byte
