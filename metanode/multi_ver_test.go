@@ -482,7 +482,7 @@ func DelVersion(t *testing.T, verSeq uint64, dirIno *Inode, dirDentry *Dentry) {
 		PrintInodeInfo(t, rino)
 		log.LogDebugf("DelVersion get rino %v start", rino)
 		t.Logf("DelVersion get rino %v start", rino)
-		ino := mp.getInode(rino)
+		ino := mp.getInode(rino, false)
 		log.LogDebugf("DelVersion get rino %v end", ino)
 		t.Logf("DelVersion get rino %v end", rino)
 		assert.True(t, ino.Status == proto.OpOk)

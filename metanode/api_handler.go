@@ -324,8 +324,8 @@ func (m *MetaNode) getExtentsByInodeHandler(w http.ResponseWriter,
 		return
 	}
 
-	seq, _ := strconv.ParseUint(r.FormValue("seq"), 10, 64)
-
+	verSeq, _ := strconv.ParseUint(r.FormValue("verSeq"), 10, 64)
+	verAll, _ := strconv.ParseBool(r.FormValue("verAll"))
 	mp, err := m.metadataManager.GetPartition(pid)
 	if err != nil {
 		resp.Code = http.StatusNotFound
@@ -335,7 +335,8 @@ func (m *MetaNode) getExtentsByInodeHandler(w http.ResponseWriter,
 	req := &proto.GetExtentsRequest{
 		PartitionID: pid,
 		Inode:       id,
-		VerSeq:      seq,
+		VerSeq:      verSeq,
+		VerAll:      verAll,
 	}
 	p := &Packet{}
 	if err = mp.ExtentsList(req, p); err != nil {
