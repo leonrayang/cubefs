@@ -205,6 +205,9 @@ func createDentry(t *testing.T, parentId uint64, inodeId uint64, name string, mo
 }
 
 func createVer() (verSeq uint64){
+	mp.multiVersionList.Lock()
+	defer mp.multiVersionList.Unlock()
+
 	tm := time.Now().Unix()
 	verInfo := &proto.VolVersionInfo{
 		Ver:uint64(tm),

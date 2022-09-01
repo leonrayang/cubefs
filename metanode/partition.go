@@ -262,9 +262,12 @@ type metaPartition struct {
 	//snapshot
 	verSeq           uint64
 	multiVersionList *proto.VolVersionInfoList
-	versionLock      sync.Mutex
 }
-
+func (mp *metaPartition) getVerList() []*proto.VolVersionInfo {
+	mp.multiVersionList.RLock()
+	defer mp.multiVersionList.RUnlock()
+	return mp.multiVersionList.VerList
+}
 func (mp *metaPartition) updateSize() {
 	timer := time.NewTicker(time.Minute * 2)
 	go func() {

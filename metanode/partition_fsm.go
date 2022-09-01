@@ -61,7 +61,7 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		if err = ino.Unmarshal(msg.V); err != nil {
 			return
 		}
-		resp = mp.fsmUnlinkInode(ino, mp.multiVersionList.VerList)
+		resp = mp.fsmUnlinkInode(ino, mp.getVerList())
 	case opFSMUnlinkInodeBatch:
 		inodes, err := InodeBatchUnmarshal(msg.V)
 		if err != nil {
@@ -178,7 +178,7 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		dentryTree := mp.getDentryTree()
 		extendTree := mp.extendTree.GetTree()
 		multipartTree := mp.multipartTree.GetTree()
-		multiVersion := mp.multiVersionList.VerList
+		multiVersion := mp.getVerList()
 		msg := &storeMsg{
 			command:       opFSMStoreTick,
 			applyIndex:    index,
@@ -241,6 +241,8 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 }
 
 func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
+	mp.multiVersionList.Lock()
+	defer mp.multiVersionList.Unlock()
 
 	var opData VerOpData
 	if err =  json.Unmarshal(reqData, &opData); err != nil {
@@ -248,8 +250,6 @@ func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
 		return
 	}
 
-	mp.versionLock.Lock()
-	defer mp.versionLock.Unlock()
 	log.LogInfof("action[fsmVersionOp] mp[%v] seq %v, op %v", mp.config.PartitionId, opData.VerSeq, opData.Op)
 
 	if opData.Op == proto.CreateVersionCommit {
@@ -359,7 +359,7 @@ func (mp *metaPartition) ApplySnapshot(peers []raftproto.Peer, iter raftproto.Sn
 				dentryTree:    mp.dentryTree,
 				extendTree:    mp.extendTree,
 				multipartTree: mp.multipartTree,
-				multiVerList: mp.multiVersionList.VerList,
+				multiVerList: mp.getVerList(),
 			}
 			select {
 			case mp.extReset <- struct{}{}:
