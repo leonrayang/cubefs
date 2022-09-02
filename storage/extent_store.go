@@ -448,7 +448,7 @@ func (s *ExtentStore) MarkDelete(extentID uint64, offset, size int64) (err error
 
 	funcNeedPunchDel := func() bool {
 		return  offset != 0 || (ei.Size != uint64(size) && ei.SnapshotDataSize == util.ExtentSize) ||
-			(ei.Size != uint64(ei.SnapshotDataSize) && ei.SnapshotDataSize > util.ExtentSize)
+			(ei.SnapshotDataSize != size && ei.SnapshotDataSize > util.ExtentSize)
 	}
 
 	if IsTinyExtent(extentID) || funcNeedPunchDel() {
@@ -571,7 +571,7 @@ func (s *ExtentStore) GetStoreUsedSize() (used int64) {
 			}
 			used += (stat.Blocks * DiskSectorSize)
 		} else {
-			used += int64(einfo.Size)
+			used += int64(einfo.Size)+einfo.SnapshotDataSize-int64(util.ExtentSize)
 		}
 	}
 	return
