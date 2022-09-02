@@ -58,7 +58,7 @@ func (ei *ExtentInfo) String() (m string) {
 	if source == "" {
 		source = "none"
 	}
-	return fmt.Sprintf("%v_%v_%v_%v_%d_%d_%d", ei.FileID, ei.Size, ei.IsDeleted, source, ei.ModifyTime, ei.AccessTime, ei.Crc)
+	return fmt.Sprintf("%v_%v_%v_%v_%v_%d_%d_%d", ei.FileID, ei.Size, ei.SnapshotDataSize, ei.IsDeleted, source, ei.ModifyTime, ei.AccessTime, ei.Crc)
 }
 
 // SortedExtentInfos defines an array sorted by AccessTime
@@ -99,6 +99,10 @@ func NewExtentInCore(name string, extentID uint64) *Extent {
 	e.filePath = name
 	e.snapshotDataSize = util.ExtentSize
 	return e
+}
+
+func (e *Extent) String() string {
+	return fmt.Sprintf("%v_%v_%v", e.filePath, e.dataSize, e.snapshotDataSize)
 }
 
 func (e *Extent) HasClosed() bool {
@@ -158,29 +162,33 @@ func (e *Extent) GetDataSize(statSize int64) (dataSize int64) {
 		curOff		int64
 		err			error
 	)
+	if statSize <= util.ExtentSize {
+		return statSize
+	}
 	for {
 		// curOff if the hold start and the data end
 		curOff, err = e.file.Seek(holStart, SEEK_DATA)
-		if err != nil || curOff > util.ExtentSize || holStart == curOff{
+		if err != nil || curOff >= util.ExtentSize || (holStart > 0 && holStart == curOff){
+			log.LogDebugf("GetDataSize statSize %v curOff %v dataStart %v holStart %v, err %v,path %v", statSize, curOff, dataStart, holStart, err, e.filePath)
 			break
 		}
+		log.LogDebugf("GetDataSize statSize %v curOff %v dataStart %v holStart %v, err %v,path %v", statSize, curOff, dataStart, holStart, err, e.filePath)
 		dataStart = curOff
 
 		curOff, err = e.file.Seek(dataStart, SEEK_HOLE)
-		if err != nil || curOff > util.ExtentSize || dataStart == curOff {
-			return
+		if err != nil || curOff >= util.ExtentSize || dataStart == curOff {
+			log.LogDebugf("GetDataSize statSize %v curOff %v dataStart %v holStart %v, err %v,path %v", statSize, curOff, dataStart, holStart, err, e.filePath)
+			break
 		}
+		log.LogDebugf("GetDataSize statSize %v curOff %v dataStart %v holStart %v, err %v,path %v", statSize, curOff, dataStart, holStart, err, e.filePath)
 		holStart = curOff
 	}
-
-	if holStart > dataStart {
+	log.LogDebugf("GetDataSize statSize %v curOff %v dataStart %v holStart %v, err %v,path %v", statSize, curOff, dataStart, holStart, err, e.filePath)
+	dataSize = util.ExtentSize
+	if holStart > dataStart { //data cann't move forward only hole include value util.ExtentSize
 		dataSize = holStart
-	} else {
-		dataSize = statSize
-		if dataSize > util.ExtentSize {
-			dataSize = util.ExtentSize
-		}
 	}
+	log.LogDebugf("GetDataSize statSize %v curOff %v dataStart %v holStart %v, err %v,path %v", statSize, curOff, dataStart, holStart, err, e.filePath)
 	return
 }
 
@@ -210,7 +218,10 @@ func (e *Extent) RestoreFromFS() (err error) {
 	}
 
 	e.dataSize = e.GetDataSize(info.Size())
-
+	e.snapshotDataSize = util.ExtentSize
+	if info.Size() > util.ExtentSize {
+		e.snapshotDataSize = info.Size()
+	}
 	atomic.StoreInt64(&e.modifyTime, info.ModTime().Unix())
 
 	ts := info.Sys().(*syscall.Stat_t)
@@ -316,6 +327,7 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 		if IsAppendWrite(writeType) {
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
 			e.dataSize = int64(math.Max(float64(e.dataSize), float64(offset+size)))
+			log.LogDebugf("action[Extent.Write] e %v offset %v size %v writeType %v", e, offset, size, writeType)
 		} else if IsAppendRandomWrite(writeType) {
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
 			index := int64(math.Max(float64(e.snapshotDataSize), float64(offset+size)))
