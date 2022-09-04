@@ -813,7 +813,7 @@ func (s *DataNode) handleExtentRepairReadPacket(p *repl.Packet, connect net.Conn
 	var (
 		err error
 	)
-
+	log.LogDebugf("handleExtentRepairReadPacket %v", p)
 	defer func() {
 		if err != nil {
 			p.PackErrorBody(ActionStreamRead, err.Error())
@@ -855,6 +855,7 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 	if !shallDegrade {
 		metricPartitionIOLabels = GetIoMetricLabels(partition, "read")
 	}
+	log.LogDebugf("extentRepairReadPacket dp %v offset %v needSize %v", partition.partitionID, offset, needReplySize)
 	for {
 		if needReplySize <= 0 {
 			break

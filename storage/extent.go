@@ -53,6 +53,10 @@ type ExtentInfo struct {
 	SnapshotDataOff uint64  `json:"snapSize"`
 }
 
+func (ei *ExtentInfo) TotalSize() uint64 {
+	return ei.Size + (ei.SnapshotDataOff-util.ExtentSize)
+}
+
 func (ei *ExtentInfo) String() (m string) {
 	source := ei.Source
 	if source == "" {
@@ -333,9 +337,9 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 		} else if IsAppendRandomWrite(writeType) {
 			atomic.StoreInt64(&e.modifyTime, time.Now().Unix())
 			index := int64(math.Max(float64(e.snapshotDataOff), float64(offset+size)))
-			if index%PageSize != 0 {
-				index = index + (PageSize - index%PageSize)
-			}
+			//if index%PageSize != 0 {
+			//	index = index + (PageSize - index%PageSize)
+			//}
 			e.snapshotDataOff = uint64(index)
 		}
 		log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v dataSize %v snapshotDataOff %v",
@@ -373,7 +377,7 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 
 // Read reads data from an extent.
 func (e *Extent) Read(data []byte, offset, size int64, isRepairRead bool) (crc uint32, err error) {
-	log.LogDebugf("action[Extent.read] offset %v size %v", offset, size)
+	log.LogDebugf("action[Extent.read] offset %v size %v extent %v", offset, size, e)
 	if IsTinyExtent(e.extentID) {
 		return e.ReadTiny(data, offset, size, isRepairRead)
 	}
@@ -382,9 +386,10 @@ func (e *Extent) Read(data []byte, offset, size int64, isRepairRead bool) (crc u
 			offset, size, err)
 		return
 	}
-	if _, err = e.file.ReadAt(data[:size], offset); err != nil {
-		log.LogErrorf("action[Extent.Read] NewParameterMismatchErr offset %v size %v err %v",
-			offset, size, err)
+	var rSize int
+	if rSize, err = e.file.ReadAt(data[:size], offset); err != nil {
+		log.LogErrorf("action[Extent.Read] NewParameterMismatchErr offset %v size %v err %v realsize %v",
+			offset, size, err, rSize)
 		return
 	}
 	crc = crc32.ChecksumIEEE(data)
