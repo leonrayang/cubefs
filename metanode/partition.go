@@ -328,6 +328,12 @@ func (mp *metaPartition) Start(create bool) (err error) {
 				return
 			}
 		}
+
+		vlen := len(mp.multiVersionList.VerList)
+		if vlen > 0 {
+			mp.verSeq = mp.multiVersionList.VerList[vlen-1].Ver
+		}
+
 		if mp.config.AfterStart != nil {
 			mp.config.AfterStart()
 		}
