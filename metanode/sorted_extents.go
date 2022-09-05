@@ -378,7 +378,15 @@ func (se *SortedExtents) Truncate(offset uint64) (deleteExtents []proto.ExtentKe
 	if numKeys > 0 {
 		lastKey := &se.eks[numKeys-1]
 		if lastKey.FileOffset+uint64(lastKey.Size) > offset {
+			rsKey := *lastKey
 			lastKey.Size = uint32(offset - lastKey.FileOffset)
+
+			rsKey.Size -= lastKey.Size
+			rsKey.FileOffset += uint64(lastKey.Size)
+			rsKey.ExtentOffset += uint64(lastKey.Size)
+
+			deleteExtents = append([]proto.ExtentKey{rsKey}, deleteExtents...)
+			log.LogDebugf("SortedExtents.Truncate rsKey %v, deleteExtents %v", rsKey, deleteExtents)
 		}
 	}
 	return
