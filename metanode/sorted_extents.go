@@ -213,8 +213,17 @@ func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []p
 		copy(eks, se.eks[startIndex:])
 		se.eks = se.eks[:startIndex-1]
 
-		se.eks =  append(se.eks, ekSplit)
-		log.LogDebugf("action[SplitWithCheck] se.eks [%v], eks [%v]", se.eks, eks)
+		var keyBefore *proto.ExtentKey
+		if len(se.eks) > 0 {
+			keyBefore = &se.eks[len(se.eks)-1]
+		}
+		if keyBefore != nil && keyBefore.IsSequence(&ekSplit) {
+			log.LogDebugf("action[SplitWithCheck] keyBefore [%v], ekSplit [%v]", keyBefore, ekSplit)
+			keyBefore.Size += ekSplit.Size
+		} else {
+			se.eks =  append(se.eks, ekSplit)
+			log.LogDebugf("action[SplitWithCheck] se.eks [%v], eks [%v]", se.eks, eks)
+		}
 
 		keyDup.FileOffset = keyDup.FileOffset+uint64(ekSplit.Size)
 		keyDup.ExtentOffset = keyDup.ExtentOffset+uint64(ekSplit.Size)
@@ -235,7 +244,14 @@ func (se *SortedExtents) SplitWithCheck(ekSplit proto.ExtentKey) (delExtents []p
 
 		se.eks = se.eks[:startIndex]
 		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks)
-		se.eks = append(se.eks, ekSplit)
+		if len(eks) > 0 && ekSplit.IsSequence(&eks[0]){
+			eks[0].FileOffset = ekSplit.FileOffset
+			eks[0].ExtentOffset = ekSplit.ExtentOffset
+			eks[0].Size += ekSplit.Size
+		} else {
+			se.eks = append(se.eks, ekSplit)
+		}
+
 		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks)
 		se.eks = append(se.eks, eks...)
 		log.LogDebugf("action[SplitWithCheck] se.eks [%v]", se.eks)

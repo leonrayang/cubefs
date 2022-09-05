@@ -640,30 +640,40 @@ func (i *Inode) MultiLayerClearExtByVer(layer int, dVerSeq uint64) (delExtents [
 	return
 }
 
-func mergeExtentArr(nums1 []proto.ExtentKey,nums2 []proto.ExtentKey) []proto.ExtentKey {
-	m := len(nums1)
-	n := len(nums2)
-	sorted := make([]proto.ExtentKey, 0, m+n)
-	p1, p2 := 0, 0
+func mergeExtentArr(extentKeysLeft []proto.ExtentKey, extentKeysRight []proto.ExtentKey) []proto.ExtentKey {
+	lCnt := len(extentKeysLeft)
+	rCnt := len(extentKeysRight)
+	sortMergedExts := make([]proto.ExtentKey, 0, lCnt+rCnt)
+	lPos, rPos := 0, 0
+
 	for {
-		if p1 == m {
-			sorted = append(sorted, nums2[p2:]...)
+		if lPos == lCnt {
+			sortMergedExts = append(sortMergedExts, extentKeysRight[rPos:]...)
 			break
 		}
-		if p2 == n {
-			sorted = append(sorted, nums1[p1:]...)
+		if rPos == rCnt {
+			sortMergedExts = append(sortMergedExts, extentKeysLeft[lPos:]...)
 			break
 		}
-		if nums1[p1].FileOffset < nums2[p2].FileOffset {
-			sorted = append(sorted, nums1[p1])
-			p1++
+		mLen := len(sortMergedExts)
+		if extentKeysLeft[lPos].FileOffset < extentKeysRight[rPos].FileOffset {
+			if mLen > 0 && sortMergedExts[mLen-1].IsSequence(&extentKeysLeft[lPos]){
+				sortMergedExts[mLen-1].Size += extentKeysLeft[lPos].Size
+			} else {
+				sortMergedExts = append(sortMergedExts, extentKeysLeft[lPos])
+			}
+			lPos++
 		} else {
-			sorted = append(sorted, nums2[p2])
-			p2++
+			if mLen > 0 && sortMergedExts[mLen-1].IsSequence(&extentKeysRight[rPos]){
+				sortMergedExts[mLen-1].Size += extentKeysRight[rPos].Size
+			} else {
+				sortMergedExts = append(sortMergedExts, extentKeysRight[rPos])
+			}
+			rPos++
 		}
 	}
-	copy(nums1, sorted)
-	return sorted
+
+	return sortMergedExts
 }
 
 // Restore ext info to older version or deleted if no right version

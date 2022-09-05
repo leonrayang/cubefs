@@ -537,12 +537,12 @@ func (s *ExtentStore) GetExtentSnapshotModOffset(extentID uint64) (watermark int
 		return
 	}
 	log.LogDebugf("action[ExtentStore.GetExtentSnapshotModOffset] extId %v SnapshotDataOff %v", extentID, einfo.SnapshotDataOff)
-
+	// snapshot write may in sequence
+	//watermark = int64(einfo.SnapshotDataOff)
+	//if watermark%PageSize != 0 {
+	//	watermark = watermark + (PageSize - watermark%PageSize)
+	//}
 	watermark = int64(einfo.SnapshotDataOff)
-	if watermark%PageSize != 0 {
-		watermark = watermark + (PageSize - watermark%PageSize)
-	}
-
 	return
 }
 

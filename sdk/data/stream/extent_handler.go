@@ -660,17 +660,17 @@ func (eh *ExtentHandler) getStatus() int32 {
 }
 
 func (eh *ExtentHandler) setClosed() bool {
-	log.LogDebugf("action[ExtentHandler.setClosed] stack (%v)", string(debug.Stack()))
+//	log.LogDebugf("action[ExtentHandler.setClosed] stack (%v)", string(debug.Stack()))
 	return atomic.CompareAndSwapInt32(&eh.status, ExtentStatusOpen, ExtentStatusClosed)
 }
 
 func (eh *ExtentHandler) setRecovery() bool {
-	log.LogDebugf("action[ExtentHandler.setRecovery] stack (%v)", string(debug.Stack()))
+//	log.LogDebugf("action[ExtentHandler.setRecovery] stack (%v)", string(debug.Stack()))
 	return atomic.CompareAndSwapInt32(&eh.status, ExtentStatusClosed, ExtentStatusRecovery)
 }
 
 func (eh *ExtentHandler) setError() bool {
-	log.LogDebugf("action[ExtentHandler.setError] stack (%v)", string(debug.Stack()))
+//	log.LogDebugf("action[ExtentHandler.setError] stack (%v)", string(debug.Stack()))
 	if proto.IsHot(eh.stream.client.volumeType) {
 		atomic.StoreInt32(&eh.stream.status, StreamerError)
 	}

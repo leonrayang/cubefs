@@ -50,8 +50,15 @@ type ExtentKey struct {
 
 	//snapshot
 	VerSeq       uint64
-	ModGen       uint64
 	IsSplit      bool
+	ModGen       uint64
+}
+
+func (k *ExtentKey) IsSequence(rightKey *ExtentKey) bool {
+	return k.ExtentId == rightKey.ExtentId &&
+		k.VerSeq == rightKey.VerSeq &&
+		k.ExtentOffset+uint64(k.Size) == rightKey.ExtentOffset &&
+		k.FileOffset+uint64(k.Size) == rightKey.FileOffset
 }
 
 // String returns the string format of the extentKey.
