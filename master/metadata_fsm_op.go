@@ -1176,7 +1176,7 @@ func (c *Cluster) loadLcNodes() (err error) {
 				continue
 			}
 		}
-		c.dataNodes.Store(lcNode.Addr, lcNode)
+		c.lcMgr.lcNodes.Store(lcNode.Addr, lcNode)
 		log.LogInfof("action[loadLcNodes],lcNode[%v],lcNodeID[%v]", lcNode.Addr, lcNode.ID)
 	}
 	return
