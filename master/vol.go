@@ -112,9 +112,7 @@ func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo) {
 		}
 		verMgr.multiVersionList[idx].Status = proto.VersionDeleting
 		verMgr.multiVersionList[idx].DelTime = time.Now()
-		if err := verMgr.Persist(); err != nil {
-			log.LogErrorf("action[CommitVer] vol %v del seq %v persist error %v", verMgr.vol.Name, verMgr.prepareCommit.prepareInfo.Ver, err)
-		}
+		verMgr.wait <- nil
 	} else {
 		log.LogErrorf("action[CommitVer] vol %v with seq %v wrong step", verMgr.vol.Name, verMgr.prepareCommit.prepareInfo.Ver)
 	}
@@ -256,8 +254,8 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 	if atomic.LoadUint32(&verMgr.prepareCommit.commitCnt) == verMgr.prepareCommit.nodeCnt && needCommit{
 		if verMgr.prepareCommit.op == proto.DeleteVersion {
 			verMgr.CommitVer()
-			verMgr.prepareCommit.reset()
-			verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingFinished
+			//verMgr.prepareCommit.reset()
+			//verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingFinished
 			log.LogWarnf("action[handleTaskRsp] do Del version finished, verMgr %v", verMgr)
 		} else if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
 			log.LogInfof("action[handleTaskRsp] ver update prepare sucess. op %v, verseq %v,commit cnt %v",
@@ -288,14 +286,15 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 			log.LogInfof("action[createVer2PhaseTask] exit")
 			return
 		}
+		op = proto.CreateVersionPrepare
 	}
 
 	log.LogInfof("action[createVer2PhaseTask] CreateVersionPrepare")
-	if _, err = verMgr.createTask(cluster, verSeq, proto.CreateVersionPrepare, force); err != nil {
+	if _, err = verMgr.createTask(cluster, verSeq, op, force); err != nil {
 		log.LogInfof("action[createVer2PhaseTask] CreateVersionPrepare err %v", err)
 		return
 	}
-	verMgr.prepareCommit.op = proto.CreateVersionPrepare
+	verMgr.prepareCommit.op = op
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() (ver *proto.VolVersionInfo, err error) {
@@ -314,7 +313,22 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 			select {
 			case err = <-verMgr.wait:
 				log.LogInfof("action[createVer2PhaseTask] go routine verseq %v op %v get err %v", verSeq, verMgr.prepareCommit.op, err)
-				if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
+				if verMgr.prepareCommit.op == proto.DeleteVersion {
+					if err == nil {
+						verMgr.prepareCommit.reset()
+						if err = verMgr.Persist(); err != nil {
+							log.LogErrorf("action[createVer2PhaseTask] err %v", err)
+							return
+						}
+						verMgr.finishWork()
+						wg.Done()
+					} else {
+						verMgr.prepareCommit.reset()
+						verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
+						log.LogInfof("action[createVer2PhaseTask] prepare error %v", err)
+					}
+					return
+				} else if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
 					if err == nil {
 						verMgr.verSeq = verSeq
 						verMgr.prepareCommit.reset()
