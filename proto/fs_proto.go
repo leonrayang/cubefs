@@ -75,6 +75,7 @@ type InodeInfo struct {
 	CreateTime time.Time `json:"ct"`
 	AccessTime time.Time `json:"at"`
 	Target     []byte    `json:"tgt"`
+	VerSeq     uint64    `json:"seq"`
 
 	expiration int64
 }

@@ -36,6 +36,7 @@ func replyInfoNoCheck(info *proto.InodeInfo, ino *Inode) bool {
 	info.Uid = ino.Uid
 	info.Gid = ino.Gid
 	info.Generation = ino.Generation
+	info.VerSeq = ino.verSeq
 	if length := len(ino.LinkTarget); length > 0 {
 		info.Target = make([]byte, length)
 		copy(info.Target, ino.LinkTarget)
@@ -59,6 +60,7 @@ func replyInfo(info *proto.InodeInfo, ino *Inode) bool {
 	info.Uid = ino.Uid
 	info.Gid = ino.Gid
 	info.Generation = ino.Generation
+	info.VerSeq = ino.verSeq
 	if length := len(ino.LinkTarget); length > 0 {
 		info.Target = make([]byte, length)
 		copy(info.Target, ino.LinkTarget)

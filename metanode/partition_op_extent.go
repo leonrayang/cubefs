@@ -160,7 +160,7 @@ func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest
 			rsp.Generation = snapIno.Generation
 			rsp.Size = snapIno.Size
 
-			if req.VerSeq > snapIno.verSeq {
+			if req.VerSeq < snapIno.verSeq {
 				log.LogInfof("action[GetExtentByVer] finish read ino %v readseq %v snapIno ino seq %v", ino.Inode, req.VerSeq, snapIno.verSeq)
 				break
 			}
