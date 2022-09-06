@@ -1097,7 +1097,7 @@ func (i *Inode) CreateVer(ver uint64) {
 	// i.IncNLink()
 }
 
-func (i *Inode) SplitExtentWithCheck(mpVer uint64, reqVer uint64, ek proto.ExtentKey) (delExtents []proto.ExtentKey, status uint8) {
+func (i *Inode) SplitExtentWithCheck(mpVer uint64, multiVersionList *proto.VolVersionInfoList, reqVer uint64, ek proto.ExtentKey) (delExtents []proto.ExtentKey, status uint8) {
 	var err error
 	ek.VerSeq = reqVer
 	log.LogDebugf("action[SplitExtentWithCheck] inode %v,ver %v,ek %v,hist len %v", i.Inode, reqVer, ek, len(i.multiVersions))
@@ -1113,6 +1113,13 @@ func (i *Inode) SplitExtentWithCheck(mpVer uint64, reqVer uint64, ek proto.Exten
 		log.LogErrorf("action[SplitExtentWithCheck] status %v", status)
 		return
 	}
+	if len(delExtents) == 0 {
+		return
+	}
+
+	if err = i.CreateLowerVersion(i.verSeq, multiVersionList); err != nil {
+		return
+	}
 
 	if delExtents, err = i.RestoreExts2NextLayer(delExtents, mpVer, 0); err != nil {
 		log.LogErrorf("action[fsmAppendExtentWithCheck] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
@@ -1122,7 +1129,53 @@ func (i *Inode) SplitExtentWithCheck(mpVer uint64, reqVer uint64, ek proto.Exten
 	return
 }
 
-func (i *Inode) AppendExtentWithCheck(mpVer uint64, reqVer uint64, ek proto.ExtentKey, ct int64, discardExtents []proto.ExtentKey, volType int) (delExtents []proto.ExtentKey, status uint8) {
+
+func (i *Inode) CreateLowerVersion(curVer uint64, verlist *proto.VolVersionInfoList) (err error){
+	verlist.RLock()
+	defer verlist.RUnlock()
+	log.LogDebugf("CreateLowerVersion inode %v curVer %v", i.Inode, curVer)
+	if len(verlist.VerList) == 0 {
+		return
+	}
+	if len(i.multiVersions) == 0 {
+		return
+	}
+	var nextVer uint64
+	for _, info := range verlist.VerList {
+		if info.Ver < curVer {
+			nextVer = info.Ver
+		}
+		if info.Ver >= curVer {
+			break
+		}
+	}
+	if nextVer <= i.multiVersions[0].verSeq {
+		log.LogDebugf("CreateLowerVersion nextver %v layer 0 ver %v", nextVer, i.multiVersions[0].verSeq)
+		return
+	}
+
+
+	ino := i.Copy().(*Inode)
+	ino.Extents = NewSortedExtents()
+	ino.ObjExtents = NewSortedObjExtents()
+	ino.multiVersions = nil
+	ino.verSeq = nextVer
+
+	log.LogDebugf("action[CreateLowerVersion] inode %v create new version [%v] and store old one [%v], hist len [%v]",
+		i.Inode, ino, i.verSeq, len(i.multiVersions))
+
+	i.Lock()
+	i.multiVersions = append([]*Inode{ino}, i.multiVersions...)
+	i.Unlock()
+	return
+}
+
+func (i *Inode) AppendExtentWithCheck(mpVer uint64,
+	multiVersionList *proto.VolVersionInfoList,
+	reqVer uint64, ek proto.ExtentKey,
+	ct int64, discardExtents []proto.ExtentKey,
+	volType int) (delExtents []proto.ExtentKey, status uint8) {
+
 	ek.VerSeq = mpVer
 	log.LogDebugf("action[AppendExtentWithCheck] mpVer %v inode %v,mpver %v,inode ver %v,ek %v,hist len %v", mpVer, i.Inode, i.verSeq, reqVer, ek, len(i.multiVersions))
 
@@ -1143,6 +1196,9 @@ func (i *Inode) AppendExtentWithCheck(mpVer uint64, reqVer uint64, ek proto.Exte
 	// multi version take effect
 	if i.verSeq > 0 && len(delExtents) > 0 {
 		var err error
+		if err = i.CreateLowerVersion(i.verSeq, multiVersionList); err != nil {
+			return
+		}
 		if delExtents, err = i.RestoreExts2NextLayer(delExtents, mpVer, 0); err != nil {
 			log.LogErrorf("action[AppendExtentWithCheck] RestoreMultiSnapExts err %v", err)
 			return nil, proto.OpErr

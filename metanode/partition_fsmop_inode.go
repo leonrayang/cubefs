@@ -328,7 +328,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 
 	log.LogDebugf("action[fsmAppendExtentsWithCheck] ino %v isSplit %v ek %v hist len %v", ino2, isSplit, eks[0], len(ino2.multiVersions))
 	if !isSplit {
-		delExtents, status = ino2.AppendExtentWithCheck(mp.verSeq, ino.verSeq, eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
+		delExtents, status = ino2.AppendExtentWithCheck(mp.verSeq, mp.multiVersionList, ino.verSeq, eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
 		if status == proto.OpOk {
 			log.LogInfof("action[fsmAppendExtentsWithCheck] delExtents [%v]", delExtents)
 			mp.extDelCh <- delExtents
@@ -342,7 +342,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		// only the ek itself will be moved to level before
 		// ino verseq be set with mp ver before submit in case other mp be updated while on flight, which will lead to
 		// inconsistent between raft pairs
-		delExtents, status = ino2.SplitExtentWithCheck(mp.verSeq, ino.verSeq, eks[0])
+		delExtents, status = ino2.SplitExtentWithCheck(mp.verSeq, mp.multiVersionList, ino.verSeq, eks[0])
 		mp.extDelCh <- delExtents
 		log.LogDebugf("fsmAppendExtentsWithCheck delExtents inode(%v) ek(%v)", ino2, delExtents)
 	}
@@ -421,7 +421,15 @@ func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 	if i.verSeq != mp.verSeq {
 		i.CreateVer(mp.verSeq)
 	}
+
+	if err = i.CreateLowerVersion(i.verSeq, mp.multiVersionList); err != nil {
+		return
+	}
+
 	delExtents := i.ExtentsTruncate(ino.Size, ino.ModifyTime)
+	if len(delExtents) == 0 {
+		return
+	}
 	if delExtents, err = i.RestoreExts2NextLayer(delExtents, mp.verSeq, 0); err != nil {
 		panic("RestoreExts2NextLayer should not be error")
 	}
