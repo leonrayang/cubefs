@@ -17,6 +17,7 @@ package metanode
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -204,7 +205,19 @@ func (m *MetaNode) getInodeHandler(w http.ResponseWriter, r *http.Request) {
 		resp.Msg = err.Error()
 		return
 	}
-	verSeq, _ := strconv.ParseUint(r.FormValue("verSeq"), 10, 64)
+
+	vSeq, _ := strconv.ParseInt(r.FormValue("verSeq"), 10, 64)
+	if vSeq < -1 {
+		resp.Msg = "seq need large than -1"
+		return
+	}
+	var verSeq uint64
+	if vSeq == -1 {
+		verSeq = math.MaxUint64
+	} else {
+		verSeq = uint64(vSeq)
+	}
+
 	verAll, _ := strconv.ParseBool(r.FormValue("verAll"))
 
 	mp, err := m.metadataManager.GetPartition(pid)
@@ -324,7 +337,11 @@ func (m *MetaNode) getExtentsByInodeHandler(w http.ResponseWriter,
 		return
 	}
 
-	verSeq, _ := strconv.ParseUint(r.FormValue("verSeq"), 10, 64)
+	vSeq, _ := strconv.ParseInt(r.FormValue("verSeq"), 10, 64)
+	if vSeq < -1 {
+		resp.Msg = "seq need large than -1"
+		return
+	}
 	verAll, _ := strconv.ParseBool(r.FormValue("verAll"))
 	mp, err := m.metadataManager.GetPartition(pid)
 	if err != nil {
@@ -332,10 +349,16 @@ func (m *MetaNode) getExtentsByInodeHandler(w http.ResponseWriter,
 		resp.Msg = err.Error()
 		return
 	}
+	var verSeq uint64
+	if vSeq == -1 {
+		verSeq = math.MaxUint64
+	} else {
+		verSeq = uint64(vSeq)
+	}
 	req := &proto.GetExtentsRequest{
 		PartitionID: pid,
 		Inode:       id,
-		VerSeq:      verSeq,
+		VerSeq:      uint64(verSeq),
 		VerAll:      verAll,
 	}
 	p := &Packet{}

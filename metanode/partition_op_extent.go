@@ -142,35 +142,34 @@ func (mp *metaPartition) GetSpecVersionInfo(req *proto.MultiVersionOpRequest, p 
 
 func (mp *metaPartition) GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest, rsp *proto.GetExtentsResponse) {
 	log.LogInfof("action[GetExtentByVer] read ino %v readseq %v ino seq %v hist len %v", ino.Inode, req.VerSeq, ino.verSeq, len(ino.multiVersions))
+	reqVer := req.VerSeq
 	if req.VerSeq == math.MaxUint64 {
-		req.VerSeq = 0
+		reqVer = 0
 	}
 	ino.DoReadFunc(func() {
 		ino.Extents.Range(func(ek proto.ExtentKey) bool {
-			if ek.VerSeq <= req.VerSeq {
+			if ek.VerSeq <= reqVer {
 				rsp.Extents = append(rsp.Extents, ek)
-				log.LogInfof("action[GetExtentByVer] fresh layer.read ino %v readseq %v ino seq %v include ek %v", ino.Inode, req.VerSeq, ino.verSeq, ek)
+				log.LogInfof("action[GetExtentByVer] fresh layer.read ino %v readseq %v ino seq %v include ek %v", ino.Inode, reqVer, ino.verSeq, ek)
 			} else {
-				log.LogInfof("action[GetExtentByVer] fresh layer.read ino %v readseq %v ino seq %v exclude ek %v", ino.Inode, req.VerSeq, ino.verSeq, ek)
+				log.LogInfof("action[GetExtentByVer] fresh layer.read ino %v readseq %v ino seq %v exclude ek %v", ino.Inode, reqVer, ino.verSeq, ek)
 			}
 			return true
 		})
 
 		for _, snapIno := range ino.multiVersions {
-			rsp.Generation = snapIno.Generation
-			rsp.Size = snapIno.Size
-
-			if req.VerSeq > snapIno.verSeq {
-				log.LogInfof("action[GetExtentByVer] finish read ino %v readseq %v snapIno ino seq %v", ino.Inode, req.VerSeq, snapIno.verSeq)
+			if reqVer > snapIno.verSeq {
+				log.LogInfof("action[GetExtentByVer] finish read ino %v readseq %v snapIno ino seq %v", ino.Inode, reqVer, snapIno.verSeq)
 				break
 			}
-			log.LogInfof("action[GetExtentByVer] read ino %v readseq %v snapIno ino seq %v", ino.Inode, req.VerSeq, snapIno.verSeq)
+
+			log.LogInfof("action[GetExtentByVer] read ino %v readseq %v snapIno ino seq %v", ino.Inode, reqVer, snapIno.verSeq)
 			for _, ek := range snapIno.Extents.eks {
-				if req.VerSeq >= ek.VerSeq {
-					log.LogInfof("action[GetExtentByVer] get extent ino %v readseq %v snapIno ino seq %v, include ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
+				if reqVer >= ek.VerSeq {
+					log.LogInfof("action[GetExtentByVer] get extent ino %v readseq %v snapIno ino seq %v, include ek (%v)", ino.Inode, reqVer, snapIno.verSeq, ek.String())
 					rsp.Extents = append(rsp.Extents, ek)
 				} else {
-					log.LogInfof("action[GetExtentByVer] not get extent ino %v readseq %v snapIno ino seq %v, exclude ek (%v)", ino.Inode, req.VerSeq, snapIno.verSeq, ek.String())
+					log.LogInfof("action[GetExtentByVer] not get extent ino %v readseq %v snapIno ino seq %v, exclude ek (%v)", ino.Inode, reqVer, snapIno.verSeq, ek.String())
 				}
 			}
 		}
@@ -205,6 +204,12 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 
 		if req.VerSeq > 0 && ino.verSeq > 0 && (req.VerSeq < ino.verSeq || req.VerSeq == math.MaxUint64 ) {
 			mp.GetExtentByVer(ino, req, resp)
+			vIno := ino.Copy().(*Inode)
+			vIno.verSeq = req.VerSeq
+			if vIno = mp.getInodeByVer(vIno); vIno != nil {
+				resp.Generation = vIno.Generation
+				resp.Size = vIno.Size
+			}
 		} else {
 			ino.DoReadFunc(func() {
 				resp.Generation = ino.Generation

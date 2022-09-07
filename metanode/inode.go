@@ -418,6 +418,7 @@ func (i *Inode) MarshalInodeValue(buff *bytes.Buffer) {
 		}
 	}
 
+
 	if err = binary.Write(buff, binary.BigEndian,i.verSeq); err != nil {
 		panic(err)
 	}
@@ -909,7 +910,7 @@ func (i *Inode) ShouldDelVer(mpVer uint64, delVer uint64) (ok bool, err error) {
 //note:search all layers.
 //idx need calc include nclude top layer. index in multiVersions need add by 1
 func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
-	log.LogDebugf("action[getInodeByVer] ino %v verseq %v hist len %v request ino ver %v",
+	log.LogDebugf("action[getInoByVer] ino %v verseq %v hist len %v request ino ver %v",
 		ino.Inode, ino.verSeq, ino.multiVersions, verSeq)
 	if verSeq == 0 || verSeq == ino.verSeq || (verSeq == math.MaxUint64 && ino.verSeq == 0) {
 		return ino, 0
