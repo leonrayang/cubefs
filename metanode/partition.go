@@ -323,16 +323,6 @@ func (mp *metaPartition) Start(create bool) (err error) {
 			err = errors.NewErrorf("[Start]->%s", err.Error())
 			return
 		}
-		if create {
-			if err = mp.storeInitMultiversion(); err != nil {
-				return
-			}
-		}
-
-		vlen := len(mp.multiVersionList.VerList)
-		if vlen > 0 {
-			mp.verSeq = mp.multiVersionList.VerList[vlen-1].Ver
-		}
 
 		if mp.config.AfterStart != nil {
 			mp.config.AfterStart()
@@ -398,15 +388,30 @@ func (mp *metaPartition) onStart(create bool) (err error) {
 		return
 	}
 
-	if create {
+	if create || len(mp.multiVersionList.VerList) == 0 {
 		verList, verErr := masterClient.AdminAPI().GetVerList(mp.config.VolName)
 		if verErr != nil {
 			err = verr
 			log.LogErrorf("action[onStart] GetVerList err[%v]", err)
 			return
 		}
-		mp.multiVersionList = verList
-		log.LogDebugf("action[onStart] verList %v", verList)
+
+		for _, info := range verList.VerList {
+			if info.Status != proto.VersionNormal {
+				continue
+			}
+			mp.multiVersionList.VerList  = append(mp.multiVersionList.VerList , info)
+		}
+
+		log.LogDebugf("action[onStart] verList %v", mp.multiVersionList.VerList)
+		if err = mp.storeInitMultiversion(); err != nil {
+			return
+		}
+	}
+
+	vlen := len(mp.multiVersionList.VerList)
+	if vlen > 0 {
+		mp.verSeq = mp.multiVersionList.VerList[vlen-1].Ver
 	}
 
 	mp.volType = volumeInfo.VolType
@@ -637,9 +642,8 @@ func (mp *metaPartition) load() (err error) {
 	if err = mp.loadExtend(snapshotPath); err != nil {
 		return
 	}
-	if err = mp.loadMultipart(snapshotPath); err != nil {
-		return
-	}
+	mp.loadMultipart(snapshotPath)
+
 	if err = mp.loadApplyID(snapshotPath); err != nil {
 		return
 	}

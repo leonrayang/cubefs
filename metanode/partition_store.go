@@ -395,8 +395,6 @@ func (mp *metaPartition) loadMultiVer(rootDir string) (err error) {
 	return
 }
 
-
-
 func (mp *metaPartition) persistMetadata() (err error) {
 	if err = mp.config.checkMeta(); err != nil {
 		err = errors.NewErrorf("[persistMetadata]->%s", err.Error())
