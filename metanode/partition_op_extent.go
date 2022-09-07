@@ -203,7 +203,7 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 		log.LogInfof("action[ExtentsList] inode %v request verseq %v ino ver %v extent size %v ino.Size %v ino %v hist len %v",
 			req.Inode, req.VerSeq, ino.verSeq, len(ino.Extents.eks), ino.Size, ino, len(ino.multiVersions))
 
-		if req.VerSeq > 0 && ino.verSeq > 0 && req.VerSeq < ino.verSeq {
+		if req.VerSeq > 0 && ino.verSeq > 0 && (req.VerSeq < ino.verSeq || req.VerSeq == math.MaxUint64 ) {
 			mp.GetExtentByVer(ino, req, resp)
 		} else {
 			ino.DoReadFunc(func() {
