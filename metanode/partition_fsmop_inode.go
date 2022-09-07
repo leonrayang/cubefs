@@ -342,7 +342,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		// only the ek itself will be moved to level before
 		// ino verseq be set with mp ver before submit in case other mp be updated while on flight, which will lead to
 		// inconsistent between raft pairs
-		delExtents, status = ino2.SplitExtentWithCheck(mp.verSeq, mp.multiVersionList, ino.verSeq, eks[0])
+		delExtents, status = ino2.SplitExtentWithCheck(mp.verSeq, mp.multiVersionList, ino.verSeq, eks[0], ino.ModifyTime, mp.volType)
 		mp.extDelCh <- delExtents
 		log.LogDebugf("fsmAppendExtentsWithCheck delExtents inode(%v) ek(%v)", ino2, delExtents)
 	}

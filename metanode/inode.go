@@ -1108,7 +1108,9 @@ func (i *Inode) CreateVer(ver uint64) {
 	// i.IncNLink()
 }
 
-func (i *Inode) SplitExtentWithCheck(mpVer uint64, multiVersionList *proto.VolVersionInfoList, reqVer uint64, ek proto.ExtentKey) (delExtents []proto.ExtentKey, status uint8) {
+func (i *Inode) SplitExtentWithCheck(mpVer uint64, multiVersionList *proto.VolVersionInfoList,
+	reqVer uint64, ek proto.ExtentKey, ct int64, volType int) (delExtents []proto.ExtentKey, status uint8) {
+
 	var err error
 	ek.VerSeq = reqVer
 	log.LogDebugf("action[SplitExtentWithCheck] inode %v,ver %v,ek %v,hist len %v", i.Inode, reqVer, ek, len(i.multiVersions))
@@ -1135,6 +1137,10 @@ func (i *Inode) SplitExtentWithCheck(mpVer uint64, multiVersionList *proto.VolVe
 	if delExtents, err = i.RestoreExts2NextLayer(delExtents, mpVer, 0); err != nil {
 		log.LogErrorf("action[fsmAppendExtentWithCheck] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
 		return
+	}
+	if proto.IsHot(volType) {
+		i.Generation++
+		i.ModifyTime = ct
 	}
 
 	return
