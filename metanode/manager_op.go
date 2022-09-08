@@ -1655,6 +1655,30 @@ func (m *metadataManager) prepareCreateVersion(req *proto.MultiVersionOpRequest)
 	return
 }
 
+func (m *metadataManager) checkVolVerList() {
+	var (
+		volumeArr = make(map[string]bool)
+		err error
+	)
+	log.LogDebugf("checkVolVerList start")
+	m.Range(func(id uint64, partition MetaPartition) bool {
+		volumeArr[partition.GetVolName()] = true
+		return true
+	})
+	for volName, _ := range volumeArr {
+		var info *proto.VolVersionInfoList
+		if info, err = masterClient.AdminAPI().GetVerList(volName); err != nil {
+			log.LogErrorf("action[checkVolVerList] volumeName %v err %v", volName, err)
+			return
+		}
+		for _, mp := range m.partitions {
+			if err = mp.checkVerList(info); err != nil {
+				log.LogErrorf("[checkVolVerList] volumeName %v err %v", volName, err)
+			}
+		}
+	}
+}
+
 func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op uint8) (err error) {
 
 	log.LogWarnf("action[commitCreateVersion] volume %v seq %v", VolumeID, VerSeq)

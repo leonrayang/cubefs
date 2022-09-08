@@ -188,6 +188,7 @@ type OpMultiVersion interface {
 	GetAllVersionInfo(req *proto.MultiVersionOpRequest, p *Packet) (err error)
 	GetSpecVersionInfo(req *proto.MultiVersionOpRequest, p *Packet) (err error)
 	GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest, rsp *proto.GetExtentsResponse)
+	checkVerList(info *proto.VolVersionInfoList) (err error)
 }
 
 // OpMeta defines the interface for the metadata operations.

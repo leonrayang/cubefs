@@ -120,6 +120,54 @@ type  VerOpData struct{
 	VerSeq uint64
 }
 
+func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList) (err error) {
+	log.LogDebugf("checkVerList vol %v mp %v", mp.config.VolName, mp.config.PartitionId)
+	mp.multiVersionList.Lock()
+	defer mp.multiVersionList.Unlock()
+
+	verMapLocal := make(map[uint64]uint8)
+	for  _, ver := range mp.multiVersionList.VerList {
+		verMapLocal[ver.Ver] = ver.Status
+	}
+	verMapMaster := make (map[uint64]*proto.VolVersionInfo)
+	for  _, ver := range masterListInfo.VerList {
+		verMapMaster[ver.Ver] = ver
+	}
+
+	for _, info2 := range mp.multiVersionList.VerList {
+		if info2.Status != proto.VersionNormal {
+			log.LogWarnf("checkVerList. vol %v mp %v ver %v status abnormal %v", mp.config.VolName, mp.config.PartitionId, info2.Ver, info2.Status)
+			continue
+		}
+		_, exist := verMapMaster[info2.Ver]
+		if !exist {
+			err = fmt.Errorf("checkVerList.vol %v mp %v not found %v in mp list", mp.config.VolName, mp.config.PartitionId, info2.Ver)
+			log.LogError(err)
+		}
+	}
+
+	for _, vInfo := range masterListInfo.VerList {
+		if vInfo.Status != proto.VersionNormal {
+			continue
+		}
+		st, exist := verMapLocal[vInfo.Ver]
+		if st != proto.VersionNormal {
+			err = fmt.Errorf("checkVerList.vol %v mp %v ver %v inoraml.local status %v in master volume list",
+				mp.config.VolName, mp.config.PartitionId, vInfo.Ver, st)
+			log.LogError(err)
+		}
+		if !exist {
+			mLen := len(mp.multiVersionList.VerList)
+			if mLen > 0 && vInfo.Ver > mp.multiVersionList.VerList[mLen-1].Ver {
+				log.LogWarnf("checkVerList.vol %v mp %v not found %v in mp list and append version %v",
+					mp.config.VolName, mp.config.PartitionId, vInfo.Ver, vInfo)
+				mp.multiVersionList.VerList = append(mp.multiVersionList.VerList, vInfo)
+			}
+		}
+	}
+	return
+}
+
 func (mp *metaPartition) MultiVersionOp(op uint8, verSeq uint64) (err error) {
 
 	verData := &VerOpData{

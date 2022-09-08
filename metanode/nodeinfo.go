@@ -55,6 +55,7 @@ func (m *MetaNode) startUpdateNodeInfo() {
 			return
 		case <-ticker.C:
 			m.updateNodeInfo()
+			m.metadataManager.checkVolVerList()
 		}
 	}
 }
