@@ -449,6 +449,20 @@ func (m *MetaNode) getAllDentriesHandler(w http.ResponseWriter, r *http.Request)
 		resp.Msg = err.Error()
 		return
 	}
+
+	vSeq, _ := strconv.ParseInt(r.FormValue("verSeq"), 10, 64)
+	if vSeq < -1 {
+		resp.Msg = "seq need large than -1"
+		return
+	}
+	var verSeq uint64
+	if vSeq == -1 {
+		verSeq = math.MaxUint64
+	} else {
+		verSeq = uint64(vSeq)
+	}
+
+
 	buff := bytes.NewBufferString(`{"code": 200, "msg": "OK", "data":[`)
 	if _, err := w.Write(buff.Bytes()); err != nil {
 		return
@@ -459,7 +473,13 @@ func (m *MetaNode) getAllDentriesHandler(w http.ResponseWriter, r *http.Request)
 		delimiter = []byte{',', '\n'}
 		isFirst   = true
 	)
+
 	mp.GetDentryTree().Ascend(func(i BtreeItem) bool {
+		den, _ := i.(*Dentry).getDentryFromVerList(verSeq)
+		if den == nil || den.isDeleted() {
+			return true
+		}
+
 		if !isFirst {
 			if _, err = w.Write(delimiter); err != nil {
 				return false
@@ -467,7 +487,7 @@ func (m *MetaNode) getAllDentriesHandler(w http.ResponseWriter, r *http.Request)
 		} else {
 			isFirst = false
 		}
-		val, err = json.Marshal(i)
+		val, err = json.Marshal(den)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
