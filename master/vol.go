@@ -270,7 +270,7 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 	}
 }
 
-func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq uint64, op uint8, force bool) (ver *proto.VolVersionInfo, err error) {
+func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq uint64, op uint8, force bool) (verRsp *proto.VolVersionInfo, err error) {
 	if err = verMgr.startWork(); err != nil {
 		return
 	}
@@ -341,6 +341,9 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 						if ver, err = verMgr.createTask(cluster, verSeq, verMgr.prepareCommit.op, force); err != nil {
 							log.LogInfof("action[createVer2PhaseTask] prepare error %v", err)
 							return
+						}
+						if vLen := len(verMgr.multiVersionList); vLen > 1 {
+							verRsp = verMgr.multiVersionList[vLen-2]
 						}
 						wg.Done()
 					} else {
