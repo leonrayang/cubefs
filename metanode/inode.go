@@ -1295,9 +1295,16 @@ func (i *Inode) IsTempFile() bool {
 	return ok
 }
 
-func (i *Inode) IsEmptyDir() bool {
+func (i *Inode) IsEmptyDirAndNoSnapshot() bool {
 	i.RLock()
 	ok := proto.IsDir(i.Type) && i.NLink <= 2 && len(i.multiVersions)==0
+	i.RUnlock()
+	return ok
+}
+
+func (i *Inode) IsTopLayerEmptyDir() bool {
+	i.RLock()
+	ok := proto.IsDir(i.Type) && i.NLink <= 2
 	i.RUnlock()
 	return ok
 }

@@ -228,12 +228,12 @@ func (cache *ExtentCache) Append(ek *proto.ExtentKey, sync bool) (discardExtents
 	defer cache.Unlock()
 
 
-	cache.root.Descend(func(i btree.Item) bool {
-		ek := i.(*proto.ExtentKey)
-		// skip if the start offset matches with the given offset
-		log.LogDebugf("action[Append.LoopPrint.Enter] inode %v ek [%v]", cache.inode, ek.String())
-		return true
-	})
+	//cache.root.Descend(func(i btree.Item) bool {
+	//	ek := i.(*proto.ExtentKey)
+	//	// skip if the start offset matches with the given offset
+	//	log.LogDebugf("action[Append.LoopPrint.Enter] inode %v ek [%v]", cache.inode, ek.String())
+	//	return true
+	//})
 	// When doing the append, we do not care about the data after the file offset.
 	// Those data will be overwritten by the current extent anyway.
 	cache.root.AscendRange(lower, upper, func(i btree.Item) bool {
@@ -274,12 +274,12 @@ func (cache *ExtentCache) Append(ek *proto.ExtentKey, sync bool) (discardExtents
 //	log.LogDebugf("ExtentCache Append stack[%v]", string(debug.Stack()))
 
 
-	cache.root.Descend(func(i btree.Item) bool {
-		ek := i.(*proto.ExtentKey)
-		// skip if the start offset matches with the given offset
-		log.LogDebugf("action[Append.LoopPrint.Exit] inode %v ek [%v]", cache.inode, ek.String())
-		return true
-	})
+	//cache.root.Descend(func(i btree.Item) bool {
+	//	ek := i.(*proto.ExtentKey)
+	//	// skip if the start offset matches with the given offset
+	//	log.LogDebugf("action[Append.LoopPrint.Exit] inode %v ek [%v]", cache.inode, ek.String())
+	//	return true
+	//})
 	return
 }
 

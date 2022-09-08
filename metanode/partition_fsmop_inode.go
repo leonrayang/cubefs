@@ -171,6 +171,8 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*proto.VolVersionI
 		return
 	}
 
+	topLayerEmpty := inode.IsTopLayerEmptyDir()
+
 	resp.Msg = inode
 	log.LogDebugf("action[fsmUnlinkInode] get inode %v", inode)
 	var (
@@ -194,7 +196,8 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*proto.VolVersionI
 		resp.Status = status
 		return
 	}
-	if inode.IsEmptyDir() {
+
+	if topLayerEmpty && inode.IsEmptyDirAndNoSnapshot() {
 		log.LogDebugf("action[fsmUnlinkInode] ino %v really be deleted, empty dir", ino)
 		mp.inodeTree.Delete(inode)
 	}
@@ -454,7 +457,7 @@ func (mp *metaPartition) fsmEvictInode(ino *Inode) (resp *InodeResponse) {
 		return
 	}
 	if proto.IsDir(i.Type) {
-		if i.IsEmptyDir() {
+		if i.IsEmptyDirAndNoSnapshot() {
 			i.SetDeleteMark()
 		}
 		return
