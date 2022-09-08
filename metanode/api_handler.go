@@ -153,7 +153,10 @@ func (m *MetaNode) getAllInodesHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-
+	verSeq, err := m.getRealVerSeq(w,r)
+	if err != nil {
+		return
+	}
 	var inode *Inode
 
 	f := func(i BtreeItem) bool {
@@ -169,7 +172,10 @@ func (m *MetaNode) getAllInodesHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		inode = i.(*Inode)
+		inode, _ =  i.(*Inode).getInoByVer(verSeq, false)
+		if inode == nil {
+			return true
+		}
 		if data, e = inode.MarshalToJSON(); e != nil {
 			log.LogErrorf("[getAllInodesHandler] failed to marshal to json: %v", e)
 			return false
@@ -206,16 +212,10 @@ func (m *MetaNode) getInodeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vSeq, _ := strconv.ParseInt(r.FormValue("verSeq"), 10, 64)
-	if vSeq < -1 {
-		resp.Msg = "seq need large than -1"
+	verSeq, err := m.getRealVerSeq(w,r)
+	if err != nil {
+		resp.Msg = err.Error()
 		return
-	}
-	var verSeq uint64
-	if vSeq == -1 {
-		verSeq = math.MaxUint64
-	} else {
-		verSeq = uint64(vSeq)
 	}
 
 	verAll, _ := strconv.ParseBool(r.FormValue("verAll"))
@@ -337,9 +337,9 @@ func (m *MetaNode) getExtentsByInodeHandler(w http.ResponseWriter,
 		return
 	}
 
-	vSeq, _ := strconv.ParseInt(r.FormValue("verSeq"), 10, 64)
-	if vSeq < -1 {
-		resp.Msg = "seq need large than -1"
+	verSeq, err := m.getRealVerSeq(w,r)
+	if err != nil {
+		resp.Msg = err.Error()
 		return
 	}
 	verAll, _ := strconv.ParseBool(r.FormValue("verAll"))
@@ -349,12 +349,7 @@ func (m *MetaNode) getExtentsByInodeHandler(w http.ResponseWriter,
 		resp.Msg = err.Error()
 		return
 	}
-	var verSeq uint64
-	if vSeq == -1 {
-		verSeq = math.MaxUint64
-	} else {
-		verSeq = uint64(vSeq)
-	}
+
 	req := &proto.GetExtentsRequest{
 		PartitionID: pid,
 		Inode:       id,
@@ -398,6 +393,12 @@ func (m *MetaNode) getDentryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	verSeq, err := m.getRealVerSeq(w,r)
+	if err != nil {
+		resp.Msg = err.Error()
+		return
+	}
+
 	mp, err := m.metadataManager.GetPartition(pid)
 	if err != nil {
 		resp.Code = http.StatusNotFound
@@ -408,6 +409,7 @@ func (m *MetaNode) getDentryHandler(w http.ResponseWriter, r *http.Request) {
 		PartitionID: pid,
 		ParentID:    pIno,
 		Name:        name,
+		VerSeq: verSeq,
 	}
 	p := &Packet{}
 	if err = mp.Lookup(req, p); err != nil {
@@ -424,7 +426,19 @@ func (m *MetaNode) getDentryHandler(w http.ResponseWriter, r *http.Request) {
 	return
 
 }
-
+func (m *MetaNode) getRealVerSeq(w http.ResponseWriter, r *http.Request) (verSeq uint64, err error){
+	vSeq, _ := strconv.ParseInt(r.FormValue("verSeq"), 10, 64)
+	if vSeq < -1 {
+		err = fmt.Errorf("seq need large than -1")
+		return
+	}
+	if vSeq == -1 {
+		verSeq = math.MaxUint64
+	} else {
+		verSeq = uint64(vSeq)
+	}
+	return
+}
 func (m *MetaNode) getAllDentriesHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	resp := NewAPIResponse(http.StatusSeeOther, "")
@@ -450,18 +464,11 @@ func (m *MetaNode) getAllDentriesHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	vSeq, _ := strconv.ParseInt(r.FormValue("verSeq"), 10, 64)
-	if vSeq < -1 {
-		resp.Msg = "seq need large than -1"
+	verSeq, err := m.getRealVerSeq(w,r)
+	if err != nil {
+		resp.Msg = err.Error()
 		return
 	}
-	var verSeq uint64
-	if vSeq == -1 {
-		verSeq = math.MaxUint64
-	} else {
-		verSeq = uint64(vSeq)
-	}
-
 
 	buff := bytes.NewBufferString(`{"code": 200, "msg": "OK", "data":[`)
 	if _, err := w.Write(buff.Bytes()); err != nil {
@@ -526,6 +533,12 @@ func (m *MetaNode) getDirectoryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	verSeq, err := m.getRealVerSeq(w,r)
+	if err != nil {
+		resp.Msg = err.Error()
+		return
+	}
+
 	mp, err := m.metadataManager.GetPartition(pid)
 	if err != nil {
 		resp.Code = http.StatusNotFound
@@ -534,6 +547,7 @@ func (m *MetaNode) getDirectoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	req := ReadDirReq{
 		ParentID: pIno,
+		VerSeq: verSeq,
 	}
 	p := &Packet{}
 	if err = mp.ReadDir(&req, p); err != nil {
