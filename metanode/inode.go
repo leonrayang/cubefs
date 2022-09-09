@@ -632,6 +632,10 @@ func (i *Inode) MultiLayerClearExtByVer(layer int, dVerSeq uint64) (delExtents [
 	} else {
 		ino = i.multiVersions[layer-1]
 	}
+
+	ino.Extents.Lock()
+	defer ino.Extents.Unlock()
+
 	for idx, ek := range ino.Extents.eks {
 		if ek.VerSeq > dVerSeq {
 			delExtents = append(delExtents, ek)
@@ -713,15 +717,15 @@ func  (i *Inode) RestoreExts2NextLayer(delExtentsOrigin []proto.ExtentKey, curVe
 		return
 	}
 
-	//i.PrintAllVersionInfo()
 
+	i.multiVersions[idx].Extents.Lock()
 	i.multiVersions[idx].Extents.eks = mergeExtentArr(i.multiVersions[idx].Extents.eks, specSnapExtent)
+	i.multiVersions[idx].Extents.Unlock()
 
-	//i.PrintAllVersionInfo()
 	return
 }
 
-func (inode* Inode) unlinkVerInTopLayer(ino *Inode, mpVer uint64, verlist []*proto.VolVersionInfo) (ext2Del []proto.ExtentKey, doMore bool, status uint8){
+func (inode* Inode) unlinkVerInTopLayer(ino *Inode, mpVer uint64, verlist *proto.VolVersionInfoList) (ext2Del []proto.ExtentKey, doMore bool, status uint8){
 	// if there's no snapshot itself, nor have snapshot after inode's ver then need unlink directly and make no snapshot
 	// just move to upper layer, the behavior looks like that the snapshot be dropped
 	log.LogDebugf("action[unlinkVerInTopLayer] check if have snapshot depends on the deleitng ino %v (with no snapshot itself) found seq %v, verlist %v",
@@ -764,7 +768,7 @@ func (inode* Inode) unlinkVerInTopLayer(ino *Inode, mpVer uint64, verlist []*pro
 		inode.DecNLink()
 		log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, Dir create ver 1st layer", ino.Inode)
 	} else {
-		inode.CreateUnlinkVer(mpVer, verlist)
+		inode.CreateUnlinkVer(mpVer)
 		inode.DecNLink()
 		log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, File create ver 1st layer", ino.Inode)
 	}
@@ -773,7 +777,7 @@ func (inode* Inode) unlinkVerInTopLayer(ino *Inode, mpVer uint64, verlist []*pro
 }
 
 
-func (inode *Inode) unlinkVerInList(ino *Inode, mpVer uint64, verlist []*proto.VolVersionInfo) (ext2Del []proto.ExtentKey, doMore bool, status uint8) {
+func (inode *Inode) unlinkVerInList(ino *Inode, mpVer uint64, verlist *proto.VolVersionInfoList) (ext2Del []proto.ExtentKey, doMore bool, status uint8) {
 	log.LogDebugf("action[unlinkVerInList] ino %v try search seq %v isdir %v", ino, ino.verSeq, proto.IsDir(inode.Type))
 	var dIno *Inode
 	status = proto.OpOk
@@ -802,24 +806,37 @@ func (inode *Inode) unlinkVerInList(ino *Inode, mpVer uint64, verlist []*proto.V
 		log.LogDebugf("action[unlinkVerInList] inode %v try drop multiVersion idx %v effective seq scope [%v,%v) ",
 			inode.Inode, mIdx, dIno.verSeq, endSeq)
 
-		for vidx, info := range verlist {
-			if info.Ver >= dIno.verSeq && info.Ver < endSeq {
-				log.LogDebugf("action[unlinkVerInList] inode %v dir layer idx %v still have effective snapshot seq %v.so don't drop", inode.Inode, mIdx, info.Ver)
-				return
+		doWork := func() bool {
+			verlist.RLock()
+			defer verlist.RUnlock()
+
+			for vidx, info := range verlist.VerList {
+				if info.Ver >= dIno.verSeq && info.Ver < endSeq {
+					log.LogDebugf("action[unlinkVerInList] inode %v dir layer idx %v still have effective snapshot seq %v.so don't drop", inode.Inode, mIdx, info.Ver)
+					return false
+				}
+				if info.Ver >= endSeq || vidx == len(verlist.VerList)-1 {
+					log.LogDebugf("action[unlinkVerInList] inode %v try drop multiVersion idx %v and return", inode.Inode, mIdx)
+
+					inode.Lock()
+					inode.multiVersions = append(inode.multiVersions[:mIdx], inode.multiVersions[mIdx+1:]...)
+					inode.Unlock()
+					return false
+				}
+				log.LogDebugf("action[unlinkVerInList] inode %v try drop scope [%v, %v), mp ver %v not suitable", inode.Inode, dIno.verSeq, endSeq, info.Ver)
+				return true
 			}
-			if info.Ver >= endSeq || vidx == len(verlist)-1 {
-				log.LogDebugf("action[unlinkVerInList] inode %v try drop multiVersion idx %v and return", inode.Inode, mIdx)
-				inode.multiVersions = append(inode.multiVersions[:mIdx], inode.multiVersions[mIdx+1:]...)
-				return
-			}
-			log.LogDebugf("action[unlinkVerInList] inode %v try drop scope [%v, %v), mp ver %v not suitable", inode.Inode, dIno.verSeq, endSeq, info.Ver)
+			return true
+		}
+		if !doWork() {
+			return
 		}
 		doMore = true
 	} else {
 		// special case, snapshot is the last one and be depended by upper version,update it's version to the right one
 		// ascend search util to the curr unCommit version in the verList
 		if ino.verSeq == inode.verSeq || (ino.verSeq == math.MaxUint64 && inode.verSeq == 0)  {
-			if len(verlist) == 0 {
+			if len(verlist.VerList) == 0 {
 				status = proto.OpNotExistErr
 				log.LogErrorf("action[unlinkVerInList] inode %v verlist should be larger than 0, return not found", inode.Inode)
 				return
@@ -849,12 +866,15 @@ func (inode *Inode) unlinkVerInList(ino *Inode, mpVer uint64, verlist []*proto.V
 	return
 }
 
-func (i *Inode) getLastestVer(reqVerSeq uint64, commit bool, verlist []*proto.VolVersionInfo) (uint64, bool) {
-	if len(verlist) == 0 {
+func (i *Inode) getLastestVer(reqVerSeq uint64, commit bool, verlist *proto.VolVersionInfoList) (uint64, bool) {
+	verlist.RLock()
+	defer verlist.RUnlock()
+
+	if len(verlist.VerList) == 0 {
 		return 0, false
 	}
-	for id, info := range verlist {
-		if commit && id == len(verlist)-1 {
+	for id, info := range verlist.VerList {
+		if commit && id == len(verlist.VerList)-1 {
 			break
 		}
 		if info.Ver >= reqVerSeq {
@@ -863,7 +883,7 @@ func (i *Inode) getLastestVer(reqVerSeq uint64, commit bool, verlist []*proto.Vo
 	}
 
 	log.LogDebugf("action[getLastestVer] inode %v reqVerSeq %v not found, the largetst one %v",
-		i.Inode, reqVerSeq, verlist[len(verlist)-1].Ver)
+		i.Inode, reqVerSeq, verlist.VerList[len(verlist.VerList)-1].Ver)
 	return 0, false
 }
 
@@ -910,6 +930,9 @@ func (i *Inode) ShouldDelVer(mpVer uint64, delVer uint64) (ok bool, err error) {
 //note:search all layers.
 //idx need calc include nclude top layer. index in multiVersions need add by 1
 func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
+	ino.RLock()
+	defer ino.RUnlock()
+
 	log.LogDebugf("action[getInoByVer] ino %v verseq %v hist len %v request ino ver %v",
 		ino.Inode, ino.verSeq, ino.multiVersions, verSeq)
 	if verSeq == 0 || verSeq == ino.verSeq || (verSeq == math.MaxUint64 && ino.verSeq == 0) {
@@ -956,8 +979,10 @@ func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
 // 3. if have system layer between dVer and next older inode's layer(not exist is ok), drop dVer related exts and update ver
 // 4. else Restore to next inode's Layer
 
-func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVersionInfo) (delExtents []proto.ExtentKey, ino *Inode) {
+func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist *proto.VolVersionInfoList) (delExtents []proto.ExtentKey, ino *Inode) {
 	var err error
+	verlist.RLock()
+	defer verlist.RUnlock()
 
 	log.LogDebugf("action[getAndDelVer] ino %v verSeq %v request del ver %v hist len %v isTmpFile %v",
 		i.Inode, i.verSeq, dVer, len(i.multiVersions), i.IsTempFile())
@@ -971,25 +996,31 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 		log.LogDebugf("action[getAndDelVer] ino %v verSeq %v get del exts %v", i.Inode, i.verSeq, delExtents)
 		return delExtents, i
 	}
-
-	verLen := len(i.multiVersions)
-	if verLen == 0 {
+	// read inode element is fine, lock is need while write
+	inoVerLen := len(i.multiVersions)
+	if inoVerLen == 0 {
 		log.LogDebugf("action[getAndDelVer] ino %v RestoreMultiSnapExts no left", i.Inode)
 		return
 	}
+
 	// delete snapshot version
 	if dVer == math.MaxUint64 {
-		inode := i.multiVersions[verLen-1]
+		inode := i.multiVersions[inoVerLen-1]
 		if inode.verSeq != 0 {
-			log.LogDebugf("action[getAndDelVer] ino %v idx %v is %v and cann't be dropped", i.Inode, verLen-1, inode.verSeq)
+			log.LogDebugf("action[getAndDelVer] ino %v idx %v is %v and cann't be dropped", i.Inode, inoVerLen-1, inode.verSeq)
 			return
 		}
-		i.multiVersions = i.multiVersions[:verLen-1]
+		i.Lock()
+		defer i.Unlock()
+		i.multiVersions = i.multiVersions[:inoVerLen-1]
 		// delete layer id
-		i.multiVersions = append(i.multiVersions[:verLen-1], i.multiVersions[verLen:]...)
-		log.LogDebugf("action[getAndDelVer] ino %v idx %v be dropped", i.Inode, verLen-1)
+		i.multiVersions = append(i.multiVersions[:inoVerLen-1], i.multiVersions[inoVerLen:]...)
+
+		log.LogDebugf("action[getAndDelVer] ino %v idx %v be dropped", i.Inode, inoVerLen-1)
 		return inode.Extents.eks, inode
 	}
+
+
 
 	for id, mIno := range i.multiVersions {
 		log.LogDebugf("action[getAndDelVer] ino %v multiVersions level %v verseq %v", i.Inode, id, mIno.verSeq)
@@ -1029,10 +1060,13 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 			log.LogDebugf("action[getAndDelVer] ino %v ver %v id %v step 3 ver ", i.Inode, mIno.verSeq, vId)
 			// 3. system next layer not exist in inode ver list. update curr layer to next layer and filter out ek with verSeq
 			// change id layer verSeq to neighbor layer info, omit version delete process
-			if id == len(i.multiVersions)-1 || verlist[vId].Ver != i.multiVersions[id+1].verSeq {
-				log.LogDebugf("action[getAndDelVer] ino %v  get next version in verList update ver from %v to %v.And delete exts with ver %v", i.Inode, i.multiVersions[id].verSeq, verlist[vId].Ver, dVer)
-				i.multiVersions[id].verSeq = verlist[vId].Ver
-				delExtents, ino = i.MultiLayerClearExtByVer(id, verlist[vId].Ver), i.multiVersions[id]
+
+			if id == len(i.multiVersions)-1 || verlist.VerList[vId].Ver != i.multiVersions[id+1].verSeq {
+				log.LogDebugf("action[getAndDelVer] ino %v  get next version in verList update ver from %v to %v.And delete exts with ver %v",
+					i.Inode, i.multiVersions[id].verSeq, verlist.VerList[vId].Ver, dVer)
+
+				i.multiVersions[id].verSeq = verlist.VerList[vId].Ver
+				delExtents, ino = i.MultiLayerClearExtByVer(id, verlist.VerList[vId].Ver), i.multiVersions[id]
 				if len(i.multiVersions[id].Extents.eks) != 0 {
 					log.LogDebugf("action[getAndDelVer] ino %v   after clear self still have ext and left", i.Inode)
 					return
@@ -1055,13 +1089,16 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist []*proto.VolVers
 	return
 }
 
-func (i *Inode) getNextOlderVer(ver uint64, verlist []*proto.VolVersionInfo) (id int, err error){
-	for idx,info := range verlist {
+func (i *Inode) getNextOlderVer(ver uint64, verlist *proto.VolVersionInfoList) (id int, err error){
+	verlist.RLock()
+	defer verlist.RUnlock()
+
+	for idx,info := range verlist.VerList {
 		if info.Ver > ver {
 			if idx == 0 {
 				return -1, fmt.Errorf("not found")
 			}
-			if verlist[idx].Ver == ver {
+			if verlist.VerList[idx].Ver == ver {
 				return -1, fmt.Errorf("shouldn't have the deleted layer")
 			}
 			return idx-1, nil
@@ -1070,7 +1107,7 @@ func (i *Inode) getNextOlderVer(ver uint64, verlist []*proto.VolVersionInfo) (id
 	return -1, fmt.Errorf("not found")
 }
 
-func (i *Inode) CreateUnlinkVer(ver uint64, verlist []*proto.VolVersionInfo) {
+func (i *Inode) CreateUnlinkVer(ver uint64) {
 	//inode copy not include multi ver array
 	ino := i.Copy().(*Inode)
 	i.Extents = NewSortedExtents()
@@ -1097,15 +1134,13 @@ func (i *Inode) CreateVer(ver uint64) {
 	ino.ObjExtents = NewSortedObjExtents()
 	ino.multiVersions = nil
 
+	i.Lock()
+	defer i.Unlock()
 	log.LogDebugf("action[CreateVer] inode %v create new version [%v] and store old one [%v], hist len [%v]",
 		i.Inode, ver, i.verSeq, len(i.multiVersions))
 
-	i.Lock()
 	i.multiVersions = append([]*Inode{ino}, i.multiVersions...)
 	i.verSeq = ver
-	i.Unlock()
-
-	// i.IncNLink()
 }
 
 func (i *Inode) SplitExtentWithCheck(mpVer uint64, multiVersionList *proto.VolVersionInfoList,
@@ -1114,13 +1149,14 @@ func (i *Inode) SplitExtentWithCheck(mpVer uint64, multiVersionList *proto.VolVe
 	var err error
 	ek.VerSeq = reqVer
 	log.LogDebugf("action[SplitExtentWithCheck] inode %v,ver %v,ek %v,hist len %v", i.Inode, reqVer, ek, len(i.multiVersions))
+
 	if reqVer != i.verSeq {
 		log.LogDebugf("action[SplitExtentWithCheck] CreateVer ver %v", reqVer)
 		i.CreateVer(reqVer)
 	}
-
 	i.Lock()
 	defer i.Unlock()
+
 	delExtents, status = i.Extents.SplitWithCheck(ek)
 	if status != proto.OpOk {
 		log.LogErrorf("action[SplitExtentWithCheck] status %v", status)
@@ -1148,8 +1184,9 @@ func (i *Inode) SplitExtentWithCheck(mpVer uint64, multiVersionList *proto.VolVe
 
 
 func (i *Inode) CreateLowerVersion(curVer uint64, verlist *proto.VolVersionInfoList) (err error){
-	verlist.RLock()
-	defer verlist.RUnlock()
+	verlist.Lock()
+	defer verlist.Unlock()
+
 	log.LogDebugf("CreateLowerVersion inode %v curVer %v", i.Inode, curVer)
 	if len(verlist.VerList) == 0 {
 		return
@@ -1181,9 +1218,8 @@ func (i *Inode) CreateLowerVersion(curVer uint64, verlist *proto.VolVersionInfoL
 	log.LogDebugf("action[CreateLowerVersion] inode %v create new version [%v] and store old one [%v], hist len [%v]",
 		i.Inode, ino, i.verSeq, len(i.multiVersions))
 
-	i.Lock()
 	i.multiVersions = append([]*Inode{ino}, i.multiVersions...)
-	i.Unlock()
+
 	return
 }
 
@@ -1195,6 +1231,7 @@ func (i *Inode) AppendExtentWithCheck(mpVer uint64,
 
 	ek.VerSeq = mpVer
 	log.LogDebugf("action[AppendExtentWithCheck] mpVer %v inode %v,mpver %v,inode ver %v,ek %v,hist len %v", mpVer, i.Inode, i.verSeq, reqVer, ek, len(i.multiVersions))
+
 
 	if mpVer != i.verSeq {
 		log.LogDebugf("action[AppendExtentWithCheck] ver %v inode ver %v", reqVer, i.verSeq)
@@ -1234,12 +1271,10 @@ func (i *Inode) AppendExtentWithCheck(mpVer uint64,
 }
 
 func (i *Inode) ExtentsTruncate(length uint64, ct int64) (delExtents []proto.ExtentKey) {
-	i.Lock()
 	delExtents = i.Extents.Truncate(length)
 	i.Size = length
 	i.ModifyTime = ct
 	i.Generation++
-	i.Unlock()
 	return
 }
 
@@ -1340,10 +1375,10 @@ func (i *Inode) ShouldDelayDelete() (ok bool) {
 // SetAttr sets the attributes of the inode.
 func (i *Inode) SetAttr(req *SetattrRequest) {
 	log.LogDebugf("action[SetAttr] inode %v req seq %v inode seq %v", i.Inode, req.VerSeq, i.verSeq)
+
 	if req.VerSeq != i.verSeq {
 		i.CreateVer(req.VerSeq)
 	}
-
 	i.Lock()
 	log.LogDebugf("action[SetAttr] inode %v req seq %v inode seq %v", i.Inode, req.VerSeq, i.verSeq)
 	if req.Valid&proto.AttrMode != 0 {

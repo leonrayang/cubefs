@@ -463,7 +463,11 @@ func DelVersion(t *testing.T, verSeq uint64, dirIno *Inode, dirDentry *Dentry) {
 
 	rDirIno := dirIno.Copy().(*Inode)
 	rDirIno.verSeq = verSeq
-	rspDelIno := mp.fsmUnlinkInode(rDirIno, mp.multiVersionList.VerList)
+
+	mp.multiVersionList.RLock()
+	defer mp.multiVersionList.RUnlock()
+	rspDelIno := mp.fsmUnlinkInode(rDirIno)
+
 	t.Logf("rspDelinfo ret %v content %v", rspDelIno.Status, rspDelIno)
 	assert.True(t, rspDelIno.Status == proto.OpOk)
 
@@ -490,7 +494,7 @@ func DelVersion(t *testing.T, verSeq uint64, dirIno *Inode, dirDentry *Dentry) {
 			panic(nil)
 		}
 		rino.verSeq = verSeq
-		rspDelIno = mp.fsmUnlinkInode(rino, mp.multiVersionList.VerList)
+		rspDelIno = mp.fsmUnlinkInode(rino)
 
 		assert.True(t, rspDelIno.Status == proto.OpOk || rspDelIno.Status == proto.OpNotExistErr)
 		if rspDelIno.Status != proto.OpOk && rspDelIno.Status != proto.OpNotExistErr {

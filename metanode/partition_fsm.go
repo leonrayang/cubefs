@@ -61,7 +61,7 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		if err = ino.Unmarshal(msg.V); err != nil {
 			return
 		}
-		resp = mp.fsmUnlinkInode(ino, mp.getVerList())
+		resp = mp.fsmUnlinkInode(ino)
 	case opFSMUnlinkInodeBatch:
 		inodes, err := InodeBatchUnmarshal(msg.V)
 		if err != nil {
@@ -482,6 +482,7 @@ func (mp *metaPartition) HandleLeaderChange(leader uint64) {
 
 // Put puts the given key-value pair (operation key and operation request) into the raft store.
 func (mp *metaPartition) submit(op uint32, data []byte) (resp interface{}, err error) {
+	log.LogDebugf("submit. op %v", op)
 	snap := NewMetaItem(0, nil, nil)
 	snap.Op = op
 	if data != nil {
@@ -494,6 +495,7 @@ func (mp *metaPartition) submit(op uint32, data []byte) (resp interface{}, err e
 
 	// submit to the raft store
 	resp, err = mp.raftPartition.Submit(cmd)
+	log.LogDebugf("submit. op %v done", op)
 	return
 }
 

@@ -150,7 +150,7 @@ func (mp *metaPartition) Ascend(f func(i BtreeItem) bool) {
 // normal unlink seq is 0
 // snapshot unlink seq is snapshotVersion
 // fsmUnlinkInode delete the specified inode from inode tree.
-func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*proto.VolVersionInfo) (resp *InodeResponse) {
+func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 	log.LogDebugf("action[fsmUnlinkInode] pa ino %v", ino)
 	var (
 		ext2Del []proto.ExtentKey
@@ -181,7 +181,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*proto.VolVersionI
 	)
 	// create a version if the snapshot be depend on
 	if ino.verSeq == 0 {
-		ext2Del, doMore, status =  inode.unlinkVerInTopLayer(ino, mp.verSeq, verlist)
+		ext2Del, doMore, status =  inode.unlinkVerInTopLayer(ino, mp.verSeq, mp.multiVersionList)
 	} else { // means drop snapshot
 		log.LogDebugf("action[fsmUnlinkInode] req drop assigned snapshot reqseq %v inode seq %v", ino.verSeq, inode.verSeq)
 		if ino.verSeq > inode.verSeq && ino.verSeq != math.MaxUint64 {
@@ -189,7 +189,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*proto.VolVersionI
 				ino.Inode, ino.verSeq, inode.verSeq)
 			return
 		} else {
-			ext2Del, doMore, status =  inode.unlinkVerInList(ino, mp.verSeq, verlist)
+			ext2Del, doMore, status =  inode.unlinkVerInList(ino, mp.verSeq, mp.multiVersionList)
 		}
 	}
 	if !doMore {
@@ -224,7 +224,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode, verlist []*proto.VolVersionI
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInodeBatch(ib InodeBatch) (resp []*InodeResponse) {
 	for _, ino := range ib {
-		resp = append(resp, mp.fsmUnlinkInode(ino, mp.getVerList()))
+		resp = append(resp, mp.fsmUnlinkInode(ino))
 	}
 	return
 }
@@ -421,9 +421,13 @@ func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 		resp.Status = proto.OpArgMismatchErr
 		return
 	}
+
 	if i.verSeq != mp.verSeq {
 		i.CreateVer(mp.verSeq)
 	}
+
+	i.Lock()
+	defer i.Unlock()
 
 	if err = i.CreateLowerVersion(i.verSeq, mp.multiVersionList); err != nil {
 		return
