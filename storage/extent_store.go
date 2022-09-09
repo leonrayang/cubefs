@@ -54,7 +54,6 @@ const (
 	RepairInterval               = 60
 	RandomWriteType              = 2
 	AppendWriteType              = 1
-	AppendWriteVerType           = 3
 	AppendRandomWriteType        = 4
 	NormalExtentDeleteRetainTime = 3600 * 4
 )
@@ -349,6 +348,10 @@ func (s *ExtentStore) checkOffsetAndSize(extentID uint64, offset, size int64, wr
 	if IsTinyExtent(extentID) {
 		return nil
 	}
+	// random write pos can happen on modAppend partition of extent
+	if writeType == RandomWriteType {
+		return nil
+	}
 	if writeType == AppendRandomWriteType {
 		if offset < util.ExtentSize {
 			return NewParameterMismatchErr(fmt.Sprintf("writeType=%v offset=%v size=%v", writeType, offset, size))
@@ -531,7 +534,7 @@ func (s *ExtentStore) GetTinyExtentOffset(extentID uint64) (watermark int64, err
 }
 
 // GetTinyExtentOffset returns the offset of the given extent.
-func (s *ExtentStore) GetExtentSnapshotModOffset(extentID uint64) (watermark int64, err error) {
+func (s *ExtentStore) GetExtentSnapshotModOffset(extentID uint64, allocSize uint32) (watermark int64, err error) {
 	einfo, err := s.Watermark(extentID)
 	if err != nil {
 		return
@@ -542,7 +545,12 @@ func (s *ExtentStore) GetExtentSnapshotModOffset(extentID uint64) (watermark int
 	//if watermark%PageSize != 0 {
 	//	watermark = watermark + (PageSize - watermark%PageSize)
 	//}
-	watermark = int64(einfo.SnapshotDataOff)
+	if einfo.SnapPreAllocDataOff == 0 {
+		einfo.SnapPreAllocDataOff = einfo.SnapshotDataOff
+	}
+	watermark = int64(einfo.SnapPreAllocDataOff)
+	einfo.SnapPreAllocDataOff += uint64(allocSize)
+
 	return
 }
 

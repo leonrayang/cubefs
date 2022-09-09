@@ -51,6 +51,7 @@ type ExtentInfo struct {
 	AccessTime      int64  `json:"accessTime"`
 	Source          string `json:"src"`
 	SnapshotDataOff uint64  `json:"snapSize"`
+	SnapPreAllocDataOff uint64  `json:"snapPreAllocSize"`
 }
 
 func (ei *ExtentInfo) TotalSize() uint64 {
@@ -248,7 +249,7 @@ func IsRandomWrite(writeType int) bool {
 }
 
 func IsAppendWrite(writeType int) bool {
-	return writeType == AppendWriteType || writeType == AppendWriteVerType
+	return writeType == AppendWriteType
 }
 
 func IsAppendRandomWrite(writeType int) bool {
