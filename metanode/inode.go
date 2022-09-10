@@ -683,8 +683,7 @@ func mergeExtentArr(extentKeysLeft []proto.ExtentKey, extentKeysRight []proto.Ex
 
 // Restore ext info to older version or deleted if no right version
 // The list(multiVersions) contains all point of modification on inode, each ext must belong to one layer.
-// Once the layer be deleted and layer ver be changed to upper layer, the ext belongs is not exist and can be dropped
-// So it's safe to restore to the next layer and ignore the middle layers(system view) that may be exist between the two layers in list
+// Once the layer be deleted is top layer ver be changed to upper layer, or else the ext belongs is exclusive and can be dropped
 func  (i *Inode) RestoreExts2NextLayer(delExtentsOrigin []proto.ExtentKey, curVer uint64, idx int) (delExtents []proto.ExtentKey, err error){
 	log.LogInfof("action[RestoreMultiSnapExts] curVer [%v] delExtents size [%v] hist len [%v]", curVer, len(delExtentsOrigin), len(i.multiVersions))
 	// no version left.all old versions be deleted
@@ -768,7 +767,16 @@ func (inode* Inode) unlinkVerInTopLayer(ino *Inode, mpVer uint64, verlist *proto
 		inode.DecNLink()
 		log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, Dir create ver 1st layer", ino.Inode)
 	} else {
-		inode.CreateUnlinkVer(mpVer)
+		verlist.RLock()
+		defer verlist.RUnlock()
+
+		ver, err := inode.getNextOlderVer(mpVer, verlist)
+		if err != nil {
+			log.LogErrorf("action[unlinkVerInTopLayer] inode %v cann't get next older ver %v err %v", inode.Inode, mpVer, err)
+			return
+		}
+		inode.CreateVer(mpVer) // protect origin version
+		inode.CreateUnlinkVer(mpVer, ver) // create a effective top level  version
 		inode.DecNLink()
 		log.LogDebugf("action[unlinkVerInTopLayer] inode %v be unlinked, File create ver 1st layer", ino.Inode)
 	}
@@ -974,10 +982,9 @@ func (ino *Inode) getInoByVer(verSeq uint64, equal bool) (i *Inode, idx int) {
 	return
 }
 
-// 1. dVer be depended on by B snapshot 1)the B not exist in inode then update ver of dVer layer   2) exist go to 2
-// 2. check if dVer layer is the last layer of the system  1)true,drop it all 2) false goto 3
-// 3. if have system layer between dVer and next older inode's layer(not exist is ok), drop dVer related exts and update ver
-// 4. else Restore to next inode's Layer
+// 1. check if dVer layer is the last layer of the system  1)true,drop it all 2) false goto 3
+// 2. if have system layer between dVer and next older inode's layer(not exist is ok), drop dVer related exts and update ver
+// 3. else Restore to next inode's Layer
 
 func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist *proto.VolVersionInfoList) (delExtents []proto.ExtentKey, ino *Inode) {
 	var err error
@@ -1020,8 +1027,6 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist *proto.VolVersio
 		return inode.Extents.eks, inode
 	}
 
-
-
 	for id, mIno := range i.multiVersions {
 		log.LogDebugf("action[getAndDelVer] ino %v multiVersions level %v verseq %v", i.Inode, id, mIno.verSeq)
 		if mIno.verSeq < dVer {
@@ -1031,49 +1036,35 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist *proto.VolVersio
 
 		if mIno.verSeq == dVer {
 			// 1.
-			if lVer, found := i.getLastestVer(dVer, true, verlist); found {
-				log.LogDebugf("action[getAndDelVer] ino %v multiVersions get last commited ver %v be update to verseq %v and do nothing", i.Inode, mIno.verSeq, lVer)
-				if id == 0 {
-					if lVer != i.verSeq {
-						log.LogDebugf("action[getAndDelVer] ino %v lver %v inode seq %v update mino verseq %v",  i.Inode, lVer, i.verSeq, mIno.verSeq)
-						mIno.verSeq = lVer
-						return
-					}
-				} else if lVer != i.multiVersions[id-1].verSeq {
-					log.LogDebugf("action[getAndDelVer] ino %v multiVersions get last commited ver %v be update to verseq %v", i.Inode, mIno.verSeq, lVer)
-					mIno.verSeq = lVer
-					return
-				}
-			}
 			if id == len(i.multiVersions) - 1 { // last layer then need delete all and unlink inode
 				i.multiVersions = i.multiVersions[:id]
 				return mIno.Extents.eks, mIno
 			}
 			log.LogDebugf("action[getAndDelVer] ino %v ver %v step 3", i.Inode, mIno.verSeq)
 			// 2. get next version should according to verList but not only self multi list
-			var vId int
-			if vId, err = i.getNextOlderVer(dVer, verlist); id == -1 || err != nil {
+			var nVerSeq uint64
+			if nVerSeq, err = i.getNextOlderVer(dVer, verlist); id == -1 || err != nil {
 				log.LogDebugf("action[getAndDelVer] get next version failed, err %v", err)
 				return
 			}
 
-			log.LogDebugf("action[getAndDelVer] ino %v ver %v id %v step 3 ver ", i.Inode, mIno.verSeq, vId)
-			// 3. system next layer not exist in inode ver list. update curr layer to next layer and filter out ek with verSeq
+			log.LogDebugf("action[getAndDelVer] ino %v ver %v nextVerSeq %v step 3 ver ", i.Inode, mIno.verSeq, nVerSeq)
+			// 2. system next layer not exist in inode ver list. update curr layer to next layer and filter out ek with verSeq
 			// change id layer verSeq to neighbor layer info, omit version delete process
 
-			if id == len(i.multiVersions)-1 || verlist.VerList[vId].Ver != i.multiVersions[id+1].verSeq {
+			if id == len(i.multiVersions)-1 || nVerSeq != i.multiVersions[id+1].verSeq {
 				log.LogDebugf("action[getAndDelVer] ino %v  get next version in verList update ver from %v to %v.And delete exts with ver %v",
-					i.Inode, i.multiVersions[id].verSeq, verlist.VerList[vId].Ver, dVer)
+					i.Inode, i.multiVersions[id].verSeq, nVerSeq, dVer)
 
-				i.multiVersions[id].verSeq = verlist.VerList[vId].Ver
-				delExtents, ino = i.MultiLayerClearExtByVer(id, verlist.VerList[vId].Ver), i.multiVersions[id]
+				i.multiVersions[id].verSeq = nVerSeq
+				delExtents, ino = i.MultiLayerClearExtByVer(id, nVerSeq), i.multiVersions[id]
 				if len(i.multiVersions[id].Extents.eks) != 0 {
 					log.LogDebugf("action[getAndDelVer] ino %v   after clear self still have ext and left", i.Inode)
 					return
 				}
 			} else {
-				log.LogDebugf("action[getAndDelVer] ino %v ver %v id %v step 3 ver ", i.Inode, mIno.verSeq, vId)
-				// 4. next layer exist. the deleted version and  next version are neighbor in verlist, thus need restore and delete
+				log.LogDebugf("action[getAndDelVer] ino %v ver %v nextVer %v step 3 ver ", i.Inode, mIno.verSeq, nVerSeq)
+				// 3. next layer exist. the deleted version and  next version are neighbor in verlist, thus need restore and delete
 				if delExtents, err = i.RestoreExts2NextLayer(mIno.Extents.eks, dVer, id+1); err != nil {
 					log.LogDebugf("action[getAndDelVer] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
 					return
@@ -1089,25 +1080,24 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist *proto.VolVersio
 	return
 }
 
-func (i *Inode) getNextOlderVer(ver uint64, verlist *proto.VolVersionInfoList) (id int, err error){
+func (i *Inode) getNextOlderVer(ver uint64, verlist *proto.VolVersionInfoList) (verSeq uint64, err error){
 	verlist.RLock()
 	defer verlist.RUnlock()
-
+	log.LogDebugf("getNextOlderVer inode %v ver %v", i.Inode, ver)
 	for idx,info := range verlist.VerList {
-		if info.Ver > ver {
+		log.LogDebugf("getNextOlderVer inode %v id %v ver %v info %v", i.Inode, idx, info.Ver, info)
+		if info.Ver >= ver {
 			if idx == 0 {
-				return -1, fmt.Errorf("not found")
+				return 0, fmt.Errorf("not found")
 			}
-			if verlist.VerList[idx].Ver == ver {
-				return -1, fmt.Errorf("shouldn't have the deleted layer")
-			}
-			return idx-1, nil
+			return  verlist.VerList[idx-1].Ver, nil
 		}
 	}
-	return -1, fmt.Errorf("not found")
+	log.LogDebugf("getNextOlderVer inode %v ver %v not found", i.Inode, ver)
+	return 0, fmt.Errorf("not found")
 }
 
-func (i *Inode) CreateUnlinkVer(ver uint64) {
+func (i *Inode) CreateUnlinkVer(mpVer uint64, nVer uint64) {
 	//inode copy not include multi ver array
 	ino := i.Copy().(*Inode)
 	i.Extents = NewSortedExtents()
@@ -1115,13 +1105,14 @@ func (i *Inode) CreateUnlinkVer(ver uint64) {
 	i.SetDeleteMark()
 
 	ino.multiVersions = nil
+	ino.verSeq = nVer
 
-	log.LogDebugf("action[CreateVer] inode %v create new version [%v] and store old one [%v], hist len [%v]",
-		i.Inode, ver, i.verSeq, len(i.multiVersions))
+	log.LogDebugf("action[CreateUnlinkVer] inode %v create new version [%v] and store old one [%v], hist len [%v]",
+		i.Inode, mpVer, i.verSeq, len(i.multiVersions))
 
 	i.Lock()
 	i.multiVersions = append([]*Inode{ino}, i.multiVersions...)
-	i.verSeq = ver
+	i.verSeq = mpVer
 	i.Unlock()
 
 	//i.IncNLink()

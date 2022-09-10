@@ -170,7 +170,10 @@ func checkExtList(t *testing.T, ino *Inode, seqArr []uint64) bool {
 		reqExtList.VerSeq = verRead
 		getExtRsp := getExtList(t, ino, verRead)
 		t.Logf("check extlist rsp %v size %v,%v", getExtRsp, getExtRsp.Size, ino.Size)
-		assert.True(t, getExtRsp.Size == uint64(1000*idx))
+		assert.True(t, getExtRsp.Size ==  uint64(1000*(idx+1)) )
+		if getExtRsp.Size != uint64(1000*(idx+1)) {
+			panic(nil)
+		}
 	}
 	return true
 }
