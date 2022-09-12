@@ -293,6 +293,9 @@ func (mp *metaPartition) readDirLimit(req *ReadDirLimitReq) (resp *ReadDirLimitR
 		ParentId: req.ParentID + 1,
 	}
 	mp.dentryTree.AscendRange(startDentry, endDentry, func(i BtreeItem) bool {
+		if !proto.IsDir(i.(*Dentry).Type) && req.VerDel && !i.(*Dentry).isEffective(req.VerSeq) {
+			return true
+		}
 		d := mp.getDentryByVerSeq(i.(*Dentry), req.VerSeq)
 		if d == nil {
 			return true

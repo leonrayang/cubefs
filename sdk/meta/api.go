@@ -638,7 +638,7 @@ func (mw *MetaWrapper) ReadDirLimitByVer(parentID uint64, from string, limit uin
 		return nil, syscall.ENOENT
 	}
 
-	status, children, err := mw.readDirLimit(parentMP, parentID, from, limit, verSeq)
+	status, children, err := mw.readDirLimit(parentMP, parentID, from, limit, verSeq, true)
 	if err != nil || status != statusOK {
 		return nil, statusToErrno(status)
 	}
@@ -653,7 +653,7 @@ func (mw *MetaWrapper) ReadDirLimit_ll(parentID uint64, from string, limit uint6
 		return nil, syscall.ENOENT
 	}
 
-	status, children, err := mw.readDirLimit(parentMP, parentID, from, limit, mw.VerReadSeq)
+	status, children, err := mw.readDirLimit(parentMP, parentID, from, limit, mw.VerReadSeq, false)
 	if err != nil || status != statusOK {
 		return nil, statusToErrno(status)
 	}

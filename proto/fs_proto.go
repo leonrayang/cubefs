@@ -352,6 +352,7 @@ type ReadDirLimitRequest struct {
 	Marker      string `json:"marker"`
 	Limit       uint64 `json:"limit"`
 	VerSeq      uint64 `json:"seq"`
+	VerDel      bool   `json:"verDel"`
 }
 
 type ReadDirLimitResponse struct {

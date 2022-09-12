@@ -65,6 +65,18 @@ func (d *Dentry) setDeleted() {
 	d.VerSeq |= uint64(1)<<63
 }
 
+func (d *Dentry) minimizeSeq() (verSeq uint64) {
+	cnt := len(d.dentryList)
+	if cnt == 0 {
+		return d.getVerSeq()
+	}
+	return d.dentryList[cnt-1].getVerSeq()
+}
+
+func (d *Dentry) isEffective(verSeq uint64) bool {
+	return verSeq == 0 || (verSeq <= d.getVerSeq() && verSeq >= d.minimizeSeq())
+}
+
 func (d *Dentry) getDentryFromVerList(verSeq uint64) (den *Dentry, idx int) {
 
 	log.LogInfof("action[getDentryFromVerList] verseq %v, tmp dentry %v, inode id %v, name %v", verSeq, d.getVerSeq(), d.Inode, d.Name)
@@ -97,10 +109,11 @@ func (d *Dentry) getDentryFromVerList(verSeq uint64) (den *Dentry, idx int) {
 		log.LogDebugf("action[getDentryFromVerList] den in ver list %v, is delete %v, seq %v", lDen, lDen.isDeleted(), lDen.getVerSeq())
 		if verSeq < lDen.getVerSeq() {
 			log.LogDebugf("action[getDentryFromVerList] den in ver list %v, return nil, request seq %v, history ver seq %v", lDen, verSeq, lDen.getVerSeq())
-		} else if lDen.isDeleted() {
-			log.LogDebugf("action[getDentryFromVerList] den in ver list %v, return nil due to latest is deleted", lDen)
-			return
-		} else if verSeq >= lDen.getVerSeq() {
+		}  else  {
+			if lDen.isDeleted() {
+				log.LogDebugf("action[getDentryFromVerList] den in ver list %v, return nil due to latest is deleted", lDen)
+				return
+			}
 			log.LogDebugf("action[getDentryFromVerList] den in ver list %v got", lDen)
 			return lDen, id+1
 		}
