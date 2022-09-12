@@ -179,9 +179,9 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 		doMore bool
 		status = proto.OpOk
 	)
-	// create a version if the snapshot be depend on
+
 	if ino.verSeq == 0 {
-		ext2Del, doMore, status =  inode.unlinkVerInTopLayer(ino, mp.verSeq, mp.multiVersionList)
+		ext2Del, doMore, status =  inode.unlinkTopLayer(ino, mp.verSeq, mp.multiVersionList)
 	} else { // means drop snapshot
 		log.LogDebugf("action[fsmUnlinkInode] req drop assigned snapshot reqseq %v inode seq %v", ino.verSeq, inode.verSeq)
 		if ino.verSeq > inode.verSeq && ino.verSeq != math.MaxUint64 {
