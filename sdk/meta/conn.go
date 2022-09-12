@@ -87,7 +87,7 @@ func (mw *MetaWrapper) sendToMetaPartition(mp *MetaPartition, req *proto.Packet)
 		log.LogWarnf("sendToMetaPartition: getConn failed and goto retry, req(%v) mp(%v) addr(%v) err(%v)", req, mp, addr, err)
 		goto retry
 	}
-	resp, err = mc.send(req)
+	resp, err = mc.send(req, mw.LastVerSeq)
 	mw.putConn(mc, err)
 	if err == nil && !resp.ShouldRetry() {
 		goto out
@@ -104,7 +104,7 @@ retry:
 				log.LogWarnf("sendToMetaPartition: getConn failed and continue to retry, req(%v) mp(%v) addr(%v) err(%v)", req, mp, addr, err)
 				continue
 			}
-			resp, err = mc.send(req)
+			resp, err = mc.send(req, mw.LastVerSeq)
 			mw.putConn(mc, err)
 			if err == nil && !resp.ShouldRetry() {
 				goto out
@@ -136,7 +136,10 @@ out:
 	return resp, nil
 }
 
-func (mc *MetaConn) send(req *proto.Packet) (resp *proto.Packet, err error) {
+func (mc *MetaConn) send(req *proto.Packet, verSeq uint64) (resp *proto.Packet, err error) {
+	req.ExtentType |= proto.MultiVersionFlag
+	req.VerSeq = verSeq
+
 	err = req.WriteToConn(mc.conn)
 	if err != nil {
 		return nil, errors.Trace(err, "Failed to write to conn, req(%v)", req)

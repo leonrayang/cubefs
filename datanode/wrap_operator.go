@@ -335,9 +335,9 @@ func (s *DataNode) checkMultiVersionStatus(volName string) (err error) {
 			// check again in case of sth already happened by other goroutine during be blocked by lock
 			if atomic.LoadUint32(&ver2Phase.status) == proto.VersionWorkingAbnormal ||
 				atomic.LoadUint32(&ver2Phase.step) != proto.CreateVersionPrepare {
-				err = fmt.Errorf("volumeName %v status %v step %v",
+
+				log.LogWarnf("action[checkMultiVersionStatus] volumeName %v status %v step %v",
 					volName, atomic.LoadUint32(&ver2Phase.status), atomic.LoadUint32(&ver2Phase.step))
-				log.LogErrorf("action[checkMultiVersionStatus] err %v", err)
 				return
 			}
 

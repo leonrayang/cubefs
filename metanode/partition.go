@@ -205,6 +205,7 @@ type OpMeta interface {
 // OpPartition defines the interface for the partition operations.
 type OpPartition interface {
 	GetVolName() (volName string)
+	GetVerSeq() uint64
 	IsLeader() (leaderAddr string, isLeader bool)
 	GetCursor() uint64
 	GetBaseConfig() MetaPartitionConfig
@@ -561,6 +562,10 @@ func NewMetaPartition(conf *MetaPartitionConfig, manager *metadataManager) MetaP
 
 func (mp *metaPartition) GetVolName() (volName string) {
 	return mp.config.VolName
+}
+
+func (mp *metaPartition) GetVerSeq() uint64 {
+	return mp.verSeq
 }
 
 // IsLeader returns the raft leader address and if the current meta partition is the leader.

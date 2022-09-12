@@ -1833,10 +1833,21 @@ func (mw *MetaWrapper) updateXAttrs(mp *MetaPartition, inode uint64, filesInc in
 }
 
 func (mw *MetaWrapper) checkVerFromMeta(packet *proto.Packet) {
-	if packet.VerSeq > atomic.LoadUint64(&mw.LastVerSeq) {
-		mw.LastVerSeq = packet.VerSeq
-		if mw.Client != nil {
-			mw.Client.UpdateLatestVer(mw.LastVerSeq)
-		}
+
+	if packet.VerSeq <= atomic.LoadUint64(&mw.LastVerSeq) {
+		return
+	}
+	log.LogDebugf("checkVerFromMeta.try update meta wrapper verSeq from %v to %v", mw.LastVerSeq, packet.VerSeq)
+
+	mw.VerUpdateLock.Lock()
+	defer mw.VerUpdateLock.Unlock()
+	if packet.VerSeq <= atomic.LoadUint64(&mw.LastVerSeq) {
+		return
+	}
+	log.LogDebugf("checkVerFromMeta.try update meta wrapper verSeq from %v to %v", mw.LastVerSeq, packet.VerSeq)
+
+	atomic.StoreUint64(&mw.LastVerSeq, packet.VerSeq)
+	if mw.Client != nil {
+		mw.Client.UpdateLatestVer(mw.LastVerSeq)
 	}
 }

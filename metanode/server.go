@@ -76,7 +76,7 @@ func (m *MetaNode) serveConn(conn net.Conn, stopC chan uint8) {
 		default:
 		}
 		p := &Packet{}
-		if err := p.ReadFromConn(conn, proto.NoReadDeadlineTime); err != nil {
+		if err := p.ReadFromConnWithVer(conn, proto.NoReadDeadlineTime); err != nil {
 			if err != io.EOF {
 				log.LogError("serve MetaNode: ", err.Error())
 			}

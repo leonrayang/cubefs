@@ -165,7 +165,7 @@ func (m *metadataManager) opCreateInode(conn net.Conn, p *Packet,
 		return
 	}
 
-	if err = m.checkMultiVersionStatus(mp.GetVolName()); err != nil {
+	if err = m.checkMultiVersionStatus(mp, p); err != nil {
 		return
 	}
 
@@ -241,7 +241,7 @@ func (m *metadataManager) opCreateDentry(conn net.Conn, p *Packet,
 		return
 	}
 
-	if err = m.checkMultiVersionStatus(mp.GetVolName()); err != nil {
+	if err = m.checkMultiVersionStatus(mp, p); err != nil {
 		return
 	}
 
@@ -274,7 +274,7 @@ func (m *metadataManager) opDeleteDentry(conn net.Conn, p *Packet,
 		return
 	}
 
-	if err = m.checkMultiVersionStatus(mp.GetVolName()); err != nil {
+	if err = m.checkMultiVersionStatus(mp, p); err != nil {
 		return
 	}
 
@@ -306,7 +306,7 @@ func (m *metadataManager) opBatchDeleteDentry(conn net.Conn, p *Packet,
 		return
 	}
 
-	if err = m.checkMultiVersionStatus(mp.GetVolName()); err != nil {
+	if err = m.checkMultiVersionStatus(mp, p); err != nil {
 		return
 	}
 
@@ -336,7 +336,7 @@ func (m *metadataManager) opUpdateDentry(conn net.Conn, p *Packet,
 	if !m.serveProxy(conn, mp, p) {
 		return
 	}
-	if err = m.checkMultiVersionStatus(mp.GetVolName()); err != nil {
+	if err = m.checkMultiVersionStatus(mp, p); err != nil {
 		return
 	}
 	err = mp.UpdateDentry(req, p)
@@ -602,7 +602,7 @@ func (m *metadataManager) opSetAttr(conn net.Conn, p *Packet,
 	if !m.serveProxy(conn, mp, p) {
 		return
 	}
-	if err = m.checkMultiVersionStatus(mp.GetVolName()); err != nil {
+	if err = m.checkMultiVersionStatus(mp, p); err != nil {
 		return
 	}
 	if err = mp.SetAttr(req, p.Data, p); err != nil {
@@ -660,7 +660,7 @@ func (m *metadataManager) opMetaExtentsAdd(conn net.Conn, p *Packet,
 	if !m.serveProxy(conn, mp, p) {
 		return
 	}
-	if err = m.checkMultiVersionStatus(mp.GetVolName()); err != nil {
+	if err = m.checkMultiVersionStatus(mp, p); err != nil {
 		return
 	}
 	err = mp.ExtentAppend(req, p)
@@ -694,7 +694,7 @@ func (m *metadataManager) opMetaExtentAddWithCheck(conn net.Conn, p *Packet,
 	if !m.serveProxy(conn, mp, p) {
 		return
 	}
-	if err = m.checkMultiVersionStatus(mp.GetVolName()); err != nil {
+	if err = m.checkMultiVersionStatus(mp, p); err != nil {
 		return
 	}
 
@@ -810,7 +810,7 @@ func (m *metadataManager) opMetaExtentsTruncate(conn net.Conn, p *Packet,
 	if !m.serveProxy(conn, mp, p) {
 		return
 	}
-	if err = m.checkMultiVersionStatus(mp.GetVolName()); err != nil {
+	if err = m.checkMultiVersionStatus(mp, p); err != nil {
 		return
 	}
 	mp.ExtentsTruncate(req, p)
@@ -1732,7 +1732,16 @@ func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op
 	return
 }
 
-func (m *metadataManager) checkMultiVersionStatus(volName string) (err error) {
+func (m *metadataManager) checkMultiVersionStatus(mp MetaPartition, p *Packet) (err error) {
+	// meta node do not need to check verSeq as strictly as datanode,file append or modAppendWrite on meta node is invisible to other files.
+	// only need to guarantee the verSeq wrote on meta nodes grow up linearly on client's angle
+	log.LogDebugf("action[checkMultiVersionStatus] mp ver %v, packet ver %v", mp.GetVerSeq(), p.VerSeq)
+	if mp.GetVerSeq() >= p.VerSeq {
+		log.LogDebugf("action[checkMultiVersionStatus] mp ver %v, packet ver %v", mp.GetVerSeq(), p.VerSeq)
+		p.VerSeq = mp.GetVerSeq()
+		return
+	}
+	volName := mp.GetVolName()
 	log.LogInfof("action[checkMultiVersionStatus] volumeName %v", volName)
 	var info *proto.VolumeVerInfo
 	if value, ok := m.volUpdating.Load(volName); ok {
@@ -1747,9 +1756,9 @@ func (m *metadataManager) checkMultiVersionStatus(volName string) (err error) {
 			// check again in case of sth already happened by other goroutine during be blocked by lock
 			if atomic.LoadUint32(&ver2Phase.status) == proto.VersionWorkingAbnormal ||
 				atomic.LoadUint32(&ver2Phase.step) != proto.CreateVersionPrepare {
-				err = fmt.Errorf("volumeName %v status %v step %v",
+
+				log.LogWarnf("action[checkMultiVersionStatus] volumeName %v status %v step %v",
 					volName, atomic.LoadUint32(&ver2Phase.status), atomic.LoadUint32(&ver2Phase.step))
-				log.LogErrorf("action[checkMultiVersionStatus] err %v", err)
 				return
 			}
 

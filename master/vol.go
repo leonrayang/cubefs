@@ -366,7 +366,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 			case <-ticker.C:
 				log.LogInfof("action[createVer2PhaseTask.tick] verseq %v op %v wait", verSeq, verMgr.prepareCommit.op)
 				cnt++
-				if cnt > 10 {
+				if cnt > 5 {
 					verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingTimeOut
 					err = fmt.Errorf("verseq %v op %v be set timeout", verSeq, verMgr.prepareCommit.op)
 					log.LogInfof("action[createVer2PhaseTask] close lock due to err %v", err)

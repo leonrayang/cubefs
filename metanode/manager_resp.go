@@ -56,6 +56,7 @@ func (m *metadataManager) respondToClient(conn net.Conn, p *Packet) (err error) 
 	}()
 
 	// process data and send reply though specified tcp connection.
+	p.ExtentType |= proto.MultiVersionFlag
 	err = p.WriteToConn(conn)
 	if err != nil {
 		log.LogErrorf("response to client[%s], "+

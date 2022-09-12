@@ -134,8 +134,10 @@ type MetaWrapper struct {
 	forceUpdateLimit *rate.Limiter
 	EnableSummary    bool
 	metaSendTimeout  int64
+
 	VerReadSeq	uint64
 	LastVerSeq  uint64
+	VerUpdateLock sync.RWMutex
 
 	Client  wrapper.SimpleClientInfo
 }
