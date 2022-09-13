@@ -565,7 +565,7 @@ func (mp *metaPartition) GetVolName() (volName string) {
 }
 
 func (mp *metaPartition) GetVerSeq() uint64 {
-	return mp.verSeq
+	return atomic.LoadUint64(&mp.verSeq)
 }
 
 // IsLeader returns the raft leader address and if the current meta partition is the leader.

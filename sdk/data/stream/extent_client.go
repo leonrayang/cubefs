@@ -315,6 +315,12 @@ func (client *ExtentClient) GetVolumeName() string {
 	return client.volumeName
 }
 
+func (client *ExtentClient) GetLatestVer() uint64 {
+	return atomic.LoadUint64(&client.multiVerMgr.latestVerSeq)
+}
+func (client *ExtentClient) GetReadVer() uint64 {
+	return atomic.LoadUint64(&client.multiVerMgr.verReadSeq)
+}
 func (client *ExtentClient) UpdateLatestVer(verSeq uint64) (err error) {
 	if verSeq == 0 || verSeq <= atomic.LoadUint64(&client.multiVerMgr.latestVerSeq) {
 		return

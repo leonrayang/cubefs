@@ -149,7 +149,7 @@ create_dentry:
 		return nil, statusToErrno(status)
 	} else if status != statusOK {
 		if status != statusExist {
-			mw.iunlink(mp, info.Inode, mw.LastVerSeq)
+			mw.iunlink(mp, info.Inode, mw.Client.GetLatestVer())
 			mw.ievict(mp, info.Inode)
 		}
 		return nil, statusToErrno(status)
@@ -873,7 +873,7 @@ func (mw *MetaWrapper) Link(parentID uint64, name string, ino uint64) (*proto.In
 		return nil, statusToErrno(status)
 	} else if status != statusOK {
 		if status != statusExist {
-			mw.iunlink(mp, ino, mw.LastVerSeq)
+			mw.iunlink(mp, ino, mw.Client.GetLatestVer())
 		}
 		return nil, statusToErrno(status)
 	}
@@ -956,7 +956,7 @@ func (mw *MetaWrapper) InodeUnlink_ll(inode uint64) (*proto.InodeInfo, error) {
 		log.LogErrorf("InodeUnlink_ll: No such partition, ino(%v)", inode)
 		return nil, syscall.EINVAL
 	}
-	status, info, err := mw.iunlink(mp, inode, mw.LastVerSeq)
+	status, info, err := mw.iunlink(mp, inode, mw.Client.GetLatestVer())
 	if err != nil || status != statusOK {
 		log.LogErrorf("InodeUnlink_ll: ino(%v) err(%v) status(%v)", inode, err, status)
 		return nil, statusToErrno(status)

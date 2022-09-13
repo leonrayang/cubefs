@@ -1738,9 +1738,10 @@ func (m *metadataManager) checkMultiVersionStatus(mp MetaPartition, p *Packet) (
 	log.LogDebugf("action[checkMultiVersionStatus] mp ver %v, packet ver %v", mp.GetVerSeq(), p.VerSeq)
 	if mp.GetVerSeq() >= p.VerSeq {
 		log.LogDebugf("action[checkMultiVersionStatus] mp ver %v, packet ver %v", mp.GetVerSeq(), p.VerSeq)
-		p.VerSeq = mp.GetVerSeq()
+		p.VerSeq = mp.GetVerSeq() // used to response to client and try update verSeq of client
 		return
 	}
+
 	volName := mp.GetVolName()
 	log.LogInfof("action[checkMultiVersionStatus] volumeName %v", volName)
 	var info *proto.VolumeVerInfo

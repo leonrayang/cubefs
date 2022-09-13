@@ -16,12 +16,10 @@ package meta
 
 import (
 	"fmt"
-	"strconv"
-	"sync"
-	"sync/atomic"
-
 	"github.com/cubefs/cubefs/util/errors"
 	"github.com/cubefs/cubefs/util/stat"
+	"strconv"
+	"sync"
 
 	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/util/exporter"
@@ -242,7 +240,7 @@ func (mw *MetaWrapper) dcreate(mp *MetaPartition, parentID uint64, name string, 
 		Inode:       inode,
 		Name:        name,
 		Mode:        mode,
-		VerSeq:      mw.LastVerSeq,
+		VerSeq:      mw.Client.GetLatestVer(),
 	}
 
 	packet := proto.NewPacketReqID()
@@ -1834,20 +1832,10 @@ func (mw *MetaWrapper) updateXAttrs(mp *MetaPartition, inode uint64, filesInc in
 
 func (mw *MetaWrapper) checkVerFromMeta(packet *proto.Packet) {
 
-	if packet.VerSeq <= atomic.LoadUint64(&mw.LastVerSeq) {
+	if packet.VerSeq <= mw.Client.GetLatestVer() {
 		return
 	}
-	log.LogDebugf("checkVerFromMeta.try update meta wrapper verSeq from %v to %v", mw.LastVerSeq, packet.VerSeq)
 
-	mw.VerUpdateLock.Lock()
-	defer mw.VerUpdateLock.Unlock()
-	if packet.VerSeq <= atomic.LoadUint64(&mw.LastVerSeq) {
-		return
-	}
-	log.LogDebugf("checkVerFromMeta.try update meta wrapper verSeq from %v to %v", mw.LastVerSeq, packet.VerSeq)
-
-	atomic.StoreUint64(&mw.LastVerSeq, packet.VerSeq)
-	if mw.Client != nil {
-		mw.Client.UpdateLatestVer(mw.LastVerSeq)
-	}
+	log.LogDebugf("checkVerFromMeta.try update meta wrapper verSeq from %v to %v", mw.Client.GetLatestVer(), packet.VerSeq)
+	mw.Client.UpdateLatestVer(packet.VerSeq)
 }
