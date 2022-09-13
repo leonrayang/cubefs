@@ -217,6 +217,33 @@ func (i *Inode) Copy() BtreeItem {
 	return newIno
 }
 
+func (i *Inode) CopyDirectly() BtreeItem {
+	newIno := NewInode(i.Inode, i.Type)
+
+	newIno.Uid = i.Uid
+	newIno.Gid = i.Gid
+	newIno.Size = i.Size
+	newIno.Generation = i.Generation
+	newIno.CreateTime = i.CreateTime
+	newIno.ModifyTime = i.ModifyTime
+	newIno.AccessTime = i.AccessTime
+	if size := len(i.LinkTarget); size > 0 {
+		newIno.LinkTarget = make([]byte, size)
+		copy(newIno.LinkTarget, i.LinkTarget)
+	}
+	newIno.NLink = i.NLink
+	newIno.Flag = i.Flag
+	newIno.Reserved = i.Reserved
+	newIno.Extents = i.Extents.Clone()
+	newIno.ObjExtents = i.ObjExtents.Clone()
+	newIno.verSeq = i.verSeq
+	newIno.multiVersions = i.multiVersions.Clone()
+
+
+	return newIno
+}
+
+
 // MarshalToJSON is the wrapper of json.Marshal.
 func (i *Inode) MarshalToJSON() ([]byte, error) {
 	i.RLock()
@@ -1106,6 +1133,7 @@ func (i *Inode) getNextOlderVer(ver uint64, verlist *proto.VolVersionInfoList) (
 }
 
 func (i *Inode) CreateUnlinkVer(mpVer uint64, nVer uint64) {
+	log.LogDebugf("action[CreateUnlinkVer] inode %v mpVer %v nVer %v", i.Inode, mpVer, nVer)
 	//inode copy not include multi ver array
 	ino := i.Copy().(*Inode)
 	i.Extents = NewSortedExtents()
@@ -1119,7 +1147,12 @@ func (i *Inode) CreateUnlinkVer(mpVer uint64, nVer uint64) {
 		i.Inode, mpVer, i.verSeq, len(i.multiVersions))
 
 	i.Lock()
-	i.multiVersions = append([]*Inode{ino}, i.multiVersions...)
+	if i.multiVersions[0].verSeq == nVer {
+		i.multiVersions[0] = ino
+	} else {
+		i.multiVersions = append([]*Inode{ino}, i.multiVersions...)
+	}
+
 	i.verSeq = mpVer
 	i.Unlock()
 
@@ -1208,7 +1241,7 @@ func (i *Inode) CreateLowerVersion(curVer uint64, verlist *proto.VolVersionInfoL
 	}
 
 
-	ino := i.Copy().(*Inode)
+	ino := i.CopyDirectly().(*Inode)
 	ino.Extents = NewSortedExtents()
 	ino.ObjExtents = NewSortedObjExtents()
 	ino.multiVersions = nil
