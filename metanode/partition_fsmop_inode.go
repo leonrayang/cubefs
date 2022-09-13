@@ -405,7 +405,7 @@ func (mp *metaPartition) fsmAppendObjExtents(ino *Inode) (status uint8) {
 func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 	var err error
 	resp = NewInodeResponse()
-
+	log.LogDebugf("fsmExtentsTruncate. req ino %v", ino)
 	resp.Status = proto.OpOk
 	item := mp.inodeTree.Get(ino)
 	if item == nil {
