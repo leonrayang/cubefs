@@ -1655,16 +1655,17 @@ func (m *metadataManager) prepareCreateVersion(req *proto.MultiVersionOpRequest)
 	return
 }
 
-func (m *metadataManager) checkVolVerList() {
+func (m *metadataManager) checkVolVerList() (err error){
 	var (
 		volumeArr = make(map[string]bool)
-		err error
 	)
+
 	log.LogDebugf("checkVolVerList start")
 	m.Range(func(id uint64, partition MetaPartition) bool {
 		volumeArr[partition.GetVolName()] = true
 		return true
 	})
+
 	for volName, _ := range volumeArr {
 		var info *proto.VolVersionInfoList
 		if info, err = masterClient.AdminAPI().GetVerList(volName); err != nil {
@@ -1677,6 +1678,7 @@ func (m *metadataManager) checkVolVerList() {
 			}
 		}
 	}
+	return
 }
 
 func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op uint8) (err error) {
@@ -1733,6 +1735,12 @@ func (m *metadataManager) commitCreateVersion(VolumeID string, VerSeq uint64, Op
 }
 
 func (m *metadataManager) checkMultiVersionStatus(mp MetaPartition, p *Packet) (err error) {
+
+	defer func() {
+		if err != nil || mp.GetVerSeq() < p.VerSeq {
+			err = m.checkVolVerList() // no matter what happened. try complement update local seq as master's
+		}
+	}()
 	// meta node do not need to check verSeq as strictly as datanode,file append or modAppendWrite on meta node is invisible to other files.
 	// only need to guarantee the verSeq wrote on meta nodes grow up linearly on client's angle
 	log.LogDebugf("action[checkMultiVersionStatus] mp ver %v, packet ver %v", mp.GetVerSeq(), p.VerSeq)

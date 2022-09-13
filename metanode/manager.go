@@ -46,7 +46,7 @@ type MetadataManager interface {
 	//CreatePartition(id string, start, end uint64, peers []proto.Peer) error
 	HandleMetadataOperation(conn net.Conn, p *Packet, remoteAddr string) error
 	GetPartition(id uint64) (MetaPartition, error)
-	checkVolVerList()
+	checkVolVerList()(err error)
 }
 
 // MetadataManagerConfig defines the configures in the metadata manager.
