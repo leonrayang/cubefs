@@ -374,13 +374,13 @@ func (cache *ExtentCache) GetEnd(offset uint64, verSeq uint64) (ret *proto.Exten
 	cache.RLock()
 	defer cache.RUnlock()
 
-	// for debug loop print
-	cache.root.Descend(func(i btree.Item) bool {
-		ek := i.(*proto.ExtentKey)
-		// skip if the start offset matches with the given offset
-		log.LogDebugf("action[ExtentCache.GetEnd.LoopPrint] inode %v reqSeq [%v] ek [%v]", cache.inode, verSeq, ek.String())
-		return true
-	})
+	//// for debug loop print
+	//cache.root.Descend(func(i btree.Item) bool {
+	//	ek := i.(*proto.ExtentKey)
+	//	// skip if the start offset matches with the given offset
+	//	log.LogDebugf("action[ExtentCache.GetEnd.LoopPrint] inode %v reqSeq [%v] ek [%v]", cache.inode, verSeq, ek.String())
+	//	return true
+	//})
 	cache.root.DescendLessOrEqual(pivot, func(i btree.Item) bool {
 		ek := i.(*proto.ExtentKey)
 		// skip if the start offset matches with the given offset

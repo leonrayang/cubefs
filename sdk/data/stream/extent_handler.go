@@ -322,7 +322,7 @@ func (eh *ExtentHandler) processReply(packet *Packet) {
 	}
 
 	reply := NewReply(packet.ReqID, packet.PartitionID, packet.ExtentID)
-	err := reply.ReadFromConn(eh.conn, proto.ReadDeadlineTime)
+	err := reply.ReadFromConnWithVer(eh.conn, proto.ReadDeadlineTime)
 	if err != nil {
 		eh.processReplyError(packet, err.Error())
 		return

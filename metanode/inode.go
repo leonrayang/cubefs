@@ -1189,7 +1189,7 @@ func (i *Inode) SplitExtentWithCheck(mpVer uint64, multiVersionList *proto.VolVe
 	i.Lock()
 	defer i.Unlock()
 
-	delExtents, status = i.Extents.SplitWithCheck(ek)
+	delExtents, status = i.Extents.SplitWithCheck(i.Inode, ek)
 	if status != proto.OpOk {
 		log.LogErrorf("action[SplitExtentWithCheck] status %v", status)
 		return
@@ -1255,10 +1255,13 @@ func (i *Inode) CreateLowerVersion(curVer uint64, verlist *proto.VolVersionInfoL
 	return
 }
 
-func (i *Inode) AppendExtentWithCheck(mpVer uint64,
+func (i *Inode) AppendExtentWithCheck(
+	mpVer uint64,
 	multiVersionList *proto.VolVersionInfoList,
-	reqVer uint64, ek proto.ExtentKey,
-	ct int64, discardExtents []proto.ExtentKey,
+	reqVer uint64,
+	ek proto.ExtentKey,
+	ct int64,
+	discardExtents []proto.ExtentKey,
 	volType int) (delExtents []proto.ExtentKey, status uint8) {
 
 	ek.VerSeq = mpVer
@@ -1273,7 +1276,7 @@ func (i *Inode) AppendExtentWithCheck(mpVer uint64,
 	i.Lock()
 	defer i.Unlock()
 
-	delExtents, status = i.Extents.AppendWithCheck(ek, discardExtents)
+	delExtents, status = i.Extents.AppendWithCheck(i.Inode, ek, discardExtents)
 	if status != proto.OpOk {
 		log.LogErrorf("action[AppendExtentWithCheck] status %v", status)
 		return

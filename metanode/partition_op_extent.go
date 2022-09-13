@@ -104,7 +104,7 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 		return
 	}
 
-	log.LogDebugf("ExtentAppendWithCheck: ino(%v) mp(%v) verSeq (%v) req.VerSeq(%v)", req.Inode, req.PartitionID, mp.verSeq, req.VerSeq)
+	log.LogDebugf("ExtentAppendWithCheck: ino(%v) mp(%v) verSeq (%v) req.VerSeq(%v) rspcode(%v)", req.Inode, req.PartitionID, mp.verSeq, req.VerSeq, resp.(uint8))
 
 	if mp.verSeq > req.VerSeq {
 		//reuse ExtentType to identify flag of version inconsistent between metanode and client
@@ -141,7 +141,7 @@ func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList) 
 		}
 		_, exist := verMapMaster[info2.Ver]
 		if !exist {
-			err = fmt.Errorf("checkVerList.vol %v mp %v not found %v in mp list", mp.config.VolName, mp.config.PartitionId, info2.Ver)
+			err = fmt.Errorf("checkVerList.vol %v mp %v not found %v in master list", mp.config.VolName, mp.config.PartitionId, info2.Ver)
 			log.LogError(err)
 		}
 	}
@@ -152,7 +152,7 @@ func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList) 
 		}
 		st, exist := verMapLocal[vInfo.Ver]
 		if st != proto.VersionNormal {
-			err = fmt.Errorf("checkVerList.vol %v mp %v ver %v inoraml.local status %v in master volume list",
+			err = fmt.Errorf("checkVerList.vol %v mp %v ver %v inoraml.local status %v in mp volume list",
 				mp.config.VolName, mp.config.PartitionId, vInfo.Ver, st)
 			log.LogError(err)
 		}

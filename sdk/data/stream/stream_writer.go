@@ -404,7 +404,7 @@ begin:
 				}
 				log.LogDebugf("action[streamer.write] err %v retryTimes %v", err, retryTimes)
 			} else {
-				log.LogDebugf("action[streamer.write] doOverwriteByAppend extent key (%v)", req.ExtentKey)
+				log.LogDebugf("action[streamer.write] ino %v doOverwriteByAppend extent key (%v)", s.inode, req.ExtentKey)
 				writeSize, err = s.doOverwriteByAppend(req, direct)
 			}
 			if s.client.bcacheEnable {
@@ -436,7 +436,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		dp *wrapper.DataPartition
 	)
 
-	log.LogDebugf("action[doOverwriteByAppend] enter in req %v", req)
+	log.LogDebugf("action[doOverwriteByAppend] inode %v enter in req %v", s.inode, req)
 
 	err = s.flush()
 	if err != nil {
@@ -465,7 +465,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 	if proto.IsCold(s.client.volumeType) {
 		retry = false
 	}
-	log.LogDebugf("action[doOverwriteByAppend] data process")
+	log.LogDebugf("action[doOverwriteByAppend] inode %v  data process", s.inode)
 	sc := NewStreamConn(dp, false)
 	for total < size { // normally should only run once due to key exist in the system must be less than BlockSize
 		// right position in extent:offset-ekFileOffset+total+ekExtOffset .
@@ -485,7 +485,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 
 		replyPacket := new(Packet)
 		err = sc.Send(&retry, reqPacket, func(conn *net.TCPConn) (error, bool) {
-			e := replyPacket.ReadFromConn(conn, proto.ReadDeadlineTime)
+			e := replyPacket.ReadFromConnWithVer(conn, proto.ReadDeadlineTime)
 			if e != nil {
 				log.LogWarnf("Stream Writer doOverwrite: ino(%v) failed to read from connect, req(%v) err(%v)", s.inode, reqPacket, e)
 				// Upon receiving TryOtherAddrError, other hosts will be retried.
@@ -539,17 +539,17 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		VerSeq:       s.verSeq,
 		ModGen:       req.ExtentKey.ModGen,
 	}
-	log.LogDebugf("action[doOverwriteByAppend] local cache process start extKey %v", extKey)
+	log.LogDebugf("action[doOverwriteByAppend] inode %v local cache process start extKey %v", s.inode, extKey)
 	if err = s.extents.SplitExtentKey(extKey); err != nil {
-		log.LogErrorf("action[doOverwriteByAppend] local cache process err %v", err)
+		log.LogErrorf("action[doOverwriteByAppend] inode %v llocal cache process err %v", s.inode, err)
 		return
 	}
-	log.LogDebugf("action[doOverwriteByAppend] meta extent split with ek (%v)", extKey)
+	log.LogDebugf("action[doOverwriteByAppend] inode %v meta extent split with ek (%v)", s.inode, extKey)
 	if err = s.client.splitExtentKey(s.parentInode, s.inode, *extKey); err != nil {
-		log.LogErrorf("action[doOverwriteByAppend] lmeta extent split process err %v", err)
+		log.LogErrorf("action[doOverwriteByAppend] inode %v meta extent split process err %v", s.inode, err)
 		return
 	}
-	log.LogDebugf("action[doOverwriteByAppend] process over!")
+	log.LogDebugf("action[doOverwriteByAppend] inode %v process over!", s.inode)
 	return
 }
 
