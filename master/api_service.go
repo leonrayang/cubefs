@@ -3137,10 +3137,7 @@ func (m *Server) DelVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if verSeq, err = extractUint64(r, verSeqKey); err != nil {
-		sendErrReply(w, r, newErrHTTPReply(fmt.Errorf("verSeq not exist")))
-		return
-	}
+	verSeq, err = extractUint64(r, verSeqKey)
 	log.LogDebugf("action[DelVersion] vol %v verSeq %v", name, verSeq)
 	if value = r.FormValue(forceKey); value != "" {
 		force, _ = strconv.ParseBool(value)

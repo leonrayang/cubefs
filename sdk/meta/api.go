@@ -632,7 +632,10 @@ func (mw *MetaWrapper) ReadDir_ll(parentID uint64) ([]proto.Dentry, error) {
 
 // Read limit count dentries with parentID, start from string
 func (mw *MetaWrapper) ReadDirLimitByVer(parentID uint64, from string, limit uint64, verSeq uint64) ([]proto.Dentry, error) {
-	log.LogDebugf("action[ReadDirLimit_ll] parentID %v from %v limit %v", parentID, from, limit)
+	if verSeq == 0 {
+	   verSeq = math.MaxUint64
+	}
+	log.LogDebugf("action[ReadDirLimit_ll] parentID %v from %v limit %v verSeq %v", parentID, from, limit, verSeq)
 	parentMP := mw.getPartitionByInode(parentID)
 	if parentMP == nil {
 		return nil, syscall.ENOENT

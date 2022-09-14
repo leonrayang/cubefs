@@ -284,6 +284,12 @@ func (verMgr *VolVersionManager) initVer2PhaseTask(verSeq uint64, op uint8) (ver
 			idx   int
 			found bool
 		)
+
+		if ver, status := verMgr.getOldestVer(); ver != verSeq || status != proto.VersionNormal {
+			err = fmt.Errorf("oldest is %v, status %v", ver, status)
+			return
+		}
+
 		if idx, found = verMgr.getLayInfo(verSeq); !found {
 			verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
 			log.LogErrorf("action[VolVersionManager.initVer2PhaseTask] vol %v op %v verSeq %v not found", verMgr.vol.Name, op, verSeq)
@@ -598,6 +604,18 @@ func (verMgr *VolVersionManager) getVersionInfo(verGet uint64) (verInfo *proto.V
 	msg := fmt.Sprintf("ver [%v] not found", verGet)
 	log.LogInfof("action[getVersionInfo] %v", msg)
 	return nil, fmt.Errorf("%v", msg)
+}
+
+func (verMgr *VolVersionManager) getOldestVer() (ver uint64, status uint8) {
+	verMgr.RLock()
+	defer verMgr.RUnlock()
+
+	size := len(verMgr.multiVersionList)
+	if size <= 1 {
+		return 0, proto.VersionDeleteAbnormal
+	}
+	log.LogInfof("action[getLatestVer] ver len %v verMgr %v", size, verMgr)
+	return verMgr.multiVersionList[0].Ver, verMgr.multiVersionList[0].Status
 }
 
 func (verMgr *VolVersionManager) getLatestVer() (ver uint64) {
