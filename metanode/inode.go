@@ -1216,8 +1216,8 @@ func (i *Inode) SplitExtentWithCheck(mpVer uint64, multiVersionList *proto.VolVe
 
 
 func (i *Inode) CreateLowerVersion(curVer uint64, verlist *proto.VolVersionInfoList) (err error){
-	verlist.Lock()
-	defer verlist.Unlock()
+	verlist.RLock()
+	defer verlist.RUnlock()
 
 	log.LogDebugf("CreateLowerVersion inode %v curVer %v", i.Inode, curVer)
 	if len(verlist.VerList) == 0 {

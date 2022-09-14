@@ -134,8 +134,8 @@ func (cache *ExtentCache) isSequnce(ekLeft *proto.ExtentKey, ekRight *proto.Exte
 // Split extent key.
 func (cache *ExtentCache) SplitExtentKey(ekPivot *proto.ExtentKey) (err error){
 
-	cache.RLock()
-	defer cache.RUnlock()
+	cache.Lock()
+	defer cache.Unlock()
 
 	// When doing the append, we do not care about the data after the file offset.
 	// Those data will be overwritten by the current extent anyway.
