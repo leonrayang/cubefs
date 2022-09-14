@@ -270,6 +270,51 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 	}
 }
 
+func (verMgr *VolVersionManager) initVer2PhaseTask(verSeq uint64, op uint8) (verRsp *proto.VolVersionInfo, err error, opRes uint8) {
+	log.LogWarnf("action[VolVersionManager.initVer2PhaseTask] verMgr.status %v", verMgr.status)
+	if op == proto.CreateVersion {
+		if err = verMgr.GenerateVer(verSeq, op); err != nil {
+			log.LogInfof("action[VolVersionManager.initVer2PhaseTask] exit")
+			return
+		}
+		op = proto.CreateVersionPrepare
+		log.LogInfof("action[VolVersionManager.initVer2PhaseTask] CreateVersionPrepare")
+	} else if op == proto.DeleteVersion {
+		var (
+			idx   int
+			found bool
+		)
+		if idx, found = verMgr.getLayInfo(verSeq); !found {
+			verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
+			log.LogErrorf("action[VolVersionManager.initVer2PhaseTask] vol %v op %v verSeq %v not found", verMgr.vol.Name, op, verSeq)
+			return nil, fmt.Errorf("not found"), op
+		}
+		if idx == len(verMgr.multiVersionList)-1 {
+			verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
+			log.LogErrorf("action[VolVersionManager.initVer2PhaseTask] vol %v op %v verSeq %v is uncommitted", verMgr.vol.Name, op, verSeq)
+			return nil, fmt.Errorf("uncommited version"), op
+		}
+		if verMgr.multiVersionList[idx].Status == proto.VersionDeleting {
+			log.LogErrorf("action[VolVersionManager.initVer2PhaseTask] vol %v op %v verSeq %v is uncommitted", verMgr.vol.Name, op, verSeq)
+			return nil, fmt.Errorf("version on deleting"), op
+		}
+		if verMgr.multiVersionList[idx].Status == proto.VersionDeleted {
+			log.LogErrorf("action[VolVersionManager.initVer2PhaseTask] vol %v op %v verSeq %v is uncommitted", verMgr.vol.Name, op, verSeq)
+			return nil, fmt.Errorf("version alreay be deleted"), op
+		}
+
+		verMgr.prepareCommit.op = op
+		verMgr.prepareCommit.prepareInfo =
+			&proto.VolVersionInfo{
+				Ver:    verSeq,
+				Ctime:  time.Now(),
+				Status: proto.VersionWorking,
+			}
+	}
+	opRes = op
+	return
+}
+
 func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq uint64, op uint8, force bool) (verRsp *proto.VolVersionInfo, err error) {
 	if err = verMgr.startWork(); err != nil {
 		return
@@ -280,16 +325,11 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 			verMgr.finishWork()
 		}
 	}()
-	log.LogWarnf("action[createVer2PhaseTask] verMgr.status %v", verMgr.status)
-	if op == proto.CreateVersion {
-		if err = verMgr.GenerateVer(verSeq, op); err != nil {
-			log.LogInfof("action[createVer2PhaseTask] exit")
-			return
-		}
-		op = proto.CreateVersionPrepare
+
+	if verRsp, err, op = verMgr.initVer2PhaseTask(verSeq, op); err != nil {
+		return
 	}
 
-	log.LogInfof("action[createVer2PhaseTask] CreateVersionPrepare")
 	if _, err = verMgr.createTask(cluster, verSeq, op, force); err != nil {
 		log.LogInfof("action[createVer2PhaseTask] CreateVersionPrepare err %v", err)
 		return
@@ -297,6 +337,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 	verMgr.prepareCommit.op = op
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
+
 	go func() (ver *proto.VolVersionInfo, err error) {
 		log.LogInfof("action[createVer2PhaseTask] verseq %v op %v enter wait schedule", verSeq, verMgr.prepareCommit.op)
 		defer func() {
@@ -500,43 +541,8 @@ func (verMgr *VolVersionManager) getLayInfo(verSeq uint64) (int, bool) {
 
 func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op uint8, force bool) (ver *proto.VolVersionInfo, err error) {
 	log.LogInfof("action[VolVersionManager.createTask] vol %v verSeq %v op %v force %v", verMgr.vol.Name, verSeq, op, force)
-
 	verMgr.RLock()
 	defer verMgr.RUnlock()
-
-	// del operation commit directly don't have prepare step to build prepare info,thus init here
-	if op == proto.DeleteVersion {
-		var (
-			idx   int
-			found bool
-		)
-		if idx, found = verMgr.getLayInfo(verSeq); !found {
-			verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
-			log.LogErrorf("action[VolVersionManager.createTask] vol %v op %v verSeq %v not found", verMgr.vol.Name, op, verSeq)
-			return nil, fmt.Errorf("not found")
-		}
-		if idx == len(verMgr.multiVersionList)-1 {
-			verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
-			log.LogErrorf("action[VolVersionManager.createTask] vol %v op %v verSeq %v is uncommitted", verMgr.vol.Name, op, verSeq)
-			return nil, fmt.Errorf("uncommited version")
-		}
-		if verMgr.multiVersionList[idx].Status == proto.VersionDeleting {
-			log.LogErrorf("action[VolVersionManager.createTask] vol %v op %v verSeq %v is uncommitted", verMgr.vol.Name, op, verSeq)
-			return nil, fmt.Errorf("version on deleting")
-		}
-		if verMgr.multiVersionList[idx].Status == proto.VersionDeleted {
-			log.LogErrorf("action[VolVersionManager.createTask] vol %v op %v verSeq %v is uncommitted", verMgr.vol.Name, op, verSeq)
-			return nil, fmt.Errorf("version alreay be deleted")
-		}
-
-		verMgr.prepareCommit.op = op
-		verMgr.prepareCommit.prepareInfo =
-			&proto.VolVersionInfo{
-				Ver:    verSeq,
-				Ctime:  time.Now(),
-				Status: proto.VersionWorking,
-			}
-	}
 
 	if err = verMgr.createTaskToDataNode(cluster, verSeq, op, force); err != nil {
 		log.LogInfof("action[VolVersionManager.createTask] vol %v err %v", verMgr.vol.Name, err)
