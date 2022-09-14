@@ -337,6 +337,7 @@ func (eh *ExtentHandler) processReply(packet *Packet) {
 			return
 		}
 		// todo(leonchang) need check safety
+		log.LogWarnf("processReply: get reply, eh(%v) packet(%v) reply(%v)", eh, packet, reply)
 		eh.stream.GetExtents()
 	}
 

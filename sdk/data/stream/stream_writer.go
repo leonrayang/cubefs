@@ -540,7 +540,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		ModGen:       req.ExtentKey.ModGen,
 	}
 	log.LogDebugf("action[doOverwriteByAppend] inode %v local cache process start extKey %v", s.inode, extKey)
-	if err = s.extents.SplitExtentKey(extKey); err != nil {
+	if err = s.extents.SplitExtentKey(s.inode, extKey); err != nil {
 		log.LogErrorf("action[doOverwriteByAppend] inode %v llocal cache process err %v", s.inode, err)
 		return
 	}
