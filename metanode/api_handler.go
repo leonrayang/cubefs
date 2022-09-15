@@ -429,15 +429,15 @@ func (m *MetaNode) getDentryHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 func (m *MetaNode) getRealVerSeq(w http.ResponseWriter, r *http.Request) (verSeq uint64, err error){
-	vSeq, _ := strconv.ParseInt(r.FormValue("verSeq"), 10, 64)
-	if vSeq < -1 {
-		err = fmt.Errorf("seq need large than -1")
-		return
-	}
-	if vSeq == -1 {
-		verSeq = math.MaxUint64
-	} else {
-		verSeq = uint64(vSeq)
+	if r.FormValue("verSeq") != "" {
+		var ver int64
+		if ver, err = strconv.ParseInt(r.FormValue("verSeq"), 10, 64); err != nil {
+			return
+		}
+		verSeq = uint64(ver)
+		if verSeq == 0 {
+			verSeq = math.MaxUint64
+		}
 	}
 	return
 }
