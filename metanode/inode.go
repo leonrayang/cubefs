@@ -536,7 +536,9 @@ func (i *Inode) UnmarshalInodeValue(buff *bytes.Buffer) (err error) {
 	}
 	log.LogInfof("action[UnmarshalInodeValue] inode %v Reserved %v", i.Inode, i.Reserved)
 	v3 := i.Reserved & V3EnableSnapInodeFlag > 0
-	if (i.Reserved & V2EnableColdInodeFlag > 0) ||  v3 {
+	v2 := i.Reserved & V2EnableColdInodeFlag > 0
+
+	if v2 || v3 {
 		extSize := uint32(0)
 		if err = binary.Read(buff, binary.BigEndian, &extSize); err != nil {
 			return
@@ -550,9 +552,14 @@ func (i *Inode) UnmarshalInodeValue(buff *bytes.Buffer) (err error) {
 				return
 			}
 		}
+	} else {
+		if err = i.Extents.UnmarshalBinary(buff.Bytes(), false); err != nil {
+			return
+		}
+		return
 	}
 
-	if i.Reserved & V2EnableColdInodeFlag > 0 {
+	if v2 {
 		// unmarshal ObjExtentsKey
 
 		ObjExtSize := uint32(0)
@@ -570,7 +577,7 @@ func (i *Inode) UnmarshalInodeValue(buff *bytes.Buffer) (err error) {
 		}
 	}
 
-	if i.Reserved & V3EnableSnapInodeFlag > 0 {
+	if v3 {
 		if err = binary.Read(buff, binary.BigEndian, &i.verSeq); err != nil {
 			return
 		}
