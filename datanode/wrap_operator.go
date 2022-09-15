@@ -1477,7 +1477,7 @@ func (s *DataNode) forwardToRaftLeader(dp *DataPartition, p *repl.Packet, force 
 	if err != nil {
 		return
 	}
-	if err = p.ReadFromConn(conn, proto.NoReadDeadlineTime); err != nil {
+	if err = p.ReadFromConnWithVer(conn, proto.NoReadDeadlineTime); err != nil {
 		return
 	}
 

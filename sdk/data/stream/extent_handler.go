@@ -623,7 +623,7 @@ func (eh *ExtentHandler) createExtent(dp *wrapper.DataPartition) (extID int, err
 		return extID, errors.Trace(err, "createExtent: failed to WriteToConn, packet(%v) datapartionHosts(%v)", p, dp.Hosts[0])
 	}
 
-	if err = p.ReadFromConn(conn, proto.ReadDeadlineTime*2); err != nil {
+	if err = p.ReadFromConnWithVer(conn, proto.ReadDeadlineTime*2); err != nil {
 		return extID, errors.Trace(err, "createExtent: failed to ReadFromConn, packet(%v) datapartionHosts(%v)", p, dp.Hosts[0])
 	}
 

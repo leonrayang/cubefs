@@ -895,7 +895,7 @@ func (dp *DataPartition) doStreamFixTinyDeleteRecord(repairTask *DataPartitionRe
 		if localTinyDeleteFileSize >= repairTask.LeaderTinyDeleteRecordFileSize {
 			return
 		}
-		if err = p.ReadFromConn(conn, proto.ReadDeadlineTime); err != nil {
+		if err = p.ReadFromConnWithVer(conn, proto.ReadDeadlineTime); err != nil {
 			return
 		}
 		if p.IsErrPacket() {

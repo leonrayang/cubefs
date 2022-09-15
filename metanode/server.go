@@ -183,7 +183,7 @@ func (m *MetaNode) serveSmuxStream(stream *smux.Stream, remoteAddr string, stopC
 		}
 
 		p := &Packet{}
-		if err := p.ReadFromConn(stream, proto.NoReadDeadlineTime); err != nil {
+		if err := p.ReadFromConnWithVer(stream, proto.NoReadDeadlineTime); err != nil {
 			if err != io.EOF {
 				log.LogError("serve MetaNode: ", err.Error())
 			}
