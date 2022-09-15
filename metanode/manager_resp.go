@@ -42,7 +42,7 @@ func (m *metadataManager) respondToMaster(task *proto.AdminTask) (err error) {
 }
 
 // Reply data through tcp connection to the client.
-func (m *metadataManager) respondToClient(conn net.Conn, p *Packet) (err error) {
+func (m *metadataManager) respondToClientWithVer(conn net.Conn, p *Packet) (err error) {
 	// Handle panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -57,6 +57,30 @@ func (m *metadataManager) respondToClient(conn net.Conn, p *Packet) (err error) 
 
 	// process data and send reply though specified tcp connection.
 	p.ExtentType |= proto.MultiVersionFlag
+	err = p.WriteToConn(conn)
+	if err != nil {
+		log.LogErrorf("response to client[%s], "+
+			"request[%s], response packet[%s]",
+			err.Error(), p.GetOpMsg(), p.GetResultMsg())
+	}
+	return
+}
+
+// Reply data through tcp connection to the client.
+func (m *metadataManager) respondToClient(conn net.Conn, p *Packet) (err error) {
+	// Handle panic
+	defer func() {
+		if r := recover(); r != nil {
+			switch data := r.(type) {
+			case error:
+				err = data
+			default:
+				err = errors.New(data.(string))
+			}
+		}
+	}()
+
+	// process data and send reply though specified tcp connection.
 	err = p.WriteToConn(conn)
 	if err != nil {
 		log.LogErrorf("response to client[%s], "+
