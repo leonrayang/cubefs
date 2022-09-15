@@ -325,6 +325,11 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 	if err = verMgr.startWork(); err != nil {
 		return
 	}
+	if !proto.IsHot(verMgr.vol.VolType) {
+		err  = fmt.Errorf("vol need be hot one")
+		log.LogErrorf("createVer2PhaseTask. %v", err)
+		return
+	}
 	defer func() {
 		if err != nil {
 			log.LogWarnf("action[createVer2PhaseTask] close lock due to err %v", err)
@@ -589,6 +594,13 @@ func (verMgr *VolVersionManager) loadMultiVersion(c *Cluster, val []byte) (err e
 func (verMgr *VolVersionManager) getVersionInfo(verGet uint64) (verInfo *proto.VolVersionInfo, err error) {
 	verMgr.RLock()
 	defer verMgr.RUnlock()
+
+	if !proto.IsHot(verMgr.vol.VolType) {
+		err  = fmt.Errorf("vol need be hot one")
+		log.LogErrorf("createVer2PhaseTask. %v", err)
+		return
+	}
+
 	log.LogDebugf("action[getVersionInfo] verGet %v", verGet)
 	for _, ver := range verMgr.multiVersionList {
 		if ver.Ver == verGet {
