@@ -280,12 +280,21 @@ type LookupRequest struct {
 	ParentID    uint64 `json:"pino"`
 	Name        string `json:"name"`
 	VerSeq      uint64 `json:"seq"`
+	VerAll      bool   `json:"verAll"`
+}
+type DetryInfo struct {
+	Inode uint64 `json:"ino"`
+	Mode  uint32 `json:"mode"`
+	VerSeq uint64 `json:"seq"`
+	IsDel  bool   `json:"isDel"`
 }
 
 // LookupResponse defines the response for the loopup request.
 type LookupResponse struct {
 	Inode uint64 `json:"ino"`
 	Mode  uint32 `json:"mode"`
+	VerSeq uint64 `json:"seq"`
+	LayAll []DetryInfo `json:"layerInfo"`
 }
 
 // InodeGetRequest defines the request to get the inode.

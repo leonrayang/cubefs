@@ -98,6 +98,21 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 	return
 }
 
+func (mp *metaPartition) getDentryList(dentry *Dentry) (denList []proto.DetryInfo){
+	item := mp.dentryTree.Get(dentry)
+	if item != nil {
+		for _, den := range item.(*Dentry).dentryList {
+			denList = append(denList, proto.DetryInfo{
+				Inode: den.Inode,
+				Mode: den.Type,
+				IsDel: den.isDeleted(),
+				VerSeq: den.getVerSeq(),
+			})
+		}
+	}
+	return
+}
+
 // Query a dentry from the dentry tree with specified dentry info.
 func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 	status := proto.OpOk

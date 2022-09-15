@@ -398,6 +398,7 @@ func (m *MetaNode) getDentryHandler(w http.ResponseWriter, r *http.Request) {
 		resp.Msg = err.Error()
 		return
 	}
+	verAll, _ := strconv.ParseBool(r.FormValue("verAll"))
 
 	mp, err := m.metadataManager.GetPartition(pid)
 	if err != nil {
@@ -410,6 +411,7 @@ func (m *MetaNode) getDentryHandler(w http.ResponseWriter, r *http.Request) {
 		ParentID:    pIno,
 		Name:        name,
 		VerSeq: verSeq,
+		VerAll: verAll,
 	}
 	p := &Packet{}
 	if err = mp.Lookup(req, p); err != nil {
