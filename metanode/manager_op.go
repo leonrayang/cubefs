@@ -1672,11 +1672,12 @@ func (m *metadataManager) checkVolVerList() (err error){
 			log.LogErrorf("action[checkVolVerList] volumeName %v err %v", volName, err)
 			return
 		}
-		for _, mp := range m.partitions {
-			if err = mp.checkVerList(info); err != nil {
+		m.Range(func(id uint64, partition MetaPartition) bool {
+			if err = partition.checkVerList(info); err != nil {
 				log.LogErrorf("[checkVolVerList] volumeName %v err %v", volName, err)
 			}
-		}
+			return true
+		})
 	}
 	return
 }
