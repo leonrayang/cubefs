@@ -408,6 +408,7 @@ func (mw *MetaWrapper) Delete_Ver_ll(parentID uint64, name string, isDir bool, v
 	if verSeq == 0 {
 		verSeq = math.MaxUint64
 	}
+	log.LogDebugf("Delete_Ver_ll.parentId %v name %v isDir %v verSeq %v", parentID, name, isDir, verSeq)
 	return mw.Delete_ll_EX(parentID, name, isDir, verSeq)
 }
 
@@ -644,6 +645,9 @@ func (mw *MetaWrapper) ReadDirLimitByVer(parentID uint64, from string, limit uin
 	status, children, err := mw.readDirLimit(parentMP, parentID, from, limit, verSeq, true)
 	if err != nil || status != statusOK {
 		return nil, statusToErrno(status)
+	}
+	for _, den := range children {
+		log.LogDebugf("ReadDirLimitByVer. get dentry %v", den)
 	}
 	return children, nil
 }

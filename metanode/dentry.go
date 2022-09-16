@@ -74,7 +74,13 @@ func (d *Dentry) minimizeSeq() (verSeq uint64) {
 }
 
 func (d *Dentry) isEffective(verSeq uint64) bool {
-	return verSeq == 0 || (verSeq <= d.getVerSeq() && verSeq >= d.minimizeSeq())
+	if verSeq == 0 {
+		return false
+	}
+	if verSeq == math.MaxUint64 {
+		verSeq = 0
+	}
+	return verSeq <= d.getVerSeq() && verSeq >= d.minimizeSeq()
 }
 
 func (d *Dentry) getDentryFromVerList(verSeq uint64) (den *Dentry, idx int) {
@@ -265,7 +271,7 @@ func (d *Dentry) Marshal() (result []byte, err error) {
 		return
 	}
 	if err = binary.Write(buff, binary.BigEndian, valLen); err != nil {
-
+		return nil, err
 	}
 	if _, err = buff.Write(valBytes); err != nil {
 		return
