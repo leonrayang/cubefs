@@ -64,6 +64,7 @@ func (mw *MetaWrapper) sendToMetaPartition(mp *MetaPartition, req *proto.Packet)
 		addr  string
 		mc    *MetaConn
 		start time.Time
+		lastSeq uint64
 	)
 	var sendTimeLimit int
 	if mw.metaSendTimeout < 20 {
@@ -87,7 +88,11 @@ func (mw *MetaWrapper) sendToMetaPartition(mp *MetaPartition, req *proto.Packet)
 		log.LogWarnf("sendToMetaPartition: getConn failed and goto retry, req(%v) mp(%v) addr(%v) err(%v)", req, mp, addr, err)
 		goto retry
 	}
-	resp, err = mc.send(req, mw.Client.GetLatestVer())
+
+	if mw.Client != nil { // compatible lcNode not init Client
+		lastSeq = mw.Client.GetLatestVer()
+	}
+	resp, err = mc.send(req, lastSeq)
 	mw.putConn(mc, err)
 	if err == nil && !resp.ShouldRetry() {
 		goto out
@@ -131,8 +136,9 @@ out:
 		return nil, errors.New(fmt.Sprintf("sendToMetaPartition failed: req(%v) mp(%v) errs(%v) resp(%v)", req, mp, errs, resp))
 	}
 	log.LogDebugf("sendToMetaPartition: succeed! req(%v) mc(%v) resp(%v)", req, mc, resp)
-
-	mw.checkVerFromMeta(resp)
+	if mw.Client != nil { // compatible lcNode not init Client
+		mw.checkVerFromMeta(resp)
+	}
 	return resp, nil
 }
 
