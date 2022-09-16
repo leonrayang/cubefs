@@ -220,6 +220,7 @@ func (se *SortedExtents) SplitWithCheck(inodeID uint64, ekSplit proto.ExtentKey)
 		}
 		if keyBefore != nil && keyBefore.IsSequence(&ekSplit) {
 			log.LogDebugf("SplitWithCheck. inode %v  keyBefore [%v], ekSplit [%v]", inodeID, keyBefore, ekSplit)
+			log.LogDebugf("SplitWithCheck.merge.head. ek %v and %v", keyBefore,ekSplit)
 			keyBefore.Size += ekSplit.Size
 		} else {
 			se.eks =  append(se.eks, ekSplit)
@@ -243,6 +244,7 @@ func (se *SortedExtents) SplitWithCheck(inodeID uint64, ekSplit proto.ExtentKey)
 		se.eks = se.eks[:startIndex]
 
 		if len(eks) > 0 && ekSplit.IsSequence(&eks[0]){
+			log.LogDebugf("SplitWithCheck.merge.end. ek %v and %v", ekSplit, eks[0])
 			eks[0].FileOffset = ekSplit.FileOffset
 			eks[0].ExtentOffset = ekSplit.ExtentOffset
 			eks[0].Size += ekSplit.Size
@@ -283,7 +285,7 @@ func (se *SortedExtents) SplitWithCheck(inodeID uint64, ekSplit proto.ExtentKey)
 func (se *SortedExtents) AppendWithCheck(inodeID uint64, ek proto.ExtentKey, discard []proto.ExtentKey) (deleteExtents []proto.ExtentKey, status uint8) {
 	status = proto.OpOk
 	endOffset := ek.FileOffset + uint64(ek.Size)
-	log.LogDebugf("action[AppendWithCheck] ek %v", ek)
+	log.LogDebugf("action[AppendWithCheck] ek %v,start %v end %v", ek, ek.FileOffset, endOffset)
 	se.Lock()
 	defer se.Unlock()
 
@@ -339,7 +341,7 @@ func (se *SortedExtents) AppendWithCheck(inodeID uint64, ek proto.ExtentKey, dis
 		}
 	}
 
-	//log.LogInfof("invalidExtents(%v) deleteExtents(%v) discardExtents(%v)", invalidExtents, deleteExtents, discard)
+	log.LogInfof("invalidExtents(%v) deleteExtents(%v) discardExtents(%v)", invalidExtents, deleteExtents, discard)
 
 	if discard != nil {
 		if len(deleteExtents) != len(discard) {

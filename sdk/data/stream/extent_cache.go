@@ -153,7 +153,7 @@ func (cache *ExtentCache) SplitExtentKey(inodeID uint64, ekPivot *proto.ExtentKe
 		return false
 	})
 
-	cache.root.AscendGreaterOrEqual(ekPivot, func(i btree.Item) bool {
+	cache.root.AscendGreaterThan(ekPivot, func(i btree.Item) bool {
 		ekRight = i.(*proto.ExtentKey)
 		log.LogDebugf("action[ExtentCache.PrepareWriteRequests] inode %v ekRight [%v]", inodeID, ekRight)
 		return false
@@ -180,8 +180,12 @@ func (cache *ExtentCache) SplitExtentKey(inodeID uint64, ekPivot *proto.ExtentKe
 		ek.ExtentOffset = ek.ExtentOffset + uint64(ekPivot.Size)
 
 		if ekLeft != nil && ekLeft.IsSequence(ekPivot) {
+			log.LogDebugf("SplitExtentKey.merge.begin. ekLeft %v and %v", ekLeft, ekPivot)
 			ekLeft.Size += ekPivot.Size
 			log.LogDebugf("action[SplitExtentKey] inode %v ek [%v], ekPivot[%v] ekLeft[%v]", inodeID, ek, ekPivot, ekLeft)
+			cache.root.ReplaceOrInsert(ekLeft)
+			cache.root.ReplaceOrInsert(ek)
+			cache.gen++
 			return
 		}
 		log.LogDebugf("action[SplitExtentKey] inode %v ek [%v]", inodeID, ek)
@@ -189,9 +193,14 @@ func (cache *ExtentCache) SplitExtentKey(inodeID uint64, ekPivot *proto.ExtentKe
 		ek.Size = ek.Size - ekPivot.Size
 		log.LogDebugf("action[SplitExtentKey] inode %v ek [%v]", inodeID, ek)
 		if ekRight != nil && ekPivot.IsSequence(ekRight) {
+			cache.root.Delete(ekRight)
 			ekRight.FileOffset = ekPivot.FileOffset
 			ekRight.ExtentOffset = ekPivot.ExtentOffset
 			ekRight.Size += ekPivot.Size
+			cache.root.ReplaceOrInsert(ekRight)
+			cache.root.ReplaceOrInsert(ek)
+			log.LogDebugf("SplitExtentKey.merge.end. ek %v and %v", ekPivot, ekRight)
+			cache.gen++
 			return
 		}
 	} else {

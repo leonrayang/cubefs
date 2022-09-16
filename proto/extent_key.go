@@ -55,7 +55,9 @@ type ExtentKey struct {
 }
 
 func (k *ExtentKey) IsSequence(rightKey *ExtentKey) bool {
-	return k.ExtentId == rightKey.ExtentId &&
+//	return false
+	return k.PartitionId==rightKey.PartitionId &&
+		k.ExtentId == rightKey.ExtentId &&
 		k.VerSeq == rightKey.VerSeq &&
 		k.ExtentOffset+uint64(k.Size) == rightKey.ExtentOffset &&
 		k.FileOffset+uint64(k.Size) == rightKey.FileOffset
