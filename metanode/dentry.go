@@ -52,6 +52,7 @@ type Dentry struct {
 	dentryList DentryBatch
 }
 
+
 func (d *Dentry) getVerSeq() (verSeq uint64) {
 	return d.VerSeq & math.MaxInt64
 }
@@ -169,7 +170,7 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 		if len(d.dentryList) == 0 {
 			var found bool
 			// no matter verSeq of dentry is larger than zero,if not be depended then dropped
-			_, found = d.getLastestVer(d.getVerSeq(), false, verlist)
+			_, found = d.getLastestVer(d.getVerSeq(), true, verlist)
 			if !found { // no snapshot depend on this dentry,could drop it
 				// operate dentry directly
 				log.LogDebugf("action[deleteVerSnapshot.delSeq_0] no snapshot depend on this dentry,could drop seq %v dentry %v", delVerSeq, d)

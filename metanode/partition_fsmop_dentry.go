@@ -133,7 +133,7 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 // Delete dentry from the dentry tree.
 func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp *DentryResponse) {
 
-	log.LogDebugf("action[fsmDeleteDentry] delete param (%v)", denParm)
+	log.LogDebugf("action[fsmDeleteDentry] delete param (%v) seq %v", denParm, denParm.VerSeq)
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
 

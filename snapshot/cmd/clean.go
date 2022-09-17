@@ -257,7 +257,6 @@ func cleanDentries() error {
 	return nil
 }
 
-
 func cleanSnapshot() (err error) {
 	log.LogInfof("action[cleanSnapshot] vol %v verSeq %v", VolName, VerSeq)
 	if VerSeq == 0 {
@@ -289,7 +288,8 @@ func cleanSnapshot() (err error) {
 		log.LogDebugf("action[cleanSnapshot] parent root Delete_ll_EX child name %v verSeq %v ino %v success", child.Name, VerSeq, ino)
 	}
 
-	for _, parent := range parents {
+	for idx:=0 ; idx < len(parents); idx++ {
+		parent := parents[idx]
 		if proto.IsDir(parent.Type) {
 			log.LogDebugf("action[cleanSnapshot] try loop delete dir %v %v with verSeq %v", parent.Inode, parent.Name, VerSeq)
 			children, err = gMetaWrapper.ReadDirLimitByVer(parent.Inode, "", math.MaxUint64, VerSeq)
