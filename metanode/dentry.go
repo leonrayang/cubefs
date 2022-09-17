@@ -261,8 +261,8 @@ func (d *Dentry) Marshal() (result []byte, err error) {
 	buff := bytes.NewBuffer(make([]byte, 0))
 	buff.Grow(int(keyLen+valLen+8))
 
-	log.LogInfof("action[dentry.Marshal] dentry name %v inode %v parent %v seq %v keyLen  %v valLen %v total len %v",
-		d.Name, d.Inode, d.ParentId, d.VerSeq, keyLen, valLen, int(keyLen+valLen+8))
+	//log.LogInfof("action[dentry.Marshal] dentry name %v inode %v parent %v seq %v keyLen  %v valLen %v total len %v",
+	//	d.Name, d.Inode, d.ParentId, d.VerSeq, keyLen, valLen, int(keyLen+valLen+8))
 
 	if err = binary.Write(buff, binary.BigEndian, keyLen); err != nil {
 		return

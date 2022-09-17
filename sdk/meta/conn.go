@@ -109,7 +109,7 @@ retry:
 				log.LogWarnf("sendToMetaPartition: getConn failed and continue to retry, req(%v) mp(%v) addr(%v) err(%v)", req, mp, addr, err)
 				continue
 			}
-			resp, err = mc.send(req, mw.Client.GetLatestVer())
+			resp, err = mc.send(req, lastSeq)
 			mw.putConn(mc, err)
 			if err == nil && !resp.ShouldRetry() {
 				goto out
