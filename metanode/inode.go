@@ -81,6 +81,21 @@ type Inode struct {
 	multiVersions InodeBatch
 }
 
+func (i *Inode) isEmptyVerList() bool {
+	return len(i.multiVersions) == 0
+}
+func (i *Inode) isTailIndexInList(id int) bool {
+	return id == len(i.multiVersions)-1
+}
+
+func (i *Inode) getTailVerInList() (verSeq uint64, found bool) {
+	mLen := len(i.multiVersions)
+	if mLen > 0 {
+		return i.multiVersions[mLen-1].verSeq, true
+	}
+	return 0, false
+}
+
 type SplitExtentInfo struct {
 	PartitionId  uint64
 	ExtentId     uint64
@@ -721,7 +736,7 @@ func mergeExtentArr(extentKeysLeft []proto.ExtentKey, extentKeysRight []proto.Ex
 func  (i *Inode) RestoreExts2NextLayer(delExtentsOrigin []proto.ExtentKey, curVer uint64, idx int) (delExtents []proto.ExtentKey, err error){
 	log.LogInfof("action[RestoreMultiSnapExts] curVer [%v] delExtents size [%v] hist len [%v]", curVer, len(delExtentsOrigin), len(i.multiVersions))
 	// no version left.all old versions be deleted
-	if len(i.multiVersions) == 0 {
+	if i.isEmptyVerList() {
 		log.LogWarnf("action[RestoreMultiSnapExts] restore have no old version left")
 		return delExtentsOrigin, nil
 	}
@@ -744,7 +759,7 @@ func  (i *Inode) RestoreExts2NextLayer(delExtentsOrigin []proto.ExtentKey, curVe
 		log.LogInfof("action[RestoreMultiSnapExts] no need to move to level 1")
 		return
 	}
-	if len(specSnapExtent) > 0 && len(i.multiVersions) == 0 {
+	if len(specSnapExtent) > 0 && i.isEmptyVerList() {
 		err = fmt.Errorf("inode %v error not found prev snapshot index", i.Inode)
 		log.LogErrorf("action[RestoreMultiSnapExts] %v", err)
 		return
@@ -960,8 +975,8 @@ func (i *Inode) ShouldDelVer(mpVer uint64, delVer uint64) (ok bool, err error) {
 	}
 
 	if delVer == math.MaxUint64 {
-		lenV := len(i.multiVersions)
-		if i.multiVersions[lenV-1].verSeq == 0 {
+		tailVer, _ := i.getTailVerInList()
+		if tailVer == 0 {
 			return true, nil
 		}
 		return false, fmt.Errorf("not found")
@@ -1052,18 +1067,18 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist *proto.VolVersio
 		return
 	}
 
+	tailVer,_ := i.getTailVerInList()
 	// delete snapshot version
-	if dVer == math.MaxUint64 {
+	if dVer == math.MaxUint64 || dVer == tailVer {
 		inode := i.multiVersions[inoVerLen-1]
-		if inode.verSeq != 0 {
-			log.LogDebugf("action[getAndDelVer] ino %v idx %v is %v and cann't be dropped", i.Inode, inoVerLen-1, inode.verSeq)
+		if inode.verSeq != 0 && inode.verSeq != tailVer {
+			log.LogDebugf("action[getAndDelVer] ino %v idx %v is %v and cann't be dropped tail  ver %v",
+				i.Inode, inoVerLen-1, inode.verSeq, tailVer)
 			return
 		}
 		i.Lock()
 		defer i.Unlock()
 		i.multiVersions = i.multiVersions[:inoVerLen-1]
-		// delete layer id
-		i.multiVersions = append(i.multiVersions[:inoVerLen-1], i.multiVersions[inoVerLen:]...)
 
 		log.LogDebugf("action[getAndDelVer] ino %v idx %v be dropped", i.Inode, inoVerLen-1)
 		return inode.Extents.eks, inode
@@ -1078,7 +1093,7 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist *proto.VolVersio
 
 		if mIno.verSeq == dVer {
 			// 1.
-			if id == len(i.multiVersions) - 1 { // last layer then need delete all and unlink inode
+			if i.isTailIndexInList(id) { // last layer then need delete all and unlink inode
 				i.multiVersions = i.multiVersions[:id]
 				return mIno.Extents.eks, mIno
 			}
@@ -1094,7 +1109,7 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist *proto.VolVersio
 			// 2. system next layer not exist in inode ver list. update curr layer to next layer and filter out ek with verSeq
 			// change id layer verSeq to neighbor layer info, omit version delete process
 
-			if id == len(i.multiVersions)-1 || nVerSeq != i.multiVersions[id+1].verSeq {
+			if i.isTailIndexInList(id) || nVerSeq != i.multiVersions[id+1].verSeq {
 				log.LogDebugf("action[getAndDelVer] ino %v  get next version in verList update ver from %v to %v.And delete exts with ver %v",
 					i.Inode, i.multiVersions[id].verSeq, nVerSeq, dVer)
 
@@ -1230,7 +1245,7 @@ func (i *Inode) CreateLowerVersion(curVer uint64, verlist *proto.VolVersionInfoL
 	if len(verlist.VerList) == 0 {
 		return
 	}
-	if len(i.multiVersions) == 0 {
+	if i.isEmptyVerList() {
 		return
 	}
 	var nextVer uint64

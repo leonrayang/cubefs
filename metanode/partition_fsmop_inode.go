@@ -470,7 +470,7 @@ func (mp *metaPartition) fsmEvictInode(ino *Inode) (resp *InodeResponse) {
 	if i.IsTempFile() {
 		log.LogDebugf("action[fsmEvictInode] inode %v already linke zero and be set mark delete and be put to freelist", ino)
 		i.SetDeleteMark()
-		if len(i.multiVersions) == 0 {
+		if i.isEmptyVerList() {
 			mp.freeList.Push(i.Inode)
 		}
 	}
