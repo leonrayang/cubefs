@@ -1080,7 +1080,7 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist *proto.VolVersio
 		defer i.Unlock()
 		i.multiVersions = i.multiVersions[:inoVerLen-1]
 
-		log.LogDebugf("action[getAndDelVer] ino %v idx %v be dropped", i.Inode, inoVerLen-1)
+		log.LogDebugf("action[getAndDelVer] ino %v idx %v be dropped", i.Inode, inoVerLen)
 		return inode.Extents.eks, inode
 	}
 

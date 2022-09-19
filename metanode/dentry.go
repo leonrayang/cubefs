@@ -81,7 +81,7 @@ func (d *Dentry) isEffective(verSeq uint64) bool {
 	if verSeq == math.MaxUint64 {
 		verSeq = 0
 	}
-	return verSeq <= d.getVerSeq() && verSeq >= d.minimizeSeq()
+	return verSeq >= d.minimizeSeq()
 }
 
 func (d *Dentry) getDentryFromVerList(verSeq uint64) (den *Dentry, idx int) {

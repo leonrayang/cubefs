@@ -271,7 +271,7 @@ func (verMgr *VolVersionManager) handleTaskRsp(resp *proto.MultiVersionOpRespons
 }
 
 func (verMgr *VolVersionManager) initVer2PhaseTask(verSeq uint64, op uint8) (verRsp *proto.VolVersionInfo, err error, opRes uint8) {
-	log.LogWarnf("action[VolVersionManager.initVer2PhaseTask] verMgr.status %v", verMgr.status)
+	log.LogWarnf("action[VolVersionManager.initVer2PhaseTask] verMgr.status %v verSeq %V OP %v", verMgr.status, verSeq, op)
 	if op == proto.CreateVersion {
 		if err = verMgr.GenerateVer(verSeq, op); err != nil {
 			log.LogInfof("action[VolVersionManager.initVer2PhaseTask] exit")
