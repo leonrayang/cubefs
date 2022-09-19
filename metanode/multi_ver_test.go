@@ -262,6 +262,9 @@ func testVerListRemoveVer(t *testing.T, verSeq uint64) bool {
 	for i, ver := range mp.multiVersionList.VerList {
 		if ver.Ver == verSeq {
 			// mp.multiVersionList = append(mp.multiVersionList[:i], mp.multiVersionList[i+1:]...)
+			if i == len(mp.multiVersionList.VerList)-1 {
+				mp.multiVersionList.VerList = mp.multiVersionList.VerList[:i]
+			}
 			mp.multiVersionList.VerList = append(mp.multiVersionList.VerList[:i], mp.multiVersionList.VerList[i+1:]...)
 			return true
 		}

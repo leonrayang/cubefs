@@ -150,7 +150,7 @@ func (d *Dentry)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*proto.
 
 // the lastest dentry may be deleted before and set status DentryDeleted,
 // the scope of  deleted happened from the DentryDeleted flag owner(include in) to the file with the same name be created is invisible,
-// if create anther dentry with larger verSeq, put the eleted dentry to the history list.
+// if create anther dentry with larger verSeq, put the deleted dentry to the history list.
 // return doMore bool.True means need do next step on caller such as unlink parentIO
 func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []*proto.VolVersionInfo) (rd *Dentry, dmore bool, clean bool) { // bool is doMore
 	log.LogDebugf("action[deleteVerSnapshot] enter.dentry %v delVerSeq %v mpVer %v verList %v", d, delVerSeq, mpVerSeq, verlist)
