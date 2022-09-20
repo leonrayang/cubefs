@@ -1684,6 +1684,9 @@ func (m *metadataManager) checkVolVerList() (err error){
 
 		log.LogDebugf("action[checkVolVerList] volumeName %v info %v", volName, info)
 		m.Range(func(id uint64, partition MetaPartition) bool {
+			if partition.GetVolName() != volName {
+				return true
+			}
 			if err = partition.checkVerList(info); err != nil {
 				log.LogErrorf("[checkVolVerList] volumeName %v err %v", volName, err)
 			}

@@ -137,6 +137,7 @@ func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList) 
 	}
 
 	for _, info2 := range mp.multiVersionList.VerList {
+		log.LogDebugf("checkVerList. vol %v mp %v ver info %v", mp.config.VolName, mp.config.PartitionId, info2)
 		if info2.Status != proto.VersionNormal {
 			log.LogWarnf("checkVerList. vol %v mp %v ver %v status abnormal %v", mp.config.VolName, mp.config.PartitionId, info2.Ver, info2.Status)
 			continue
@@ -149,6 +150,7 @@ func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList) 
 	}
 
 	for _, vInfo := range masterListInfo.VerList {
+		log.LogDebugf("checkVerList. vol %v mp %v master info %v", mp.config.VolName, mp.config.PartitionId, vInfo)
 		if vInfo.Status != proto.VersionNormal {
 			continue
 		}
