@@ -166,6 +166,7 @@ func (m *metadataManager) opCreateInode(conn net.Conn, p *Packet,
 	}
 
 	if err = m.checkMultiVersionStatus(mp, p); err != nil {
+		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
 
@@ -242,6 +243,7 @@ func (m *metadataManager) opCreateDentry(conn net.Conn, p *Packet,
 	}
 
 	if err = m.checkMultiVersionStatus(mp, p); err != nil {
+		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
 
@@ -275,6 +277,7 @@ func (m *metadataManager) opDeleteDentry(conn net.Conn, p *Packet,
 	}
 
 	if err = m.checkMultiVersionStatus(mp, p); err != nil {
+		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
 
@@ -307,6 +310,7 @@ func (m *metadataManager) opBatchDeleteDentry(conn net.Conn, p *Packet,
 	}
 
 	if err = m.checkMultiVersionStatus(mp, p); err != nil {
+		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
 
@@ -337,6 +341,7 @@ func (m *metadataManager) opUpdateDentry(conn net.Conn, p *Packet,
 		return
 	}
 	if err = m.checkMultiVersionStatus(mp, p); err != nil {
+		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
 	err = mp.UpdateDentry(req, p)
@@ -603,6 +608,7 @@ func (m *metadataManager) opSetAttr(conn net.Conn, p *Packet,
 		return
 	}
 	if err = m.checkMultiVersionStatus(mp, p); err != nil {
+		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
 	if err = mp.SetAttr(req, p.Data, p); err != nil {
@@ -661,6 +667,7 @@ func (m *metadataManager) opMetaExtentsAdd(conn net.Conn, p *Packet,
 		return
 	}
 	if err = m.checkMultiVersionStatus(mp, p); err != nil {
+		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
 	err = mp.ExtentAppend(req, p)
@@ -695,6 +702,7 @@ func (m *metadataManager) opMetaExtentAddWithCheck(conn net.Conn, p *Packet,
 		return
 	}
 	if err = m.checkMultiVersionStatus(mp, p); err != nil {
+		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
 
@@ -811,6 +819,7 @@ func (m *metadataManager) opMetaExtentsTruncate(conn net.Conn, p *Packet,
 		return
 	}
 	if err = m.checkMultiVersionStatus(mp, p); err != nil {
+		err = errors.NewErrorf("[%v],req[%v],err[%v]", p.GetOpMsgWithReqAndResult(), req, string(p.Data))
 		return
 	}
 	mp.ExtentsTruncate(req, p)
@@ -1672,6 +1681,8 @@ func (m *metadataManager) checkVolVerList() (err error){
 			log.LogErrorf("action[checkVolVerList] volumeName %v err %v", volName, err)
 			return
 		}
+
+		log.LogDebugf("action[checkVolVerList] volumeName %v info %v", volName, info)
 		m.Range(func(id uint64, partition MetaPartition) bool {
 			if err = partition.checkVerList(info); err != nil {
 				log.LogErrorf("[checkVolVerList] volumeName %v err %v", volName, err)
@@ -1739,6 +1750,7 @@ func (m *metadataManager) checkMultiVersionStatus(mp MetaPartition, p *Packet) (
 
 	defer func() {
 		if err != nil || mp.GetVerSeq() < p.VerSeq {
+			log.LogErrorf("checkMultiVersionStatus. err %v", err)
 			err = m.checkVolVerList() // no matter what happened. try complement update local seq as master's
 		}
 	}()

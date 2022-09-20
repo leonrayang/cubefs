@@ -121,9 +121,11 @@ type  VerOpData struct{
 }
 
 func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList) (err error) {
-	log.LogDebugf("checkVerList vol %v mp %v", mp.config.VolName, mp.config.PartitionId)
+
 	mp.multiVersionList.Lock()
 	defer mp.multiVersionList.Unlock()
+
+	log.LogDebugf("checkVerList vol %v mp %v mpVerlist %v", mp.config.VolName, mp.config.PartitionId, mp.multiVersionList.VerList)
 
 	verMapLocal := make(map[uint64]uint8)
 	for  _, ver := range mp.multiVersionList.VerList {
