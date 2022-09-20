@@ -329,13 +329,13 @@ func (s *ExtentStore) Write(extentID uint64, offset, size int64, data []byte, cr
 	atomic.StoreInt64(&ei.AccessTime, time.Now().Unix())
 	log.LogDebugf("action[Write] extentID %v offset %v size %v writeTYPE %v", extentID, offset, size, writeType)
 	if err = s.checkOffsetAndSize(extentID, offset, size, writeType); err != nil {
-		log.LogInfof("action[Write] err %v", err)
+		log.LogInfof("action[Write] path %v err %v", e.filePath, err)
 		return err
 	}
 	log.LogDebugf("action[Write] extentID %v offset %v size %v writeTYPE %v", extentID, offset, size, writeType)
 	err = e.Write(data, offset, size, crc, writeType, isSync, s.PersistenceBlockCrc, ei)
 	if err != nil {
-		log.LogInfof("action[Write] err %v", err)
+		log.LogInfof("action[Write] path %v err %v", e.filePath, err)
 		return err
 	}
 	log.LogDebugf("action[Write] extentID %v offset %v size %v writeTYPE %v", extentID, offset, size, writeType)

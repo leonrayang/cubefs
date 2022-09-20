@@ -142,7 +142,7 @@ func (d *Dentry)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*proto.
 		}
 	}
 
-	log.LogErrorf("action[getLastestVer] inode %v reqVerSeq %v not found, the largetst one %v",
+	log.LogDebugf("action[getLastestVer] inode %v reqVerSeq %v not found, the largetst one %v",
 		d.Inode, reqVerSeq, verlist[len(verlist)-1].Ver)
 	return 0, false
 }

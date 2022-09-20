@@ -155,11 +155,6 @@ func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList) 
 			continue
 		}
 		st, exist := verMapLocal[vInfo.Ver]
-		if st != proto.VersionNormal {
-			err = fmt.Errorf("checkVerList.vol %v mp %v ver %v inoraml.local status %v in mp volume list",
-				mp.config.VolName, mp.config.PartitionId, vInfo.Ver, st)
-			log.LogError(err)
-		}
 		if !exist {
 			mLen := len(mp.multiVersionList.VerList)
 			if mLen > 0 && vInfo.Ver > mp.multiVersionList.VerList[mLen-1].Ver {
@@ -167,6 +162,12 @@ func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList) 
 					mp.config.VolName, mp.config.PartitionId, vInfo.Ver, vInfo)
 				mp.multiVersionList.VerList = append(mp.multiVersionList.VerList, vInfo)
 			}
+			continue
+		}
+		if st != proto.VersionNormal {
+			err = fmt.Errorf("checkVerList.vol %v mp %v ver %v inoraml.local status %v in mp volume list",
+				mp.config.VolName, mp.config.PartitionId, vInfo.Ver, st)
+			log.LogError(err)
 		}
 	}
 	return

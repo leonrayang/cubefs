@@ -290,7 +290,7 @@ func (e *Extent) WriteTiny(data []byte, offset, size int64, crc uint32, writeTyp
 
 // Write writes data to an extent.
 func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType int, isSync bool, crcFunc UpdateCrcFunc, ei *ExtentInfo) (err error) {
-	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
+	log.LogDebugf("action[Extent.Write] path %v offset %v size %v writeType %v", e.filePath, offset, size, writeType)
 	if IsTinyExtent(e.extentID) {
 		err = e.WriteTiny(data, offset, size, crc, writeType, isSync)
 		return
@@ -302,7 +302,7 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 		return
 	}
 
-	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
+	log.LogDebugf("action[Extent.Write] path %v offset %v size %v writeType %v", e.filePath, offset, size, writeType)
 	// Check if extent file size matches the write offset just in case
 	// multiple clients are writing concurrently.
 	e.Lock()
@@ -310,7 +310,7 @@ func (e *Extent) Write(data []byte, offset, size int64, crc uint32, writeType in
 	log.LogDebugf("action[Extent.Write] offset %v size %v writeType %v", offset, size, writeType)
 	if IsAppendWrite(writeType) && e.dataSize != offset {
 		err = NewParameterMismatchErr(fmt.Sprintf("extent current size = %v write offset=%v write size=%v", e.dataSize, offset, size))
-		log.LogErrorf("action[Extent.Write] NewParameterMismatchErr offset %v size %v writeType %v err %v",
+		log.LogErrorf("action[Extent.Write] NewParameterMismatchErr path %v offset %v size %v writeType %v err %v", e.filePath,
 			offset, size, writeType, err)
 		return
 	}
