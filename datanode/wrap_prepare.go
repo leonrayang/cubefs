@@ -123,6 +123,11 @@ func (s *DataNode) addExtentInfo(p *repl.Packet) error {
 		}
 	} else if p.IsSnapshotModWriteAppendOperation() {
 		if p.IsTinyExtentType() {
+			extentID, err = store.GetAvailableTinyExtent()
+			if err != nil {
+				return fmt.Errorf("addExtentInfo partition %v GetAvailableTinyExtent error %v", p.PartitionID, err.Error())
+			}
+			p.ExtentID = extentID
 			p.ExtentOffset, err = store.GetTinyExtentOffset(p.ExtentID)
 			if err != nil {
 				err = fmt.Errorf("addExtentInfo partition %v  %v GetTinyExtentOffset error %v", p.PartitionID, extentID, err.Error())
