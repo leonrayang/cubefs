@@ -137,7 +137,7 @@ func (d *Dentry)  getLastestVer(reqVerSeq uint64, commit bool, verlist []*proto.
 		if commit && id == len(verlist)-1 {
 			break
 		}
-		if info.Ver > reqVerSeq {
+		if info.Ver >= reqVerSeq { // include reqSeq itself
 			return info.Ver, true
 		}
 	}
