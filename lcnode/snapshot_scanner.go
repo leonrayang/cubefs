@@ -288,9 +288,11 @@ func (s *SnapshotScanner) handlVerDel(dentry *proto.ScanDentry) {
 	}
 
 	if ino, err = s.mw.Delete_Ver_ll(dentry.ParentId, dentry.Name, os.FileMode(dentry.Type).IsDir(), s.getTaskVerSeq()); err != nil {
-		log.LogErrorf("action[handlVerDel] parent %v Delete_ll_EX child name %v verSeq %v err %v",
-			dentry.ParentId, dentry.Name, s.getTaskVerSeq(), err)
-		atomic.AddInt64(&s.currentStat.ErrorSkippedNum, 1)
+		if dentry.ParentId >= 1 {
+			log.LogErrorf("action[handlVerDel] parent %v Delete_ll_EX child name %v verSeq %v err %v",
+				dentry.ParentId, dentry.Name, s.getTaskVerSeq(), err)
+			atomic.AddInt64(&s.currentStat.ErrorSkippedNum, 1)
+		}
 	} else {
 		log.LogDebugf("action[handlVerDel] parent %v Delete_ll_EX child name %v verSeq %v ino %v success",
 			dentry.ParentId, dentry.Name, s.getTaskVerSeq(), ino)
