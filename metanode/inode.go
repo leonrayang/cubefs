@@ -1057,6 +1057,7 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist *proto.VolVersio
 			log.LogErrorf("action[getAndDelVer] ino %v RestoreMultiSnapExts split error %v", i.Inode, err)
 			return
 		}
+		i.Extents.eks = i.Extents.eks[:0]
 		log.LogDebugf("action[getAndDelVer] ino %v verSeq %v get del exts %v", i.Inode, i.verSeq, delExtents)
 		return delExtents, i
 	}
