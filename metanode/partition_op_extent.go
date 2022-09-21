@@ -161,6 +161,7 @@ func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList) 
 				log.LogWarnf("checkVerList.vol %v mp %v not found %v in mp list and append version %v",
 					mp.config.VolName, mp.config.PartitionId, vInfo.Ver, vInfo)
 				mp.multiVersionList.VerList = append(mp.multiVersionList.VerList, vInfo)
+				mp.verSeq = vInfo.Ver
 			}
 			continue
 		}

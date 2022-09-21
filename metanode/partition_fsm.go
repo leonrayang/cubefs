@@ -257,6 +257,7 @@ func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
 		if cnt > 0 && mp.multiVersionList.VerList[cnt-1].Ver >= opData.VerSeq {
 			log.LogErrorf("action[MultiVersionOp] reqeust seq %v lessOrEqual last exist snapshot seq %v",
 				mp.multiVersionList.VerList[cnt-1].Ver, opData.VerSeq)
+			mp.verSeq = opData.VerSeq
 			return
 		}
 		newVer := &proto.VolVersionInfo{
