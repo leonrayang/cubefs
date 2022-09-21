@@ -383,31 +383,30 @@ func (cache *ExtentCache) Get(offset uint64) (ret *proto.ExtentKey) {
 	return ret
 }
 
-// GetEnd returns the extent key whose end offset equals the given offset.
-func (cache *ExtentCache) GetEnd(offset uint64, verSeq uint64) (ret *proto.ExtentKey) {
+// GetEndForAppendW returns the extent key whose end offset equals the given offset.
+func (cache *ExtentCache) GetEndForAppendW(offset uint64, verSeq uint64) (ret *proto.ExtentKey) {
 	pivot := &proto.ExtentKey{FileOffset: offset}
 	cache.RLock()
 	defer cache.RUnlock()
 
-	//// for debug loop print
-	//cache.root.Descend(func(i btree.Item) bool {
-	//	ek := i.(*proto.ExtentKey)
-	//	// skip if the start offset matches with the given offset
-	//	log.LogDebugf("action[ExtentCache.GetEnd.LoopPrint] inode %v reqSeq [%v] ek [%v]", cache.inode, verSeq, ek.String())
-	//	return true
-	//})
+	var lastExistEk *proto.ExtentKey
 	cache.root.DescendLessOrEqual(pivot, func(i btree.Item) bool {
 		ek := i.(*proto.ExtentKey)
 		// skip if the start offset matches with the given offset
 		if offset == ek.FileOffset {
+			lastExistEk = ek
 			return true
 		}
 		if offset == ek.FileOffset+uint64(ek.Size) {
 			if ek.VerSeq == verSeq {
-				log.LogDebugf("action[ExtentCache.GetEnd] inode %v offset %v verseq %v found,ek [%v]", cache.inode, offset, verSeq, ek.String())
+				if ek.IsSequence(lastExistEk) {
+					log.LogDebugf("action[ExtentCache.GetEndForAppendW] exist sequence extent %v", lastExistEk)
+					return false
+				}
+				log.LogDebugf("action[ExtentCache.GetEndForAppendW] inode %v offset %v verseq %v found,ek [%v]", cache.inode, offset, verSeq, ek.String())
 				ret = ek
 			} else {
-				log.LogDebugf("action[ExtentCache.GetEnd] inode %v req offset %v verseq %v not found, exist ek [%v]",cache.inode, offset, verSeq,  ek.String())
+				log.LogDebugf("action[ExtentCache.GetEndForAppendW] inode %v req offset %v verseq %v not found, exist ek [%v]",cache.inode, offset, verSeq,  ek.String())
 			}
 
 			return false

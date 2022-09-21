@@ -412,8 +412,8 @@ begin:
 				go s.client.evictBcache(cacheKey)
 			}
 		} else {
-			log.LogDebugf("action[streamer.write] doWrite req %v FileOffset %v size %v", req.ExtentKey, req.FileOffset, req.Size)
-			writeSize, err = s.doWrite(req.Data, req.FileOffset, req.Size, direct)
+			log.LogDebugf("action[streamer.write] doAppendWrite req %v FileOffset %v size %v", req.ExtentKey, req.FileOffset, req.Size)
+			writeSize, err = s.doAppendWrite(req.Data, req.FileOffset, req.Size, direct)
 		}
 		if err != nil {
 			log.LogErrorf("Streamer write: ino(%v) err(%v)", s.inode, err)
@@ -652,7 +652,7 @@ func (s *Streamer) doOverwrite(req *ExtentRequest, direct bool) (total int, err 
 	return
 }
 
-func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total int, err error) {
+func (s *Streamer) doAppendWrite(data []byte, offset, size int, direct bool) (total int, err error) {
 	var (
 		ek        *proto.ExtentKey
 		storeMode int
@@ -662,14 +662,14 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 	// store only for the first write operation.
 	storeMode = s.GetStoreMod(offset, size)
 
-	log.LogDebugf("doWrite enter: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
+	log.LogDebugf("doAppendWrite enter: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
 	if proto.IsHot(s.client.volumeType) {
 		// && (s.handler == nil || s.handler != nil && s.handler.fileOffset+s.handler.size != offset)  delete ??
 		if storeMode == proto.NormalExtentType && (s.handler == nil || s.handler != nil && s.handler.fileOffset+s.handler.size != offset) {
-			if currentEK := s.extents.GetEnd(uint64(offset), s.verSeq); currentEK != nil && !storage.IsTinyExtent(currentEK.ExtentId) {
+			if currentEK := s.extents.GetEndForAppendW(uint64(offset), s.verSeq); currentEK != nil && !storage.IsTinyExtent(currentEK.ExtentId) {
 				s.closeOpenHandler()
 
-				log.LogDebugf("doWrite: found ek in ExtentCache, extent_id(%v) offset(%v) size(%v), ekoffset(%v) eksize(%v)",
+				log.LogDebugf("doAppendWrite: found ek in ExtentCache, extent_id(%v) offset(%v) size(%v), ekoffset(%v) eksize(%v)",
 					currentEK.ExtentId, offset, size, currentEK.FileOffset, currentEK.Size)
 				_, pidErr := s.client.dataWrapper.GetDataPartition(currentEK.PartitionId)
 				if pidErr == nil {
@@ -684,13 +684,13 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 					}
 					s.handler = handler
 					s.dirty = false
-					log.LogDebugf("doWrite: currentEK.PartitionId(%v) found", currentEK.PartitionId)
+					log.LogDebugf("doAppendWrite: currentEK.PartitionId(%v) found", currentEK.PartitionId)
 				} else {
-					log.LogDebugf("doWrite: currentEK.PartitionId(%v) not found", currentEK.PartitionId)
+					log.LogDebugf("doAppendWrite: currentEK.PartitionId(%v) not found", currentEK.PartitionId)
 				}
 
 			} else {
-				log.LogDebugf("doWrite: not found ek in ExtentCache, offset(%v) size(%v)", offset, size)
+				log.LogDebugf("doAppendWrite: not found ek in ExtentCache, offset(%v) size(%v)", offset, size)
 			}
 		}
 		for i := 0; i < MaxNewHandlerRetry; i++ {
@@ -711,7 +711,7 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 				break
 			}
 
-			log.LogDebugf("doWrite handler write failed so close open handler: ino(%v) offset(%v) size(%v) storeMode(%v) err(%v)",
+			log.LogDebugf("doAppendWrite handler write failed so close open handler: ino(%v) offset(%v) size(%v) storeMode(%v) err(%v)",
 				s.inode, offset, size, storeMode, err)
 
 			s.closeOpenHandler()
@@ -727,13 +727,13 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 			}
 		}
 
-		log.LogDebugf("doWrite handler write failed so close open handler: ino(%v) offset(%v) size(%v) storeMode(%v) err(%v)",
+		log.LogDebugf("doAppendWrite handler write failed so close open handler: ino(%v) offset(%v) size(%v) storeMode(%v) err(%v)",
 			s.inode, offset, size, storeMode, err)
 		err = s.closeOpenHandler()
 	}
 
 	if err != nil || ek == nil {
-		log.LogErrorf("doWrite error: ino(%v) offset(%v) size(%v) err(%v) ek(%v)", s.inode, offset, size, err, ek)
+		log.LogErrorf("doAppendWrite error: ino(%v) offset(%v) size(%v) err(%v) ek(%v)", s.inode, offset, size, err, ek)
 		return
 	}
 
@@ -741,7 +741,7 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 	_ = s.extents.Append(ek, false)
 	total = size
 
-	log.LogDebugf("doWrite exit: ino(%v) offset(%v) size(%v) ek(%v)", s.inode, offset, size, ek)
+	log.LogDebugf("doAppendWrite exit: ino(%v) offset(%v) size(%v) ek(%v)", s.inode, offset, size, ek)
 	return
 }
 
