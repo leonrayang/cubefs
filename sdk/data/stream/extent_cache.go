@@ -16,6 +16,7 @@ package stream
 
 import (
 	"fmt"
+	"github.com/cubefs/cubefs/util"
 	"sync"
 
 	"github.com/cubefs/cubefs/proto"
@@ -390,6 +391,7 @@ func (cache *ExtentCache) GetEndForAppendW(offset uint64, verSeq uint64) (ret *p
 	defer cache.RUnlock()
 
 	var lastExistEk *proto.ExtentKey
+	var lastExistEkTest *proto.ExtentKey
 	cache.root.DescendLessOrEqual(pivot, func(i btree.Item) bool {
 		ek := i.(*proto.ExtentKey)
 		// skip if the start offset matches with the given offset
@@ -397,13 +399,20 @@ func (cache *ExtentCache) GetEndForAppendW(offset uint64, verSeq uint64) (ret *p
 			lastExistEk = ek
 			return true
 		}
+
 		if offset == ek.FileOffset+uint64(ek.Size) {
 			if ek.VerSeq == verSeq {
-				if lastExistEk != nil && ek.IsSequence(lastExistEk) {
+				if ek.ExtentOffset >= util.ExtentSize {
+					log.LogDebugf("action[ExtentCache.GetEndForAppendW] inode %v req offset %v verseq %v not found, exist ek [%v]",
+						cache.inode, offset, verSeq,  ek.String())
+					return false
+				}
+				if lastExistEk != nil && ek.IsFileInSequence(lastExistEk) {
 					log.LogDebugf("action[ExtentCache.GetEndForAppendW] exist sequence extent %v", lastExistEk)
 					return false
 				}
-				log.LogDebugf("action[ExtentCache.GetEndForAppendW] inode %v offset %v verseq %v found,ek [%v]", cache.inode, offset, verSeq, ek.String())
+				log.LogDebugf("action[ExtentCache.GetEndForAppendW] inode %v offset %v verseq %v found,ek [%v] lastExistEk[%v], lastExistEkTest[%v]",
+					cache.inode, offset, verSeq, ek.String(), lastExistEk, lastExistEkTest)
 				ret = ek
 			} else {
 				log.LogDebugf("action[ExtentCache.GetEndForAppendW] inode %v req offset %v verseq %v not found, exist ek [%v]",cache.inode, offset, verSeq,  ek.String())
@@ -411,6 +420,7 @@ func (cache *ExtentCache) GetEndForAppendW(offset uint64, verSeq uint64) (ret *p
 
 			return false
 		}
+		lastExistEkTest = ek
 		return true
 	})
 	return ret

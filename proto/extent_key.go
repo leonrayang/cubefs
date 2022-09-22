@@ -63,6 +63,13 @@ func (k *ExtentKey) IsSequence(rightKey *ExtentKey) bool {
 		k.FileOffset+uint64(k.Size) == rightKey.FileOffset
 }
 
+func (k *ExtentKey) IsFileInSequence(rightKey *ExtentKey) bool {
+	//	return false
+	return k.PartitionId==rightKey.PartitionId &&
+		k.ExtentId == rightKey.ExtentId &&
+		k.ExtentOffset+uint64(k.Size) == rightKey.ExtentOffset
+}
+
 // String returns the string format of the extentKey.
 func (k ExtentKey) String() string {
 	return fmt.Sprintf("ExtentKey{FileOffset(%v),VerSeq(%v) Partition(%v),ExtentID(%v),ExtentOffset(%v),Size(%v),CRC(%v)}",
