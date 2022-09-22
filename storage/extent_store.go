@@ -663,10 +663,11 @@ func (s *ExtentStore) initTinyExtent() (err error) {
 func (s *ExtentStore) GetAvailableTinyExtent() (extentID uint64, err error) {
 	select {
 	case extentID = <-s.availableTinyExtentC:
-		log.LogDebugf("GetAvailableTinyExtent. extentID %v", extentID)
+		log.LogDebugf("dp %v GetAvailableTinyExtent. extentID %v", s.partitionID, extentID)
 		s.availableTinyExtentMap.Delete(extentID)
 		return
 	default:
+		log.LogDebugf("dp %v GetAvailableTinyExtent not found", s.partitionID)
 		return 0, NoAvailableExtentError
 
 	}
@@ -674,11 +675,13 @@ func (s *ExtentStore) GetAvailableTinyExtent() (extentID uint64, err error) {
 
 // SendToAvailableTinyExtentC sends the extent to the channel that stores the available tiny extents.
 func (s *ExtentStore) SendToAvailableTinyExtentC(extentID uint64) {
-//	log.LogInfof("action[SendToAvailableTinyExtentC] backtrace %v", string(debug.Stack()))
+	log.LogDebugf("dp %v action[SendToAvailableTinyExtentC] extentid %v", s.partitionID, extentID)
 	if _, ok := s.availableTinyExtentMap.Load(extentID); !ok {
-		log.LogDebugf("SendToAvailableTinyExtentC. extentID %v", extentID)
+		log.LogDebugf("dp %v SendToAvailableTinyExtentC. extentID %v", s.partitionID, extentID)
 		s.availableTinyExtentC <- extentID
 		s.availableTinyExtentMap.Store(extentID, true)
+	} else {
+		log.LogDebugf("dp %v action[SendToAvailableTinyExtentC] extentid %v already exist", s.partitionID, extentID)
 	}
 }
 

@@ -185,7 +185,7 @@ func (se *SortedExtents) SplitWithCheck(inodeID uint64, ekSplit proto.ExtentKey)
 		return
 	}
 	key := &se.eks[startIndex-1]
-	if key.PartitionId != ekSplit.PartitionId || key.ExtentId != ekSplit.ExtentId {
+	if !storage.IsTinyExtent(key.ExtentId) && (key.PartitionId != ekSplit.PartitionId || key.ExtentId != ekSplit.ExtentId) {
 		status = proto.OpArgMismatchErr
 		log.LogErrorf("SplitWithCheck. inode %v  key found with mismatch extent info [%v] request [%v]", inodeID, key, ekSplit)
 		return

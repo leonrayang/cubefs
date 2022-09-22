@@ -431,6 +431,7 @@ begin:
 func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total int, err error) {
 	var (
 		dp *wrapper.DataPartition
+		reqPacket *Packet
 	)
 
 	log.LogDebugf("action[doOverwriteByAppend] inode %v enter in req %v", s.inode, req)
@@ -463,7 +464,24 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		retry = false
 	}
 	log.LogDebugf("action[doOverwriteByAppend] inode %v  data process", s.inode)
-	sc := NewStreamConn(dp, false)
+
+	addr := dp.LeaderAddr
+	if  storage.IsTinyExtent(req.ExtentKey.ExtentId) {
+		addr = dp.Hosts[0]
+		reqPacket = NewWritePacket(s.inode, offset, proto.TinyExtentType)
+		reqPacket.PartitionID = req.ExtentKey.PartitionId
+		reqPacket.RemainingFollowers = uint8(len(dp.Hosts) - 1)
+		if len(dp.Hosts) == 1 {
+			reqPacket.RemainingFollowers = 127
+		}
+	} else {
+		reqPacket = NewOverwriteByAppendPacket(dp, req.ExtentKey.ExtentId, 0, s.inode, offset)
+	}
+	sc := &StreamConn{
+		dp:       dp,
+		currAddr: addr,
+	}
+
 	replyPacket := new(Packet)
 	if size > util.BlockSize{
 		log.LogErrorf("action[doOverwriteByAppend] inode %v size too large %v", s.inode, size)
@@ -472,7 +490,7 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 	for total < size { // normally should only run once due to key exist in the system must be less than BlockSize
 		// right position in extent:offset-ekFileOffset+total+ekExtOffset .
 		// ekExtOffset will be set by replay packet at addExtentInfo(datanode)
-		reqPacket := NewOverwriteByAppendPacket(dp, req.ExtentKey.ExtentId, 0, s.inode, offset)
+
 		if direct {
 			reqPacket.Opcode = proto.OpSyncRandomWriteAppend
 		}

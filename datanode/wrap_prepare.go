@@ -125,6 +125,7 @@ func (s *DataNode) addExtentInfo(p *repl.Packet) error {
 		if p.IsTinyExtentType() {
 			extentID, err = store.GetAvailableTinyExtent()
 			if err != nil {
+				log.LogErrorf("err %v", err)
 				return fmt.Errorf("addExtentInfo partition %v GetAvailableTinyExtent error %v", p.PartitionID, err.Error())
 			}
 			p.ExtentID = extentID
