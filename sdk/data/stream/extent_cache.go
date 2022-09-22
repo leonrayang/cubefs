@@ -399,7 +399,7 @@ func (cache *ExtentCache) GetEndForAppendW(offset uint64, verSeq uint64) (ret *p
 		}
 		if offset == ek.FileOffset+uint64(ek.Size) {
 			if ek.VerSeq == verSeq {
-				if ek.IsSequence(lastExistEk) {
+				if lastExistEk != nil && ek.IsSequence(lastExistEk) {
 					log.LogDebugf("action[ExtentCache.GetEndForAppendW] exist sequence extent %v", lastExistEk)
 					return false
 				}
