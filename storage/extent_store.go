@@ -663,6 +663,7 @@ func (s *ExtentStore) initTinyExtent() (err error) {
 func (s *ExtentStore) GetAvailableTinyExtent() (extentID uint64, err error) {
 	select {
 	case extentID = <-s.availableTinyExtentC:
+		log.LogDebugf("GetAvailableTinyExtent. extentID %v", extentID)
 		s.availableTinyExtentMap.Delete(extentID)
 		return
 	default:
@@ -675,6 +676,7 @@ func (s *ExtentStore) GetAvailableTinyExtent() (extentID uint64, err error) {
 func (s *ExtentStore) SendToAvailableTinyExtentC(extentID uint64) {
 //	log.LogInfof("action[SendToAvailableTinyExtentC] backtrace %v", string(debug.Stack()))
 	if _, ok := s.availableTinyExtentMap.Load(extentID); !ok {
+		log.LogDebugf("SendToAvailableTinyExtentC. extentID %v", extentID)
 		s.availableTinyExtentC <- extentID
 		s.availableTinyExtentMap.Store(extentID, true)
 	}

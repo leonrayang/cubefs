@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"net"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -431,8 +430,6 @@ begin:
 
 func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total int, err error) {
 	var (
-		once   sync.Once
-		verOff int64
 		dp *wrapper.DataPartition
 	)
 
@@ -467,6 +464,11 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 	}
 	log.LogDebugf("action[doOverwriteByAppend] inode %v  data process", s.inode)
 	sc := NewStreamConn(dp, false)
+	replyPacket := new(Packet)
+	if size > util.BlockSize{
+		log.LogErrorf("action[doOverwriteByAppend] inode %v size too large %v", s.inode, size)
+		panic(nil)
+	}
 	for total < size { // normally should only run once due to key exist in the system must be less than BlockSize
 		// right position in extent:offset-ekFileOffset+total+ekExtOffset .
 		// ekExtOffset will be set by replay packet at addExtentInfo(datanode)
@@ -483,7 +485,6 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 		reqPacket.Size = uint32(packSize)
 		reqPacket.CRC = crc32.ChecksumIEEE(reqPacket.Data[:packSize])
 
-		replyPacket := new(Packet)
 		err = sc.Send(&retry, reqPacket, func(conn *net.TCPConn) (error, bool) {
 			e := replyPacket.ReadFromConnWithVer(conn, proto.ReadDeadlineTime)
 			if e != nil {
@@ -519,12 +520,8 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 			break
 		}
 
-		once.Do(func() {
-			verOff = replyPacket.ExtentOffset
-			log.LogWarnf("action[doOverwriteByAppend] data process verOff be set %v", verOff)
-		})
-
 		total += packSize
+		break
 	}
 	if err != nil {
 		log.LogErrorf("action[doOverwriteByAppend] data process err %v", err)
@@ -533,11 +530,11 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 	extKey := &proto.ExtentKey{
 		FileOffset:   uint64(req.FileOffset),
 		PartitionId:  req.ExtentKey.PartitionId,
-		ExtentId:     req.ExtentKey.ExtentId,
-		ExtentOffset: uint64(verOff),
+		ExtentId:     replyPacket.ExtentID,
+		ExtentOffset: uint64(replyPacket.ExtentOffset),
 		Size:         uint32(total),
 		VerSeq:       s.verSeq,
-		ModGen:       req.ExtentKey.ModGen,
+		ModGen:       0,
 	}
 	log.LogDebugf("action[doOverwriteByAppend] inode %v local cache process start extKey %v", s.inode, extKey)
 	if err = s.extents.SplitExtentKey(s.inode, extKey); err != nil {

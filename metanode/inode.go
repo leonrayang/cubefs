@@ -1288,7 +1288,8 @@ func (i *Inode) AppendExtentWithCheck(
 	volType int) (delExtents []proto.ExtentKey, status uint8) {
 
 	ek.VerSeq = mpVer
-	log.LogDebugf("action[AppendExtentWithCheck] mpVer %v inode %v and ver %v,inode ver %v,ek %v,hist len %v", mpVer, i.Inode, i.verSeq, reqVer, ek, len(i.multiVersions))
+	log.LogDebugf("action[AppendExtentWithCheck] mpVer %v inode %v and ver %v,req ver %v,ek %v,hist len %v",
+		mpVer, i.Inode, i.verSeq, reqVer, ek, len(i.multiVersions))
 
 
 	if mpVer != i.verSeq {
