@@ -468,15 +468,11 @@ func (s *Streamer) doOverwriteByAppend(req *ExtentRequest, direct bool) (total i
 	addr := dp.LeaderAddr
 	if  storage.IsTinyExtent(req.ExtentKey.ExtentId) {
 		addr = dp.Hosts[0]
-		reqPacket = NewWritePacket(s.inode, offset, proto.TinyExtentType)
-		reqPacket.PartitionID = req.ExtentKey.PartitionId
-		reqPacket.RemainingFollowers = uint8(len(dp.Hosts) - 1)
-		if len(dp.Hosts) == 1 {
-			reqPacket.RemainingFollowers = 127
-		}
+		reqPacket = NewWriteTinyDirectly(s.inode, req.ExtentKey.PartitionId, offset, dp)
 	} else {
 		reqPacket = NewOverwriteByAppendPacket(dp, req.ExtentKey.ExtentId, 0, s.inode, offset)
 	}
+
 	sc := &StreamConn{
 		dp:       dp,
 		currAddr: addr,
