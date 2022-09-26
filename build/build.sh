@@ -243,9 +243,9 @@ run_test() {
     pre_build_server
     pushd $SrcPath >/dev/null
     echo -n "${TPATH}"
-    go test $MODFLAGS -ldflags "${LDFlags}" -cover ./metanode  -test.run TestSnapshotDeletion
+    go test $MODFLAGS -ldflags "${LDFlags}" -cover ./metanode
 
-#    go test  $(go list ./... | grep -v depends)
+    #    go test  $(go list ./... | grep -v depends)
     ret=$?
     popd >/dev/null
     exit $ret

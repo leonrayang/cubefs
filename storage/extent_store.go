@@ -449,15 +449,19 @@ func (s *ExtentStore) MarkDelete(extentID uint64, offset, size int64) (err error
 		extentID, offset, size, ei.Size, ei.SnapshotDataOff)
 
 	funcNeedPunchDel := func() bool {
-		return  offset != 0 || (ei.Size != uint64(size) && ei.SnapshotDataOff == util.ExtentSize) ||
-			(ei.SnapshotDataOff != uint64(size) && ei.SnapshotDataOff > util.ExtentSize)
+		return  offset != 0 || (size != 0 && ((ei.Size != uint64(size) && ei.SnapshotDataOff == util.ExtentSize) ||
+			(ei.SnapshotDataOff != uint64(size) && ei.SnapshotDataOff > util.ExtentSize)))
 	}
 
 	if IsTinyExtent(extentID) || funcNeedPunchDel() {
+		log.LogDebugf("action[MarkDelete] extentID %v offset %v size %v ei(size %v snapshotSize %v)",
+			extentID, offset, size, ei.Size, ei.SnapshotDataOff)
 		return s.tinyDelete(extentID, offset, size)
 	}
 
 	extentFilePath := path.Join(s.dataPath, strconv.FormatUint(extentID, 10))
+	log.LogDebugf("action[MarkDelete] extentID %v offset %v size %v ei(size %v extentFilePath %v)",
+		extentID, offset, size, ei.Size, extentFilePath)
 	if err = os.Remove(extentFilePath); err != nil {
 		return
 	}

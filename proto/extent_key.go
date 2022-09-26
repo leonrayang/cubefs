@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"math"
+	"sync"
 
 	"github.com/cubefs/cubefs/util/btree"
 	"github.com/cubefs/cubefs/util/log"
@@ -54,6 +56,37 @@ type ExtentKey struct {
 	ModGen       uint64
 }
 
+func (k *ExtentKey) GenerateId() uint64 {
+	if k.PartitionId > math.MaxUint32 || k.ExtentId > math.MaxUint32 {
+		log.LogFatal("ext %v abnormal", k)
+	}
+	return (k.PartitionId << 32) | k.ExtentId
+}
+
+func ParseFromId(sID uint64) (dpID uint64, extID uint64) {
+	dpID = sID>>32
+	extID = sID & math.MaxUint32
+	return
+}
+
+func MergeSplitKey(inodeID uint64, ekRefMap *sync.Map, sMap *sync.Map) (err error) {
+	if ekRefMap == nil || sMap == nil {
+		log.LogErrorf("MergeSplitKey. inodeID %v should not use nil role", inodeID)
+		return
+	}
+	sMap.Range(func(id, value interface{}) bool {
+		dpID, extID := ParseFromId(id.(uint64))
+		val,_ := ekRefMap.Load(id)
+		log.LogDebugf("UnmarshalInodeValue inode %v get splitID %v dp id %v extentid %v, refCnt %v, add %v",
+			inodeID, id.(uint64), dpID, extID, value.(uint32), val.(uint32))
+
+		ekRefMap.Store(id, val.(uint32) + value.(uint32))
+		return true
+	})
+	return
+}
+
+
 func (k *ExtentKey) IsSequence(rightKey *ExtentKey) bool {
 //	return false
 	return k.PartitionId==rightKey.PartitionId &&
@@ -72,8 +105,8 @@ func (k *ExtentKey) IsFileInSequence(rightKey *ExtentKey) bool {
 
 // String returns the string format of the extentKey.
 func (k ExtentKey) String() string {
-	return fmt.Sprintf("ExtentKey{FileOffset(%v),VerSeq(%v) Partition(%v),ExtentID(%v),ExtentOffset(%v),Size(%v),CRC(%v)}",
-		k.FileOffset, k.VerSeq, k.PartitionId, k.ExtentId, k.ExtentOffset, k.Size, k.CRC)
+	return fmt.Sprintf("ExtentKey{FileOffset(%v),VerSeq(%v) Partition(%v),ExtentID(%v),ExtentOffset(%v),isSplit(%v),Size(%v),CRC(%v)}",
+		k.FileOffset, k.VerSeq, k.PartitionId, k.ExtentId, k.ExtentOffset, k.IsSplit, k.Size, k.CRC)
 }
 
 // Less defines the less comparator.
@@ -93,6 +126,7 @@ func (k *ExtentKey) Marshal() (m string) {
 
 // MarshalBinary marshals the binary format of the extent key.
 func (k *ExtentKey) MarshalBinary(v3 bool) ([]byte, error) {
+	log.LogDebugf("MarshalBinary ek %v", k)
 	extLen := ExtentLength
 	if v3 {
 		extLen += ExtentVerFieldSize
@@ -144,7 +178,9 @@ func (k *ExtentKey) UnmarshalBinary(buf *bytes.Buffer, v3 bool) (err error) {
 	if err = binary.Read(buf, binary.BigEndian, &k.Size); err != nil {
 		return
 	}
-
+	if err = binary.Read(buf, binary.BigEndian, &k.CRC); err != nil {
+		return
+	}
 	if v3 {
 		if err = binary.Read(buf, binary.BigEndian, &k.VerSeq); err != nil {
 			return
@@ -154,9 +190,6 @@ func (k *ExtentKey) UnmarshalBinary(buf *bytes.Buffer, v3 bool) (err error) {
 		}
 	}
 
-	if err = binary.Read(buf, binary.BigEndian, &k.CRC); err != nil {
-		return
-	}
 	return
 }
 
