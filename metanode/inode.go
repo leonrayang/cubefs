@@ -776,11 +776,10 @@ func  (i *Inode) RestoreExts2NextLayer(delExtentsOrigin []proto.ExtentKey, curVe
 func (inode* Inode) unlinkTopLayer(ino *Inode, mpVer uint64, verlist *proto.VolVersionInfoList) (ext2Del []proto.ExtentKey, doMore bool, status uint8){
 	// if there's no snapshot itself, nor have snapshot after inode's ver then need unlink directly and make no snapshot
 	// just move to upper layer, the behavior looks like that the snapshot be dropped
-	log.LogDebugf("action[unlinkTopLayer] check if have snapshot depends on the deleitng ino %v (with no snapshot itself) found seq %v, verlist %v",
-		ino, inode.verSeq, verlist)
+	log.LogDebugf("action[unlinkTopLayer] mpVer %v check if have snapshot depends on the deleitng ino %v (with no snapshot itself) found seq %v, verlist %v",
+		mpVer, ino, inode.verSeq, verlist)
 	status = proto.OpOk
-	_, found := inode.getLastestVer(inode.verSeq, true, verlist)
-	if !found {
+	if mpVer == inode.verSeq {
 		if len(inode.multiVersions) == 0 {
 			log.LogDebugf("action[unlinkTopLayer] no snapshot available depends on ino %v not found seq %v and return, verlist %v", ino, inode.verSeq, verlist)
 			inode.DecNLink()
@@ -793,6 +792,12 @@ func (inode* Inode) unlinkTopLayer(ino *Inode, mpVer uint64, verlist *proto.VolV
 		log.LogDebugf("action[unlinkTopLayer] need restore.ino %v withSeq %v equal mp seq, verlist %v", ino, inode.verSeq, verlist)
 		// need restore
 		if !proto.IsDir(inode.Type) {
+			if inode.NLink > 1 {
+				log.LogDebugf("action[unlinkTopLayer] inode %v be unlinked, file link is %v", ino.Inode, inode.NLink)
+				inode.DecNLink()
+				doMore = false
+				return
+			}
 			var dIno *Inode
 			if ext2Del, dIno = inode.getAndDelVer(ino.verSeq, mpVer, verlist); dIno == nil {
 				status = proto.OpNotExistErr
