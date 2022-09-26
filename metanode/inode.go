@@ -1363,6 +1363,13 @@ func (i *Inode) DecNLink() {
 	}
 	i.Unlock()
 }
+// DecNLink decreases the nLink value by one.
+func (i *Inode) DecNLinkByVer(verSeq uint64) {
+	if i.verSeq < verSeq {
+		i.CreateVer(verSeq)
+	}
+	i.DecNLink()
+}
 
 
 // DecNLink decreases the nLink value by one.

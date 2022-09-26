@@ -195,7 +195,7 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 					ino := item.(*Inode)
 					if !ino.ShouldDelete() {
 						log.LogDebugf("action[fsmDeleteDentry] den  %v delete parent's link", denParm)
-						item.(*Inode).DecNLink()
+						item.(*Inode).DecNLinkByVer(mp.verSeq)
 						log.LogDebugf("action[fsmDeleteDentry] inode %v be unlinked by child name %v", item.(*Inode).Inode, denParm.Name)
 						item.(*Inode).SetMtime()
 					}
