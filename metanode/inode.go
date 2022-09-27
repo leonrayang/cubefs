@@ -660,7 +660,7 @@ func (i *Inode) UnmarshalValue(val []byte) (err error) {
 		}
 		log.LogInfof("action[UnmarshalValue] inode %v new seq %v verCnt %v", i.Inode, i.verSeq, verCnt)
 		for idx:=int32(0);idx<verCnt;idx++ {
-			ino := &Inode{}
+			ino := &Inode{Inode: i.Inode}
 			ino.UnmarshalInodeValue(buff)
 			if ino.ekRefMap != nil {
 				if i.ekRefMap == nil {

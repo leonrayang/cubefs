@@ -223,7 +223,7 @@ func (se *SortedExtents) SplitWithCheck(inodeID uint64, ekSplit proto.ExtentKey,
 	}
 	// Makes the request idempotent, just in case client retries.
 	if ekSplit.IsEqual(key) {
-		log.LogWarnf("SplitWithCheck. request key %v is a repeat request [%v]", key)
+		log.LogWarnf("SplitWithCheck. request key %v is a repeat request", key)
 		return
 	}
 
