@@ -903,7 +903,9 @@ func (inode* Inode) unlinkTopLayer(ino *Inode, mpVer uint64, verlist *proto.VolV
 			return
 		}
 		inode.CreateVer(mpVer) // protect origin version
-		inode.CreateUnlinkVer(mpVer, ver) // create a effective top level  version
+		if inode.NLink == 1 {
+			inode.CreateUnlinkVer(mpVer, ver) // create a effective top level  version
+		}
 		inode.DecNLink()
 		log.LogDebugf("action[unlinkTopLayer] inode %v be unlinked, File create ver 1st layer", ino.Inode)
 	}
