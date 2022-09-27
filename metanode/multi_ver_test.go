@@ -264,6 +264,7 @@ func testVerListRemoveVer(t *testing.T, verSeq uint64) bool {
 			// mp.multiVersionList = append(mp.multiVersionList[:i], mp.multiVersionList[i+1:]...)
 			if i == len(mp.multiVersionList.VerList)-1 {
 				mp.multiVersionList.VerList = mp.multiVersionList.VerList[:i]
+				return true
 			}
 			mp.multiVersionList.VerList = append(mp.multiVersionList.VerList[:i], mp.multiVersionList.VerList[i+1:]...)
 			return true
@@ -826,7 +827,7 @@ func TestSnapshotDeletion(t *testing.T) {
 	mp.config.Cursor = 1100
 	//--------------------build dir and it's child on different version ------------------
 
-	dirLayCnt := 5
+	dirLayCnt := 2
 	var (
 		dirName string
 		dirInoId  uint64 = 1
@@ -866,8 +867,10 @@ func TestSnapshotDeletion(t *testing.T) {
 		verArr = append(verArr, ver)
 		time.Sleep(time.Second)
 		dCnt, fCnt := testPrintDirTree(t, 1, "root", ver)
+		if layIdx+1 < dirLayCnt {
+			testCreateVer()
+		}
 
-		testCreateVer()
 		t.Logf("PrintALl verSeq %v get dirCnt %v, fCnt %v", ver, dCnt, fCnt)
 	}
 
@@ -977,7 +980,9 @@ func TestComplicateSnapshotDeletion(t *testing.T) {
 		time.Sleep(time.Second)
 		dCnt, fCnt := testPrintDirTree(t, 1, "root", ver)
 
-		testCreateVer()
+		if layIdx+1 < dirLayCnt {
+			testCreateVer()
+		}
 		t.Logf("PrintALl verSeq %v get dirCnt %v, fCnt %v", ver, dCnt, fCnt)
 	}
 

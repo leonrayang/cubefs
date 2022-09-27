@@ -197,7 +197,10 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 		return
 	}
 
-	if topLayerEmpty && inode.IsEmptyDirAndNoSnapshot() {
+	if ino.verSeq == 0 && topLayerEmpty && inode.IsEmptyDirAndNoSnapshot() {  // normal deletion
+		log.LogDebugf("action[fsmUnlinkInode] ino %v really be deleted, empty dir", ino)
+		mp.inodeTree.Delete(inode)
+	} else if ino.verSeq > 0 && inode.IsEmptyDirAndNoSnapshot() { // snapshot deletion
 		log.LogDebugf("action[fsmUnlinkInode] ino %v really be deleted, empty dir", ino)
 		mp.inodeTree.Delete(inode)
 	}
@@ -217,7 +220,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 		log.LogDebugf("action[fsmUnlinkInode] ino %v ext2Del %v", ino, ext2Del)
 		mp.extDelCh <- ext2Del
 	}
-	log.LogDebugf("action[fsmUnlinkInode] ino %v left", ino)
+	log.LogDebugf("action[fsmUnlinkInode] ino %v left", inode)
 	return
 }
 

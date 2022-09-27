@@ -818,9 +818,17 @@ func (inode* Inode) unlinkTopLayer(ino *Inode, mpVer uint64, verlist *proto.VolV
 
 	log.LogDebugf("action[unlinkTopLayer] need create version.ino %v withSeq %v not equal mp seq %v, verlist %v", ino, inode.verSeq, mpVer, verlist)
 	if proto.IsDir(inode.Type) { // dir is whole info but inode is partition,which is quit different
-		inode.CreateVer(mpVer)
+		verlist.RLock()
+		defer verlist.RUnlock()
+
+		_, err := inode.getNextOlderVer(mpVer, verlist)
+		if err == nil {
+			log.LogDebugf("action[unlinkTopLayer] inode %v cann't get next older ver %v err %v", inode.Inode, mpVer, err)
+			inode.CreateVer(mpVer)
+		}
 		inode.DecNLink()
 		log.LogDebugf("action[unlinkTopLayer] inode %v be unlinked, Dir create ver 1st layer", ino.Inode)
+		doMore = true
 	} else {
 		verlist.RLock()
 		defer verlist.RUnlock()
@@ -845,13 +853,13 @@ func (inode *Inode) dirUnlinkVerInlist(ino *Inode, mpVer uint64, verlist *proto.
 	status = proto.OpOk
 	if dIno, idxWithTopLayer = inode.getInoByVer(ino.verSeq, false); dIno == nil {
 		status = proto.OpNotExistErr
-		log.LogDebugf("action[unlinkVerInList] ino %v not found", ino)
+		log.LogDebugf("action[dirUnlinkVerInlist] ino %v not found", ino)
 		return
 	}
 	var endSeq uint64
 	if idxWithTopLayer == 0 {
 		// header layer do nothing and be depends on should not be dropped
-		log.LogDebugf("action[unlinkVerInList] ino %v first layer do nothing", ino)
+		log.LogDebugf("action[dirUnlinkVerInlist] ino %v first layer do nothing", ino)
 		return
 	}
 	// if any alive snapshot in mp dimension exist in seq scope from dino to next ascend neighbor, dio snapshot be keep or else drop
@@ -863,7 +871,7 @@ func (inode *Inode) dirUnlinkVerInlist(ino *Inode, mpVer uint64, verlist *proto.
 		endSeq = inode.multiVersions[mIdx-1].verSeq
 	}
 
-	log.LogDebugf("action[unlinkVerInList] inode %v try drop multiVersion idx %v effective seq scope [%v,%v) ",
+	log.LogDebugf("action[dirUnlinkVerInlist] inode %v try drop multiVersion idx %v effective seq scope [%v,%v) ",
 		inode.Inode, mIdx, dIno.verSeq, endSeq)
 
 	doWork := func() bool {
@@ -872,18 +880,18 @@ func (inode *Inode) dirUnlinkVerInlist(ino *Inode, mpVer uint64, verlist *proto.
 
 		for vidx, info := range verlist.VerList {
 			if info.Ver >= dIno.verSeq && info.Ver < endSeq {
-				log.LogDebugf("action[unlinkVerInList] inode %v dir layer idx %v still have effective snapshot seq %v.so don't drop", inode.Inode, mIdx, info.Ver)
+				log.LogDebugf("action[dirUnlinkVerInlist] inode %v dir layer idx %v still have effective snapshot seq %v.so don't drop", inode.Inode, mIdx, info.Ver)
 				return false
 			}
 			if info.Ver >= endSeq || vidx == len(verlist.VerList)-1 {
-				log.LogDebugf("action[unlinkVerInList] inode %v try drop multiVersion idx %v and return", inode.Inode, mIdx)
+				log.LogDebugf("action[dirUnlinkVerInlist] inode %v try drop multiVersion idx %v and return", inode.Inode, mIdx)
 
 				inode.Lock()
 				inode.multiVersions = append(inode.multiVersions[:mIdx], inode.multiVersions[mIdx+1:]...)
 				inode.Unlock()
-				return false
+				return true
 			}
-			log.LogDebugf("action[unlinkVerInList] inode %v try drop scope [%v, %v), mp ver %v not suitable", inode.Inode, dIno.verSeq, endSeq, info.Ver)
+			log.LogDebugf("action[dirUnlinkVerInlist] inode %v try drop scope [%v, %v), mp ver %v not suitable", inode.Inode, dIno.verSeq, endSeq, info.Ver)
 			return true
 		}
 		return true
