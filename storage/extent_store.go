@@ -15,6 +15,7 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -126,6 +127,7 @@ type ExtentStore struct {
 	// blockSize                         int
 	partitionID                       uint64
 	verifyExtentFp                    *os.File
+	verifyExtentFpAppend              []*os.File
 	hasAllocSpaceExtentIDOnVerfiyFile uint64
 	hasDeleteNormalExtentsCache       sync.Map
 	partitionType                     int
@@ -155,8 +157,26 @@ func NewExtentStore(dataDir string, partitionID uint64, storeSize, dpType int) (
 		data := make([]byte, needWriteEmpty)
 		s.tinyExtentDeleteFp.Write(data)
 	}
+	log.LogDebugf("NewExtentStore.partitionID [%v] dataPath %v verifyExtentFp init", partitionID, s.dataPath)
 	if s.verifyExtentFp, err = os.OpenFile(path.Join(s.dataPath, ExtCrcHeaderFileName), os.O_CREATE|os.O_RDWR, 0666); err != nil {
 		return
+	}
+
+	aId := 0
+	var vFp *os.File
+	for {
+		dataPath := path.Join(s.dataPath, ExtCrcHeaderFileName + "_" + strconv.Itoa(aId))
+		if  _, err = os.Stat(dataPath); err != nil {
+			log.LogDebugf("NewExtentStore. partitionID [%v] dataPath not exist err %v. verifyExtentFpAppend init return", partitionID, err)
+			break
+		}
+		if vFp, err = os.OpenFile(dataPath, os.O_CREATE|os.O_RDWR, 0666); err != nil {
+			log.LogErrorf("NewExtentStore. partitionID [%v] dataPath exist but open err %v. verifyExtentFpAppend init return", partitionID, err)
+			return
+		}
+		log.LogDebugf("NewExtentStore. partitionID [%v] dataPath exist and opened id %v", partitionID, aId)
+		s.verifyExtentFpAppend = append(s.verifyExtentFpAppend, vFp)
+		aId++
 	}
 	if s.metadataFp, err = os.OpenFile(path.Join(s.dataPath, ExtBaseExtentIDFileName), os.O_CREATE|os.O_RDWR, 0666); err != nil {
 		return
@@ -332,15 +352,14 @@ func (s *ExtentStore) Write(extentID uint64, offset, size int64, data []byte, cr
 		log.LogInfof("action[Write] path %v err %v", e.filePath, err)
 		return err
 	}
-	log.LogDebugf("action[Write] extentID %v offset %v size %v writeTYPE %v", extentID, offset, size, writeType)
+
 	err = e.Write(data, offset, size, crc, writeType, isSync, s.PersistenceBlockCrc, ei)
 	if err != nil {
 		log.LogInfof("action[Write] path %v err %v", e.filePath, err)
 		return err
 	}
-	log.LogDebugf("action[Write] extentID %v offset %v size %v writeTYPE %v", extentID, offset, size, writeType)
+
 	ei.UpdateExtentInfo(e, 0)
-	log.LogDebugf("action[Write] extentID %v offset %v size %v writeTYPE %v", extentID, offset, size, writeType)
 	return nil
 }
 
@@ -505,6 +524,12 @@ func (s *ExtentStore) Close() {
 	s.normalExtentDeleteFp.Close()
 	s.verifyExtentFp.Sync()
 	s.verifyExtentFp.Close()
+	for _, vFp := range s.verifyExtentFpAppend {
+		if vFp != nil {
+			vFp.Sync()
+			vFp.Close()
+		}
+	}
 	s.closed = true
 }
 
@@ -949,6 +974,32 @@ func (s *ExtentStore) loadExtentFromDisk(extentID uint64, putCache bool) (e *Ext
 		if _, err = s.verifyExtentFp.ReadAt(e.header, int64(extentID*util.BlockHeaderSize)); err != nil && err != io.EOF {
 			return
 		}
+		emptyHeader := make([]byte, util.BlockHeaderSize)
+		log.LogDebugf("loadExtentFromDisk. partition id %v extentId %v, snapshotOff %v, append fp cnt %v",
+			s.partitionID, extentID, e.snapshotDataOff, len(s.verifyExtentFpAppend))
+		if e.snapshotDataOff > util.ExtentSize {
+			for id, vFp := range s.verifyExtentFpAppend {
+				if uint64(id) > (e.snapshotDataOff-util.ExtentSize) / util.ExtentSize {
+					log.LogDebugf("loadExtentFromDisk. partition id %v extentId %v, snapshotOff %v id %v out of extent range",
+						s.partitionID, extentID, e.snapshotDataOff,id)
+					break
+				}
+				log.LogDebugf("loadExtentFromDisk. partition id %v extentId %v, snapshotOff %v id %v", s.partitionID, extentID, e.snapshotDataOff,id)
+				header := make([]byte, util.BlockHeaderSize)
+				if _, err = vFp.ReadAt(header, int64(extentID*util.BlockHeaderSize)); err != nil && err != io.EOF {
+					log.LogDebugf("loadExtentFromDisk. partition id %v extentId %v, read at %v err %v",
+						s.partitionID, extentID, extentID*util.BlockHeaderSize, err)
+					return
+				}
+				if bytes.Equal(emptyHeader, header) {
+					log.LogErrorf("loadExtentFromDisk. partition id %v extent %v hole at id %v", s.partitionID, e, id)
+				}
+				e.header = append(e.header, header...)
+			}
+			if len(s.verifyExtentFpAppend) < int(e.snapshotDataOff-1)/util.ExtentSize {
+				log.LogErrorf("loadExtentFromDisk. extent %v need fp %v out of range %v", e, int(e.snapshotDataOff-1)/util.ExtentSize, len(s.verifyExtentFpAppend))
+			}
+		}
 	}
 
 	err = nil
@@ -969,7 +1020,13 @@ func (s *ExtentStore) ScanBlocks(extentID uint64) (bcs []*BlockCrc, err error) {
 	if err != nil {
 		return bcs, err
 	}
-	blockCnt = int(e.Size() / util.BlockSize)
+
+	extSize := e.Size()
+	if e.snapshotDataOff > util.ExtentSize {
+		extSize = int64(e.snapshotDataOff)
+	}
+	blockCnt = int(extSize / util.BlockSize)
+
 	if e.Size()%util.BlockSize != 0 {
 		blockCnt += 1
 	}
