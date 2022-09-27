@@ -86,6 +86,14 @@ func MergeSplitKey(inodeID uint64, ekRefMap *sync.Map, sMap *sync.Map) (err erro
 	return
 }
 
+func (k *ExtentKey) IsEqual(rightKey *ExtentKey) bool {
+	//	return false
+	return k.PartitionId==rightKey.PartitionId &&
+		k.ExtentId == rightKey.ExtentId &&
+		k.VerSeq == rightKey.VerSeq &&
+		k.ExtentOffset == rightKey.ExtentOffset &&
+		k.FileOffset == rightKey.FileOffset
+}
 
 func (k *ExtentKey) IsSequence(rightKey *ExtentKey) bool {
 //	return false

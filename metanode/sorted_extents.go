@@ -161,7 +161,7 @@ func storeEkSplit(inodeID uint64, ekRef *sync.Map, ek *proto.ExtentKey) (id uint
 func (se *SortedExtents) SplitWithCheck(inodeID uint64, ekSplit proto.ExtentKey, ekRef *sync.Map) (delExtents []proto.ExtentKey, status uint8) {
 	status = proto.OpOk
 	endOffset := ekSplit.FileOffset + uint64(ekSplit.Size)
-	log.LogDebugf("SplitWithCheck. inode %v  ekSplit ek %v ekRef %v", inodeID, ekSplit, ekRef)
+	log.LogDebugf("SplitWithCheck. inode %v  ekSplit ek %v", inodeID, ekSplit)
 	se.Lock()
 	defer se.Unlock()
 
@@ -186,33 +186,23 @@ func (se *SortedExtents) SplitWithCheck(inodeID uint64, ekSplit proto.ExtentKey,
 	}
 
 	var startIndex int
-	invalidExtents := make([]proto.ExtentKey, 0)
 	for idx, key := range se.eks {
 		if ekSplit.FileOffset >= key.FileOffset {
 			startIndex = idx + 1
 			continue
 		}
 		if endOffset >= key.FileOffset+uint64(key.Size) {
-			invalidExtents = append(invalidExtents, key)
 			continue
 		}
 		break
 	}
+
 	if startIndex == 0 {
 		status = proto.OpArgMismatchErr
 		log.LogErrorf("SplitWithCheck. inode %v should have no valid extent request [%v]", inodeID, ekSplit)
 		return
 	}
-	// Makes the request idempotent, just in case client retries.
-	if len(invalidExtents) == 1  {
-		if invalidExtents[0] == ekSplit {
-			return
-		}
-		status = proto.OpArgMismatchErr
-		log.LogErrorf("SplitWithCheck. inode %v  should have no invalid extent [%v] request [%v]", inodeID,
-			invalidExtents[0].String(), ekSplit)
-		return
-	}
+
 	key := &se.eks[startIndex-1]
 	if !storage.IsTinyExtent(key.ExtentId) && (key.PartitionId != ekSplit.PartitionId || key.ExtentId != ekSplit.ExtentId) {
 		status = proto.OpArgMismatchErr
@@ -226,6 +216,16 @@ func (se *SortedExtents) SplitWithCheck(inodeID uint64, ekSplit proto.ExtentKey,
 		storeEkSplit(inodeID, ekRef, key)
 	}
 
+	if ekSplit.FileOffset + uint64(ekSplit.Size) > key.FileOffset + uint64(key.Size) {
+		status = proto.OpArgMismatchErr
+		log.LogErrorf("SplitWithCheck. inode %v request [%v] out scope of exist key [%v]", inodeID, ekSplit, key)
+		return
+	}
+	// Makes the request idempotent, just in case client retries.
+	if ekSplit.IsEqual(key) {
+		log.LogWarnf("SplitWithCheck. request key %v is a repeat request [%v]", key)
+		return
+	}
 
 	delKey := *key
 	delKey.ExtentOffset = key.ExtentOffset + (ekSplit.FileOffset-key.FileOffset)
