@@ -1150,8 +1150,11 @@ func (i *Inode) getAndDelVer(dVer uint64, mpVer uint64, verlist *proto.VolVersio
 	tailVer,_ := i.getTailVerInList()
 	// delete snapshot version
 	if dVer == math.MaxUint64 || dVer == tailVer {
+		if dVer == math.MaxUint64 {
+			dVer = 0
+		}
 		inode := i.multiVersions[inoVerLen-1]
-		if inode.verSeq != 0 && inode.verSeq != tailVer {
+		if inode.verSeq != dVer {
 			log.LogDebugf("action[getAndDelVer] ino %v idx %v is %v and cann't be dropped tail  ver %v",
 				i.Inode, inoVerLen-1, inode.verSeq, tailVer)
 			return
