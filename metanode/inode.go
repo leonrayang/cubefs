@@ -1477,19 +1477,19 @@ func (i *Inode) DecSplitExts(delExtents interface{}) () {
 }
 
 func (i *Inode) DecSplitEk(ext *proto.ExtentKey) (ok bool, last bool) {
-	log.LogDebugf("DecSplitEk inode %v mp %v extent id %v.key %v ext %v", i.Inode, ext.PartitionId, ext.ExtentId,
+	log.LogDebugf("DecSplitEk inode %v dp %v extent id %v.key %v ext %v", i.Inode, ext.PartitionId, ext.ExtentId,
 		ext.PartitionId<<32|ext.ExtentId, ext)
 
 	if val, ok := i.ekRefMap.Load(ext.PartitionId<<32|ext.ExtentId); !ok {
-		log.LogErrorf("DecSplitEk. mp %v inode [%v] ext not found", ext.PartitionId, i.Inode)
+		log.LogErrorf("DecSplitEk. dp %v inode [%v] ext not found", ext.PartitionId, i.Inode)
 		return false, false
 	} else {
 		if val.(uint32) == 0 {
-			log.LogErrorf("DecSplitEk. mp %v inode [%v] ek ref is zero!", ext.PartitionId, i.Inode)
+			log.LogErrorf("DecSplitEk. dp %v inode [%v] ek ref is zero!", ext.PartitionId, i.Inode)
 			return false, false
 		}
 		if val.(uint32) == 1 {
-			log.LogDebugf("DecSplitEk inode %v mp %v extent id %v.key %v", i.Inode, ext.PartitionId, ext.ExtentId,
+			log.LogDebugf("DecSplitEk inode %v dp %v extent id %v.key %v", i.Inode, ext.PartitionId, ext.ExtentId,
 				ext.PartitionId<<32|ext.ExtentId)
 			i.ekRefMap.Delete(ext.PartitionId<<32|ext.ExtentId)
 			return true, true
