@@ -920,7 +920,6 @@ func (inode *Inode) dirUnlinkVerInlist(ino *Inode, mpVer uint64, verlist *proto.
 	var dIno *Inode
 	status = proto.OpOk
 	if dIno, idxWithTopLayer = inode.getInoByVer(ino.verSeq, false); dIno == nil {
-		status = proto.OpNotExistErr
 		log.LogDebugf("action[dirUnlinkVerInlist] ino %v not found", ino)
 		return
 	}
