@@ -138,6 +138,8 @@ func (inode *Inode) GetAllExtsOfflineInode(mpID uint64) (extInfo map[uint64][]*p
 
 				log.LogDebugf("deleteMarkedInodes. mp %v inode [%v] ek %v be removed", mpID, inode.Inode, ext)
 				ext.IsSplit = false
+				ext.ExtentOffset = 0
+				ext.Size = 0
 			}
 			extInfo[ext.PartitionId] = append(extInfo[ext.PartitionId], ext)
 			log.LogWritef("mp(%v) ino(%v) deleteExtent(%v)", mpID, inode.Inode, ext.String())
