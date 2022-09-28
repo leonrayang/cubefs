@@ -76,11 +76,15 @@ func MergeSplitKey(inodeID uint64, ekRefMap *sync.Map, sMap *sync.Map) (err erro
 	}
 	sMap.Range(func(id, value interface{}) bool {
 		dpID, extID := ParseFromId(id.(uint64))
-		val,_ := ekRefMap.Load(id)
+		nVal := uint32(0)
+		val,ok := ekRefMap.Load(id)
+		if ok {
+			nVal = val.(uint32)
+		}
 		log.LogDebugf("UnmarshalInodeValue inode %v get splitID %v dp id %v extentid %v, refCnt %v, add %v",
-			inodeID, id.(uint64), dpID, extID, value.(uint32), val.(uint32))
+			inodeID, id.(uint64), dpID, extID, value.(uint32), nVal)
 
-		ekRefMap.Store(id, val.(uint32) + value.(uint32))
+		ekRefMap.Store(id, nVal + value.(uint32))
 		return true
 	})
 	return
