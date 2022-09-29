@@ -38,7 +38,7 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 	forceUpdate bool) (status uint8) {
 	status = proto.OpOk
 	item := mp.inodeTree.CopyGet(NewInode(dentry.ParentId, 0))
-	log.LogDebugf("action[fsmCreateDentry] ParentId [%v] get nil, dentry name [%v], inode [%v], verseq [%v]", dentry.ParentId, dentry.Name, dentry.Inode, dentry.VerSeq)
+	log.LogDebugf("action[fsmCreateDentry] ParentId [%v], dentry name [%v], inode [%v], verseq [%v]", dentry.ParentId, dentry.Name, dentry.Inode, dentry.VerSeq)
 	var parIno *Inode
 	if !forceUpdate {
 		if item == nil {
@@ -162,8 +162,9 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 		})
 	} else {
 		log.LogDebugf("action[fsmDeleteDentry] denParm dentry %v", denParm)
+
 		if mp.verSeq == 0 {
-			item = mp.dentryTree.tree.Delete(denParm)
+			item = mp.dentryTree.Delete(denParm)
 		} else {
 			item = mp.dentryTree.Get(denParm)
 			if item != nil {
