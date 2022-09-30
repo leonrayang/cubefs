@@ -111,6 +111,7 @@ const (
 	quotaKey                = "quotaId"
 	dpDiscardKey            = "dpDiscard"
 	verSeqKey               = "verSeq"
+	Periodic                = "periodic"
 )
 
 const (

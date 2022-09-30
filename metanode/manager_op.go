@@ -1007,14 +1007,14 @@ func (m *metadataManager) opMetaLookup(conn net.Conn, p *Packet,
 	req := &proto.LookupRequest{}
 	if err = json.Unmarshal(p.Data, req); err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
-		m.respondToClientWithVer(conn, p)
+		m.respondToClient(conn, p)
 		err = errors.NewErrorf("[%v] req: %v, resp: %v", p.GetOpMsgWithReqAndResult(), req, err.Error())
 		return
 	}
 	mp, err := m.getPartition(req.PartitionID)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
-		m.respondToClientWithVer(conn, p)
+		m.respondToClient(conn, p)
 		err = errors.NewErrorf("[%v] req: %v, resp: %v", p.GetOpMsgWithReqAndResult(), req, err.Error())
 		return
 	}
@@ -1022,7 +1022,7 @@ func (m *metadataManager) opMetaLookup(conn net.Conn, p *Packet,
 		return
 	}
 	err = mp.Lookup(req, p)
-	m.respondToClientWithVer(conn, p)
+	m.respondToClient(conn, p)
 	log.LogDebugf("%s [opMetaLookup] req: %d - %v, resp: %v, body: %s",
 		remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data)
 	return
@@ -1131,14 +1131,14 @@ func (m *metadataManager) opMetaObjExtentsList(conn net.Conn, p *Packet,
 	req := &proto.GetExtentsRequest{}
 	if err = json.Unmarshal(p.Data, req); err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
-		m.respondToClientWithVer(conn, p)
+		m.respondToClient(conn, p)
 		err = errors.NewErrorf("[%v] req: %v, resp: %v", p.GetOpMsgWithReqAndResult(), req, err.Error())
 		return
 	}
 	mp, err := m.getPartition(req.PartitionID)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
-		m.respondToClientWithVer(conn, p)
+		m.respondToClient(conn, p)
 		err = errors.NewErrorf("[%v] req: %v, resp: %v", p.GetOpMsgWithReqAndResult(), req, err.Error())
 		return
 	}
@@ -1147,7 +1147,7 @@ func (m *metadataManager) opMetaObjExtentsList(conn net.Conn, p *Packet,
 	}
 
 	err = mp.ObjExtentsList(req, p)
-	m.respondToClientWithVer(conn, p)
+	m.respondToClient(conn, p)
 	log.LogDebugf("%s [opMetaObjExtentsList] req: %d - %v; resp: %v, body: %s",
 		remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data)
 	return
@@ -1956,14 +1956,14 @@ func (m *metadataManager) opRemoveMultipart(conn net.Conn, p *Packet, remote str
 
 	if err = json.Unmarshal(p.Data, req); err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
-		m.respondToClientWithVer(conn, p)
+		m.respondToClient(conn, p)
 		err = errors.NewErrorf("[%v] req: %v, resp: %v", p.GetOpMsgWithReqAndResult(), req, err.Error())
 		return
 	}
 	mp, err := m.getPartition(req.PartitionId)
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
-		m.respondToClientWithVer(conn, p)
+		m.respondToClient(conn, p)
 		err = errors.NewErrorf("[%v] req: %v, resp: %v", p.GetOpMsgWithReqAndResult(), req, err.Error())
 		return
 	}
@@ -1971,7 +1971,7 @@ func (m *metadataManager) opRemoveMultipart(conn net.Conn, p *Packet, remote str
 		return
 	}
 	err = mp.RemoveMultipart(req, p)
-	_ = m.respondToClientWithVer(conn, p)
+	_ = m.respondToClient(conn, p)
 	return
 }
 
