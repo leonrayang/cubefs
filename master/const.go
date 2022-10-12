@@ -88,6 +88,7 @@ const (
 	ClientTriggerCnt        = "triggerCnt"
 	QosMasterLimit          = "qosLimit"
 	verSeqKey               = "verSeq"
+	Periodic                = "periodic"
 )
 
 const (

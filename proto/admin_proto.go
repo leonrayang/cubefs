@@ -15,6 +15,7 @@
 package proto
 
 import "github.com/cubefs/cubefs/util"
+import "time"
 
 // api
 const (
@@ -115,6 +116,7 @@ const (
 	AdminGetVersionInfo    = "/multiVer/get"
 	AdminGetAllVersionInfo = "/multiVer/getAll"
 	AdminGetVolVer         = "/vol/getVer"
+	AdminSetVerStrategy    = "/vol/SetVerStrategy"
 
 	// S3 lifecycle configuration APIS
 	SetBucketLifecycle    = "/s3/setLifecycle"
@@ -167,6 +169,13 @@ type HTTPReply struct {
 // RegisterMetaNodeResp defines the response to register a meta node.
 type RegisterMetaNodeResp struct {
 	ID uint64
+}
+
+type VolumeVerStrategy struct {
+	KeepVerCnt int
+	Periodic   int
+	Enable     bool
+	UTime      time.Time
 }
 
 type VolumeVerInfo struct {
