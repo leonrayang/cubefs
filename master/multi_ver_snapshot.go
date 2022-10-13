@@ -211,6 +211,7 @@ func (verMgr *VolVersionManager) checkSnapshotStrategy() {
 		if _, err := verMgr.createVer2PhaseTask(verMgr.c, uint64(time.Now().Unix()), proto.CreateVersion, false); err != nil {
 			return
 		}
+		verMgr.strategy.UTime = time.Now()
 	}
 
 	verMgr.RLock()
