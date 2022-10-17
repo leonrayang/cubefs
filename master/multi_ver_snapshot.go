@@ -212,6 +212,7 @@ func (verMgr *VolVersionManager) checkSnapshotStrategy() {
 			return
 		}
 		verMgr.strategy.UTime = time.Now()
+		verMgr.Persist()
 	}
 
 	verMgr.RLock()
