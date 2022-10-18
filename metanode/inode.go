@@ -901,6 +901,10 @@ func (inode* Inode) unlinkTopLayer(ino *Inode, mpVer uint64, verlist *proto.VolV
 
 		ver, err := inode.getNextOlderVer(mpVer, verlist)
 		if err != nil {
+			if err.Error() == "not found" {
+				inode.DecNLink()
+				doMore = true
+			}
 			log.LogErrorf("action[unlinkTopLayer] inode %v cann't get next older ver %v err %v", inode.Inode, mpVer, err)
 			return
 		}
@@ -1234,8 +1238,8 @@ func (i *Inode) getNextOlderVer(ver uint64, verlist *proto.VolVersionInfoList) (
 			return  verlist.VerList[idx-1].Ver, nil
 		}
 	}
-	log.LogDebugf("getNextOlderVer inode %v ver %v not found", i.Inode, ver)
-	return 0, fmt.Errorf("not found")
+	log.LogErrorf("getNextOlderVer inode %v ver %v not found", i.Inode, ver)
+	return 0, fmt.Errorf("version not exist")
 }
 
 func (i *Inode) CreateUnlinkVer(mpVer uint64, nVer uint64) {
