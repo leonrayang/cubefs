@@ -293,7 +293,11 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 		p.PacketErrorWithBody(proto.OpNotExistErr, []byte(err.Error()))
 		return
 	}
+
 	log.LogDebugf("action[UnlinkInode] ino %v submit", ino)
+	if req.DenVerSeq == item.(*Inode).verSeq {
+		ino.Flag |= InodeDelTop
+	}
 
 	val, err := ino.Marshal()
 	if err != nil {

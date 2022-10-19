@@ -1160,7 +1160,7 @@ func (c *Cluster) putVol(vol *Vol) {
 	}
 }
 
-func (c *Cluster) SetVerStrategy(volName string, strategy proto.VolumeVerStrategy) (err error) {
+func (c *Cluster) SetVerStrategy(volName string, strategy proto.VolumeVerStrategy, isForce bool) (err error) {
 	c.volMutex.RLock()
 	defer c.volMutex.RUnlock()
 
@@ -1174,7 +1174,7 @@ func (c *Cluster) SetVerStrategy(volName string, strategy proto.VolumeVerStrateg
 		err = fmt.Errorf("vol need be hot one")
 		return
 	}
-	return vol.VersionMgr.SetVerStrategy(strategy)
+	return vol.VersionMgr.SetVerStrategy(strategy, isForce)
 }
 
 func (c *Cluster) getVolVer(volName string) (info *proto.VolumeVerInfo, err error) {
