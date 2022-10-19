@@ -175,6 +175,7 @@ type VolumeVerStrategy struct {
 	KeepVerCnt int
 	Periodic   int
 	Enable     bool
+	ForceUpdate  bool
 	UTime      time.Time
 }
 

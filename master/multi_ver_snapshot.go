@@ -189,6 +189,7 @@ func (verMgr *VolVersionManager) SetVerStrategy(strategy proto.VolumeVerStrategy
 		}
 		verMgr.strategy.KeepVerCnt = strategy.KeepVerCnt
 		verMgr.strategy.Periodic = strategy.Periodic
+		verMgr.strategy.ForceUpdate = strategy.ForceUpdate
 	}
 
 	verMgr.strategy.Enable = strategy.Enable
@@ -208,7 +209,7 @@ func (verMgr *VolVersionManager) checkSnapshotStrategy() {
 
 	if verMgr.strategy.UTime.Add(time.Hour*time.Duration(verMgr.strategy.Periodic)).Before(time.Now()) {
 		log.LogDebugf("checkSnapshotStrategy.vol %v try create snapshot", verMgr.vol.Name)
-		if _, err := verMgr.createVer2PhaseTask(verMgr.c, uint64(time.Now().Unix()), proto.CreateVersion, false); err != nil {
+		if _, err := verMgr.createVer2PhaseTask(verMgr.c, uint64(time.Now().Unix()), proto.CreateVersion, verMgr.strategy.ForceUpdate); err != nil {
 			return
 		}
 		verMgr.strategy.UTime = time.Now()
@@ -225,7 +226,7 @@ func (verMgr *VolVersionManager) checkSnapshotStrategy() {
 			return
 		}
 		verMgr.RUnlock()
-		if _, err := verMgr.createVer2PhaseTask(verMgr.c, verMgr.multiVersionList[0].Ver, proto.DeleteVersion, false); err != nil {
+		if _, err := verMgr.createVer2PhaseTask(verMgr.c, verMgr.multiVersionList[0].Ver, proto.DeleteVersion, verMgr.strategy.ForceUpdate); err != nil {
 			return
 		}
 		return

@@ -146,6 +146,11 @@ func parseVolVerStrategy(r *http.Request) (strategy proto.VolumeVerStrategy, err
 		log.LogErrorf("parseVolVerStrategy. strategy.Enable %v strategy %v", strategy.Enable, strategy)
 		return
 	}
+
+	if value = r.FormValue(forceKey); value != "" {
+		strategy.ForceUpdate, _ = strconv.ParseBool(value)
+	}
+
 	log.LogDebugf("parseVolVerStrategy. strategy %v", strategy)
 	return
 }
