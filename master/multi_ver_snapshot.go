@@ -175,7 +175,7 @@ func (verMgr *VolVersionManager) DelVer(verSeq uint64) (err error){
 	return
 }
 
-func (verMgr *VolVersionManager) SetVerStrategy(strategy proto.VolumeVerStrategy)  (err error) {
+func (verMgr *VolVersionManager) SetVerStrategy(strategy proto.VolumeVerStrategy, isForce bool)  (err error) {
 	verMgr.Lock()
 	defer verMgr.Unlock()
 
@@ -183,13 +183,19 @@ func (verMgr *VolVersionManager) SetVerStrategy(strategy proto.VolumeVerStrategy
 		strategy.KeepVerCnt, MaxSnapshotCount, strategy.Periodic, 24*7, strategy.Enable)
 
 	if strategy.Enable == true {
-		if strategy.KeepVerCnt == 0 || strategy.Periodic == 0 || strategy.KeepVerCnt > MaxSnapshotCount || strategy.Periodic > 24*7 {
+		if strategy.KeepVerCnt > MaxSnapshotCount || strategy.Periodic > 24*7 || strategy.KeepVerCnt < 0 || strategy.Periodic < 0{
 			return fmt.Errorf("SetVerStrategy.vol %v keepCnt %v need in [1-%v], peroidic %v need in [1-%v] not qualified",
 				verMgr.vol.Name, strategy.KeepVerCnt, MaxSnapshotCount, strategy.Periodic, 24*7)
 		}
-		verMgr.strategy.KeepVerCnt = strategy.KeepVerCnt
-		verMgr.strategy.Periodic = strategy.Periodic
-		verMgr.strategy.ForceUpdate = strategy.ForceUpdate
+		if strategy.KeepVerCnt != 0 {
+			verMgr.strategy.KeepVerCnt = strategy.KeepVerCnt
+		}
+		if strategy.Periodic != 0 {
+			verMgr.strategy.Periodic = strategy.Periodic
+		}
+		if isForce {
+			verMgr.strategy.ForceUpdate = strategy.ForceUpdate
+		}
 	}
 
 	verMgr.strategy.Enable = strategy.Enable

@@ -125,7 +125,7 @@ func parseVolName(r *http.Request) (name string, err error) {
 	return
 }
 
-func parseVolVerStrategy(r *http.Request) (strategy proto.VolumeVerStrategy, err error) {
+func parseVolVerStrategy(r *http.Request) (strategy proto.VolumeVerStrategy, isForce bool, err error) {
 	var value string
 	if value = r.FormValue(enableKey); value == "" {
 		strategy.Enable = true
@@ -148,6 +148,7 @@ func parseVolVerStrategy(r *http.Request) (strategy proto.VolumeVerStrategy, err
 	}
 
 	if value = r.FormValue(forceKey); value != "" {
+		isForce = true
 		strategy.ForceUpdate, _ = strconv.ParseBool(value)
 	}
 
