@@ -206,6 +206,7 @@ func (verMgr *VolVersionManager) SetVerStrategy(strategy proto.VolumeVerStrategy
 }
 
 func (verMgr *VolVersionManager) checkSnapshotStrategy() {
+	log.LogDebugf("checkSnapshotStrategy enter")
 	verMgr.RLock()
 	if verMgr.strategy.Periodic == 0 || verMgr.strategy.Enable == false { // strategy not be set
 		verMgr.RUnlock()
@@ -221,10 +222,12 @@ func (verMgr *VolVersionManager) checkSnapshotStrategy() {
 		verMgr.strategy.UTime = time.Now()
 		verMgr.Persist()
 	}
-
+	log.LogDebugf("checkSnapshotStrategy.vol %v try delete snapshot nLen %v, keep cnt %v", verMgr.vol.Name, len(verMgr.multiVersionList)-1, verMgr.strategy.KeepVerCnt)
 	verMgr.RLock()
 	nLen := len(verMgr.multiVersionList)
-	if nLen-1 >  int(verMgr.strategy.KeepVerCnt) {
+	log.LogDebugf("checkSnapshotStrategy.vol %v try delete snapshot nLen %v, keep cnt %v", verMgr.vol.Name, len(verMgr.multiVersionList)-1, verMgr.strategy.KeepVerCnt)
+	if nLen-1 > verMgr.strategy.KeepVerCnt {
+		log.LogDebugf("checkSnapshotStrategy.vol %v try delete snapshot nLen %v, keep cnt %v", verMgr.vol.Name, nLen-1, verMgr.strategy.KeepVerCnt)
 		if verMgr.multiVersionList[0].Status != proto.VersionNormal {
 			log.LogDebugf("checkSnapshotStrategy.vol %v oldest ver %v status %v",
 				verMgr.vol.Name, verMgr.multiVersionList[0].Ver, verMgr.multiVersionList[0].Status)
