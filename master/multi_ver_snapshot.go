@@ -207,7 +207,7 @@ func (verMgr *VolVersionManager) checkSnapshotStrategy() {
 	}
 	verMgr.RUnlock()
 
-	if verMgr.strategy.UTime.Add(time.Hour*time.Duration(verMgr.strategy.Periodic)).Before(time.Now()) {
+	if verMgr.strategy.UTime.Add(time.Minute*time.Duration(verMgr.strategy.Periodic)).Before(time.Now()) {
 		log.LogDebugf("checkSnapshotStrategy.vol %v try create snapshot", verMgr.vol.Name)
 		if _, err := verMgr.createVer2PhaseTask(verMgr.c, uint64(time.Now().Unix()), proto.CreateVersion, verMgr.strategy.ForceUpdate); err != nil {
 			return
