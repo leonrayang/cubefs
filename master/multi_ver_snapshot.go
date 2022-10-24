@@ -635,7 +635,6 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 				log.LogInfof("action[createVer2PhaseTask.tick] vol %v verseq %v op %v wait", verMgr.vol.Name, verSeq, verMgr.prepareCommit.op)
 				cnt++
 				if cnt > 5 {
-					verMgr.prepareCommit.reset()
 					verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingTimeOut
 					err = fmt.Errorf("verseq %v op %v be set timeout", verSeq, verMgr.prepareCommit.op)
 					log.LogInfof("action[createVer2PhaseTask] vol %v close lock due to err %v", verMgr.vol.Name, err)
@@ -643,6 +642,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 					if verMgr.prepareCommit.op == proto.CreateVersionCommit {
 						err = nil
 					}
+					verMgr.prepareCommit.reset()
 					return
 				}
 			}
