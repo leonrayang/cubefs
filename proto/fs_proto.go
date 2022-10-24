@@ -195,6 +195,7 @@ type UnlinkInodeRequest struct {
 	PartitionID uint64 `json:"pid"`
 	Inode       uint64 `json:"ino"`
 	VerSeq      uint64 `json:"ver"`
+	DenVerSeq   uint64 `json:"denVer"`
 }
 
 // UnlinkInodeRequest defines the request to unlink an inode.
