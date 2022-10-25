@@ -1389,7 +1389,7 @@ func (i *Inode) AppendExtentWithCheck(
 
 	if mpVer != i.verSeq {
 		log.LogDebugf("action[AppendExtentWithCheck] ver %v inode ver %v", reqVer, i.verSeq)
-		i.CreateVer(reqVer)
+		i.CreateVer(mpVer)
 	}
 
 	i.Lock()
