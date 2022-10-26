@@ -419,7 +419,6 @@ func (c *Cluster) checkSnapshotStrategy() {
 	}
 }
 
-
 func (c *Cluster) doLoadDataPartitions() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -923,7 +922,7 @@ func (c *Cluster) putVol(vol *Vol) {
 	}
 }
 
-func (c *Cluster) SetVerStrategy(volName string, strategy proto.VolumeVerStrategy, isForce bool)  (err error) {
+func (c *Cluster) SetVerStrategy(volName string, strategy proto.VolumeVerStrategy, isForce bool) (err error) {
 	c.volMutex.RLock()
 	defer c.volMutex.RUnlock()
 
@@ -3071,6 +3070,11 @@ func (c *Cluster) addLcNode(nodeAddr string) (id uint64, err error) {
 	if node, ok := c.lcMgr.lcNodes.Load(nodeAddr); ok {
 		ln = node.(*LcNode)
 		return ln.ID, nil
+	}
+
+	if c.lcNodeCount() >= int(c.cfg.MaxConcurrentLcNodes) {
+		err = errors.New("max concurrent LcNodes reached!")
+		goto errHandler
 	}
 
 	ln = newLcNode(nodeAddr, c.Name)
