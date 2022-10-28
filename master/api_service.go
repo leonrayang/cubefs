@@ -3202,8 +3202,8 @@ func (m *Server) SetVerStrategy(w http.ResponseWriter, r *http.Request) {
 	var (
 		err      error
 		name     string
-		strategy  proto.VolumeVerStrategy
-		isForce bool
+		strategy proto.VolumeVerStrategy
+		isForce  bool
 	)
 
 	if name, err = parseVolName(r); err != nil {
@@ -3312,6 +3312,19 @@ func (m *Server) setConLcNodeNum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sendOkReply(w, r, newSuccessHTTPReply(fmt.Sprintf("set MaxConcurrentLcNodes to %v successfully", count)))
+}
+
+func (m *Server) getAllLcNodeInfo(w http.ResponseWriter, r *http.Request) {
+
+	var (
+		rsp *proto.LcNodeInfoResponse
+		err error
+	)
+	if rsp, err = m.cluster.getAllLcNodeInfo(); err != nil {
+		sendErrReply(w, r, newErrHTTPReply(err))
+		return
+	}
+	sendOkReply(w, r, newSuccessHTTPReply(rsp))
 }
 
 // handle tasks such as heartbeat，expiration scanning, etc.
