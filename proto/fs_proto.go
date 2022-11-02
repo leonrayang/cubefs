@@ -33,6 +33,11 @@ const (
 	FlagsCache
 )
 
+const (
+	FlagsVerDel  int = 1 << iota
+	FlagsVerDelDir
+)
+
 // Mode returns the fileMode.
 func Mode(osMode os.FileMode) uint32 {
 	return uint32(osMode)
@@ -531,7 +536,7 @@ type ReadDirLimitRequest struct {
 	Marker      string `json:"marker"`
 	Limit       uint64 `json:"limit"`
 	VerSeq      uint64 `json:"seq"`
-	VerDel      bool   `json:"verDel"`
+	VerOpt      uint8  `json:"VerOpt"`
 }
 
 type ReadDirLimitResponse struct {
