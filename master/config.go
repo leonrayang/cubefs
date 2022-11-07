@@ -77,6 +77,7 @@ const (
 	defaultMasterMinQosAccept                          = 20000
 	defaultIntervalToScanS3Expiration                  = 12 * 3600
 	defaultMaxConcurrentLcNodes                        = 3
+	defaultIntervalToCheckDelVerTaskExpiration         = 3
 )
 
 // AddrDatabase is a map that stores the address of a given host (e.g., the leader)
