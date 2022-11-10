@@ -109,6 +109,7 @@ const (
 	CliFlagVersionCreate = "verCreate"
 	CliFlagVersionList   = "verList"
 	CliFlagVersionDel    = "verDel"
+	CliFlagVersionSetStrategy    = "verSetStrategy"
 )
 
 type MasterOp int

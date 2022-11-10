@@ -12,6 +12,7 @@ const (
 	cmdVersionCreateShort = "create volume version"
 	cmdVersionDelShort = "del volume version"
 	cmdVersionListShort = "list volume version"
+	cmdVersionSetStrategyShort = "set volume version strategy"
 )
 func newVersionCmd(client *master.MasterClient) *cobra.Command {
 	var cmd = &cobra.Command{
@@ -24,6 +25,7 @@ func newVersionCmd(client *master.MasterClient) *cobra.Command {
 		newVersionCreateCmd(client),
 		newVersionDelCmd(client),
 		newVersionListCmd(client),
+		newVersionStrategyCmd(client),
 	)
 	return cmd
 }
@@ -35,6 +37,10 @@ func newVersionCreateCmd(client *master.MasterClient) *cobra.Command {
 		Short:   cmdVersionCreateShort,
 		Aliases: []string{"create"},
 		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) == 0 {
+				stdout("need volume name\n")
+				return
+			}
 			var verList *proto.VolVersionInfoList
 			var volumeName = args[0]
 			var err error
@@ -71,6 +77,10 @@ func newVersionListCmd(client *master.MasterClient) *cobra.Command {
 			var volumeName = args[0]
 			var verList *proto.VolVersionInfoList
 			var err error
+			if len(args) == 0 {
+				stdout("need volume name\n")
+				return
+			}
 			defer func() {
 				if err != nil {
 					errout("Error: %v", err)
@@ -96,13 +106,46 @@ func newVersionDelCmd(client *master.MasterClient) *cobra.Command {
 		Short:   cmdVersionDelShort,
 		Aliases: []string{"create"},
 		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) <= 1 {
+				stdout("USAGE:./cfs-cli version verCreate volName verSeq\n")
+				return
+			}
+
 			var err error
 			defer func() {
 				if err != nil {
 					errout("Error: %v", err)
 				}
 			}()
-			if err = client.AdminAPI().DeleteVersion(optKeyword); err != nil {
+			if err = client.AdminAPI().DeleteVersion(args[0], args[1]); err != nil {
+				return
+			}
+		},
+	}
+	cmd.Flags().StringVar(&optKeyword, "keyword", "", "Specify keyword of volume name to filter")
+	return cmd
+}
+
+
+func newVersionStrategyCmd(client *master.MasterClient) *cobra.Command {
+	var optKeyword string
+	var cmd = &cobra.Command{
+		Use:     CliFlagVersionSetStrategy,
+		Short:   cmdVersionSetStrategyShort,
+		Aliases: []string{"create"},
+		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) <= 3 {
+				stdout("USAGE:./cfs-cli version verSetStrategy volName periodic count enable isForce\n")
+				return
+			}
+
+			var err error
+			defer func() {
+				if err != nil {
+					errout("Error: %v", err)
+				}
+			}()
+			if err = client.AdminAPI().SetStrategy(args[0], args[1], args[2], args[3], args[4]); err != nil {
 				return
 			}
 		},
