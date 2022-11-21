@@ -510,6 +510,7 @@ func (mp *metaPartition) acucumUidSizeByStore(ino *Inode) {
 func (mp *metaPartition) acucumUidSizeByLoad(ino *Inode) {
 	mp.uidManager.accumInoUidSize(ino, mp.uidManager.accumBase)
 }
+
 func (mp *metaPartition) getVerList() []*proto.VolVersionInfo {
 	mp.multiVersionList.RLock()
 	defer mp.multiVersionList.RUnlock()

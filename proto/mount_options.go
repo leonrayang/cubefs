@@ -155,6 +155,7 @@ func InitMountOptions(opts []MountOption) {
 	opts[EnableAudit] = MountOption{"enableAudit", "enable client audit logging", "", false}
 	opts[RequestTimeout] = MountOption{"requestTimeout", "The Request Expiration Time", "", int64(0)}
 	opts[SnapshotReadVerSeq] = MountOption{"snapshotReadSeq", "Snapshot read seq", "", int64(0)} //default false
+
 	for i := 0; i < MaxMountOption; i++ {
 		flag.StringVar(&opts[i].cmdlineValue, opts[i].keyword, "", opts[i].description)
 	}
