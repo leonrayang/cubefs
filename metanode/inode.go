@@ -98,12 +98,6 @@ func (i *Inode) getTailVerInList() (verSeq uint64, found bool) {
 	return 0, false
 }
 
-type SplitExtentInfo struct {
-	PartitionId  uint64
-	ExtentId     uint64
-	refCnt		 uint64
-}
-
 // freelist clean inode get all exist extents info, deal special case for split key
 func (inode *Inode) GetAllExtsOfflineInode(mpID uint64) (extInfo map[uint64][]*proto.ExtentKey){
 
