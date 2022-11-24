@@ -32,10 +32,10 @@ const (
 )
 var cfgJSON = `{
 		"role": "meta",
-		"logDir": "/tmp/chubaofs/Logs",
+		"logDir": "/tmp/cubefs/Logs",
 		"logLevel":"debug",
-		"walDir":"/tmp/chubaofs/raft",
-		"clusterName":"chubaofs"
+		"walDir":"/tmp/cubefs/raft",
+		"clusterName":"cubefs"
 	}`
 var tlog *testing.T
 func tLogf(format string, args ...interface{}) {
@@ -70,7 +70,7 @@ func init() {
 	os.RemoveAll(logDir)
 
 	if _, err := log.InitLog(logDir, "metanode", log.DebugLevel, nil); err != nil {
-		fmt.Println("Fatal: failed to start the chubaofs daemon - ", err)
+		fmt.Println("Fatal: failed to start the cubefs daemon - ", err)
 		return
 	}
 	log.LogDebugf("action start")
