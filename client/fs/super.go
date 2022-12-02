@@ -81,6 +81,9 @@ type Super struct {
 	bc             *bcache.BcacheClient
 	ebsc           *blobstore.BlobStoreClient
 	sc             *SummaryCache
+
+	SuperMap *sync.Map
+	MountOpt proto.MountOptions
 }
 
 // Functions that Super needs to implement
@@ -106,6 +109,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 		MetaSendTimeout: opt.MetaSendTimeout,
 		VerReadSeq:    opt.VerReadSeq,
 	}
+	log.LogDebugf("NewSuper verReadSeq %v", opt.VerReadSeq)
 	s.mw, err = meta.NewMetaWrapper(metaConfig)
 	if err != nil {
 		return nil, errors.Trace(err, "NewMetaWrapper failed!"+err.Error())

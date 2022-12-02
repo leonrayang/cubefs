@@ -15,9 +15,12 @@
 package fs
 
 import (
+	"github.com/cubefs/cubefs/sdk/master"
 	"io"
+	"math"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -123,6 +126,100 @@ func NewDir(s *Super, i *proto.InodeInfo, pino uint64, dirName string) fs.Node {
 	}
 }
 
+func buildSuperSnapshot(super *Super, opt *proto.MountOptions) (err error){
+	var mc = master.NewMasterClientFromString(opt.Master, false)
+	var (
+		superTmp *Super
+		verList *proto.VolVersionInfoList
+	)
+
+	verList, err = mc.AdminAPI().GetVerList(opt.Volname)
+	if err != nil {
+		log.LogErrorf("buildSuperSnapshot error %v", err)
+		return
+	}
+	log.LogInfof("buildSuperSnapshot VerList len %v", len(verList.VerList))
+	for id, ver := range verList.VerList {
+		if id == len(verList.VerList)-1 {
+			continue
+		}
+		var optTmp proto.MountOptions
+		optTmp = *opt
+		optTmp.VerReadSeq = ver.Ver
+		if ver.Ver == 0 {
+			optTmp.VerReadSeq = math.MaxUint64
+		}
+		superTmp, err = NewSuper(&optTmp)
+		if err != nil {
+			log.LogErrorf("buildSuperSnapshot NewSuper error %v", err)
+			return
+		}
+		superTmp.SuperMap = super.SuperMap
+		log.LogDebugf("buildSuperSnapshot store seq(%v):super(%v)", optTmp.VerReadSeq, superTmp)
+		super.SuperMap.Store(optTmp.VerReadSeq, superTmp)
+	}
+	return
+}
+
+func (d *Dir) checkSnapshotDir(){
+	if strings.Contains(d.name, ".snapshot") {
+		log.LogDebugf("checkSnapshotDir. dir name %v d parino %v", d.name, d.parentIno)
+	}
+	var (
+		reqVer uint64
+		retryTimes int
+		err error
+	)
+
+	if d.parentIno == 1 && strings.Contains(d.name, ".snapshot") {
+		strArr := strings.Split(d.name, "_")
+		log.LogDebugf("checkSnapshotDir. update super,dir name %v split to %v", d.name, strArr)
+		if len(strArr) <= 1 {
+			log.LogErrorf("checkSnapshotDir. update super,dir name %v split error len %v", d.name, len(strArr))
+			return
+		}
+	begin:
+		if d.super == nil {
+			log.LogErrorf("checkSnapshotDir. name %v super is nil", d.name)
+			return
+		}
+		if d.super.SuperMap == nil {
+			log.LogErrorf("checkSnapshotDir. SuperMap is nil name %v", d.name)
+			return
+		}
+		if reqVer, err = strconv.ParseUint(strArr[1], 10, 64); err != nil {
+			log.LogErrorf("checkSnapshotDir. strArr[1] %v ParseUint failed err %v", d.name, err)
+			return
+		}
+
+		if reqVer == 0 {
+			reqVer = math.MaxUint64
+		}
+
+		log.LogDebugf("checkSnapshotDir. update super,dir name %v reqVer %v", d.name, reqVer)
+		if iter,ok := d.super.SuperMap.Load(reqVer); !ok {
+			log.LogInfof("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v failed", d.name, strArr[1], d.super.SuperMap)
+			retryTimes ++
+			if retryTimes == 1 {
+				if err = buildSuperSnapshot(d.super, &d.super.MountOpt); err != nil {
+					log.LogErrorf("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v failed error %v", d.name, strArr[1], err)
+					return
+				}
+				log.LogInfof("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v not found", d.name, strArr[1], d.super.SuperMap)
+				goto begin
+			}
+			return
+		} else {
+			log.LogInfof("checkSnapshotDir. get name %v", d.name)
+			if d.super, ok  = iter.(*Super); !ok {
+				log.LogErrorf("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v type not qualified", d.name, strArr[1])
+				return
+			}
+		}
+	}
+	return
+}
+
 func (d *Dir) getCwd() string {
 	dirPath := ""
 	curIno := d.info.Inode
@@ -225,6 +322,7 @@ func (d *Dir) Forget() {
 
 // Mkdir handles the mkdir request.
 func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
+	d.checkSnapshotDir()
 	start := time.Now()
 
 	bgTime := stat.BeginStat()
@@ -240,6 +338,7 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 		log.LogErrorf("Mkdir: parent(%v) req(%v) err(%v)", d.info.Inode, req, err)
 		return nil, ParseError(err)
 	}
+
 
 	d.super.ic.Put(info)
 	child := NewDir(d.super, info, d.info.Inode, req.Name)
@@ -257,6 +356,7 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 
 // Remove handles the remove request.
 func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
+	d.checkSnapshotDir()
 	start := time.Now()
 	d.dcache.Delete(req.Name)
 
@@ -292,6 +392,7 @@ func (d *Dir) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 
 // Lookup handles the lookup request.
 func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.LookupResponse) (fs.Node, error) {
+	d.checkSnapshotDir()
 	var (
 		ino uint64
 		err error
@@ -342,8 +443,10 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 }
 
 func (d *Dir) ReadDir(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) ([]fuse.Dirent, error) {
+
 	var err error
 	var limit uint64 = DefaultReaddirLimit
+	d.checkSnapshotDir()
 	start := time.Now()
 
 	bgTime := stat.BeginStat()
@@ -354,10 +457,15 @@ func (d *Dir) ReadDir(ctx context.Context, req *fuse.ReadRequest, resp *fuse.Rea
 		metric.SetWithLabels(err, map[string]string{exporter.Vol: d.super.volname})
 	}()
 
+	parentIno := d.info.Inode
+	if strings.Contains(d.name, ".snapshot") {
+		parentIno = 1
+	}
+
 	dirCtx := d.dctx.GetCopy(req.Handle)
-	children, err := d.super.mw.ReadDirLimit_ll(d.info.Inode, dirCtx.Name, limit)
+	children, err := d.super.mw.ReadDirLimit_ll(parentIno, dirCtx.Name, limit)
 	if err != nil {
-		log.LogErrorf("readdirlimit: Readdir: ino(%v) err(%v)", d.info.Inode, err)
+		log.LogErrorf("readdirlimit: Readdir: ino(%v) err(%v)", parentIno, err)
 		return make([]fuse.Dirent, 0), ParseError(err)
 	}
 
@@ -409,6 +517,7 @@ func (d *Dir) ReadDir(ctx context.Context, req *fuse.ReadRequest, resp *fuse.Rea
 
 // ReadDirAll gets all the dentries in a directory and puts them into the cache.
 func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
+	d.checkSnapshotDir()
 	start := time.Now()
 
 	bgTime := stat.BeginStat()
@@ -458,6 +567,7 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 
 // Rename handles the rename request.
 func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
+	d.checkSnapshotDir()
 	dstDir, ok := newDir.(*Dir)
 	if !ok {
 		log.LogErrorf("Rename: NOT DIR, parent(%v) req(%v)", d.info.Inode, req)
@@ -490,6 +600,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 
 // Setattr handles the setattr request.
 func (d *Dir) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
+	d.checkSnapshotDir()
 	var err error
 	bgTime := stat.BeginStat()
 	defer func() {

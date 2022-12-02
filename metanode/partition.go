@@ -267,6 +267,7 @@ type metaPartition struct {
 	verSeq           uint64
 	multiVersionList *proto.VolVersionInfoList
 }
+
 func (mp *metaPartition) getVerList() []*proto.VolVersionInfo {
 	mp.multiVersionList.RLock()
 	defer mp.multiVersionList.RUnlock()

@@ -4,10 +4,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/cubefs/cubefs/proto"
+	"github.com/cubefs/cubefs/sdk/meta"
 	"github.com/cubefs/cubefs/util/log"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
+)
+
+const (
+	DefaultFileMode = 0644
+	DefaultDirMode  = DefaultFileMode | os.ModeDir
 )
 
 type Ver2PhaseCommit struct {
@@ -632,6 +639,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 						if vLen := len(verMgr.multiVersionList); vLen > 1 {
 							verRsp = verMgr.multiVersionList[vLen-2]
 						}
+						verMgr.createSnapshotDir(verRsp.Ver)
 						wg.Done()
 					} else {
 						verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
@@ -762,4 +770,28 @@ func (verMgr *VolVersionManager) getVersionList() *proto.VolVersionInfoList {
 		VerList: verMgr.multiVersionList,
 		Strategy: verMgr.strategy,
 	}
+}
+
+func (verMgr *VolVersionManager) createSnapshotDir(verSeq uint64) (err error){
+	var gMetaWrapper *meta.MetaWrapper
+	var metaConfig = &meta.MetaConfig{
+		MetaSendTimeout: 600,
+		Volume:        verMgr.vol.Name,
+		Authenticate:  false,
+		ValidateOwner: false,
+		VerReadSeq:    verSeq,
+	}
+
+	log.LogDebugf("createSnapshotDir.verSeq %v", verSeq)
+	metaConfig.Masters = append(metaConfig.Masters, "127.0.0.1:17010")
+	gMetaWrapper, err = meta.NewMetaWrapper(metaConfig)
+	if err != nil {
+		log.LogErrorf("createSnapshotDir.verSeq %v err %v", verSeq, err)
+		return
+	}
+
+	int64Str := fmt.Sprintf(".snapshot_%v", verSeq)
+	log.LogDebugf("createSnapshotDir.verSeq %v dir %v", verSeq, int64Str)
+	_, err = gMetaWrapper.Create_ll(1, int64Str, uint32(DefaultDirMode),0, 0,nil)
+	return
 }

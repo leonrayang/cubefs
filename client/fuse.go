@@ -36,6 +36,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -560,6 +561,9 @@ func mount(opt *proto.MountOptions) (fsConn *fuse.Conn, super *cfs.Super, err er
 	http.HandleFunc(log.GetLogPath, log.GetLog)
 	http.HandleFunc(ControlCommandSuspend, super.SetSuspend)
 	http.HandleFunc(ControlCommandResume, super.SetResume)
+
+	super.MountOpt = *opt
+	super.SuperMap = new(sync.Map)
 
 	statusCh := make(chan error)
 	go waitListenAndServe(statusCh, ":"+opt.Profport, nil)
