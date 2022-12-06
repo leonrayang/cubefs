@@ -262,8 +262,9 @@ type VolVersionInfo struct {
 }
 
 type VolVersionInfoList struct {
-	VerList []*VolVersionInfo
-	Strategy  VolumeVerStrategy
+	VerList		[]*VolVersionInfo
+	Strategy	VolumeVerStrategy
+	RootMntIno 	uint64
 	sync.RWMutex
 }
 

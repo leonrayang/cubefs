@@ -36,6 +36,7 @@ const (
 	FlagsVerDel  int = 1 << iota
 	FlagsVerDelDir
 	FlagsVerAll
+	FlagsVerOmit
 )
 
 // Mode returns the fileMode.

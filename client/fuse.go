@@ -564,6 +564,9 @@ func mount(opt *proto.MountOptions) (fsConn *fuse.Conn, super *cfs.Super, err er
 
 	super.MountOpt = *opt
 	super.SuperMap = new(sync.Map)
+	if err = cfs.BuildSuperSnapshot(super, opt); err != nil {
+		return
+	}
 
 	statusCh := make(chan error)
 	go waitListenAndServe(statusCh, ":"+opt.Profport, nil)

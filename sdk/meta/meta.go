@@ -137,6 +137,7 @@ type MetaWrapper struct {
 
 	VerReadSeq	uint64
 	Client  wrapper.SimpleClientInfo
+	RootSnapshotIno  uint64
 }
 
 //the ticket from authnode

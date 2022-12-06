@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -44,6 +45,7 @@ func (commit *Ver2PhaseCommit) reset(volName string) {
 type VolVersionPersist struct {
 	MultiVersionList []*proto.VolVersionInfo
 	Strategy         proto.VolumeVerStrategy
+	RootMntInoID     uint64
 	VerSeq           uint64
 }
 
@@ -58,6 +60,7 @@ type VolVersionManager struct {
 	verSeq           uint64
 	enabled          bool
 	strategy         proto.VolumeVerStrategy
+	mntPointRootIno  uint64
 	c                *Cluster
 	sync.RWMutex
 }
@@ -82,6 +85,7 @@ func (verMgr *VolVersionManager) Persist() (err error) {
 		MultiVersionList: verMgr.multiVersionList,
 		Strategy:verMgr.strategy,
 		VerSeq: verMgr.verSeq,
+		RootMntInoID: verMgr.mntPointRootIno,
 	}
 	var val []byte
 	if val, err = json.Marshal(persistInfo); err != nil {
@@ -102,6 +106,7 @@ func (verMgr *VolVersionManager) loadMultiVersion(c *Cluster, val []byte) (err e
 	verMgr.multiVersionList = persistInfo.MultiVersionList
 	verMgr.verSeq = persistInfo.VerSeq
 	verMgr.strategy = persistInfo.Strategy
+	verMgr.mntPointRootIno = persistInfo.RootMntInoID
 	return nil
 }
 
@@ -639,7 +644,7 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 						if vLen := len(verMgr.multiVersionList); vLen > 1 {
 							verRsp = verMgr.multiVersionList[vLen-2]
 						}
-						verMgr.createSnapshotDir(verRsp.Ver)
+						verMgr.createMountPointDir(verRsp.Ver)
 						wg.Done()
 					} else {
 						verMgr.prepareCommit.prepareInfo.Status = proto.VersionWorkingAbnormal
@@ -693,9 +698,11 @@ func (verMgr *VolVersionManager) init(cluster *Cluster) error {
 		Status: 1,
 	})
 	if cluster.partition.IsRaftLeader() {
-		return verMgr.Persist()
+		if err := verMgr.Persist(); err != nil {
+			return err
+		}
 	}
-	return nil
+	return verMgr.createMountPointRootDir()
 }
 
 
@@ -769,10 +776,50 @@ func (verMgr *VolVersionManager) getVersionList() *proto.VolVersionInfoList {
 	return &proto.VolVersionInfoList{
 		VerList: verMgr.multiVersionList,
 		Strategy: verMgr.strategy,
+		RootMntIno: verMgr.mntPointRootIno,
 	}
 }
 
-func (verMgr *VolVersionManager) createSnapshotDir(verSeq uint64) (err error){
+func (verMgr *VolVersionManager) createMountPointRootDir() (err error){
+	var (
+		gMetaWrapper *meta.MetaWrapper
+		rootInfo *proto.InodeInfo
+	)
+	if verMgr.mntPointRootIno != 0 {
+		log.LogErrorf("createMountPointRootDir. mntPointRootIno %v", verMgr.mntPointRootIno)
+		return
+	}
+
+	var metaConfig = &meta.MetaConfig{
+		MetaSendTimeout: 600,
+		Volume:        verMgr.vol.Name,
+		Authenticate:  false,
+		ValidateOwner: false,
+	}
+
+	metaConfig.Masters = append(metaConfig.Masters, verMgr.c.leaderInfo.addr)
+	gMetaWrapper, err = meta.NewMetaWrapper(metaConfig)
+	if err != nil {
+		log.LogErrorf("createMountPointRootDir. %v err %v", err)
+		return
+	}
+
+	int64Str := ".snapshot"
+	if rootInfo, err = gMetaWrapper.Create_ll(1, int64Str, uint32(DefaultDirMode),0, 0,nil); err != nil {
+		if err == syscall.EEXIST {
+			err = nil
+			return
+		}
+		log.LogErrorf("createMountPointRootDir. %v err %v", err)
+		return
+	}
+	log.LogDebugf("createMountPointRootDir. mntPointRootIno %v", rootInfo.Inode)
+	verMgr.mntPointRootIno = rootInfo.Inode
+	err = verMgr.Persist()
+	return
+}
+
+func (verMgr *VolVersionManager) createMountPointDir(verSeq uint64) (err error){
 	var gMetaWrapper *meta.MetaWrapper
 	var metaConfig = &meta.MetaConfig{
 		MetaSendTimeout: 600,
@@ -781,17 +828,23 @@ func (verMgr *VolVersionManager) createSnapshotDir(verSeq uint64) (err error){
 		ValidateOwner: false,
 		VerReadSeq:    verSeq,
 	}
-
-	log.LogDebugf("createSnapshotDir.verSeq %v", verSeq)
-	metaConfig.Masters = append(metaConfig.Masters, "127.0.0.1:17010")
+	if verMgr.mntPointRootIno == 0 {
+		if err = verMgr.createMountPointRootDir(); err != nil {
+			return
+		}
+	}
+	log.LogDebugf("createMountPointDir.verSeq %v", verSeq)
+	metaConfig.Masters = append(metaConfig.Masters, verMgr.c.leaderInfo.addr)
 	gMetaWrapper, err = meta.NewMetaWrapper(metaConfig)
 	if err != nil {
-		log.LogErrorf("createSnapshotDir.verSeq %v err %v", verSeq, err)
+		log.LogErrorf("createMountPointDir.verSeq %v err %v", verSeq, err)
 		return
 	}
 
-	int64Str := fmt.Sprintf(".snapshot_%v", verSeq)
-	log.LogDebugf("createSnapshotDir.verSeq %v dir %v", verSeq, int64Str)
-	_, err = gMetaWrapper.Create_ll(1, int64Str, uint32(DefaultDirMode),0, 0,nil)
+	int64Str := fmt.Sprintf("snapshot_%v", verSeq)
+	log.LogDebugf("createMountPointDir.verSeq %v dir %v rootSnapshotMntIno %v", verSeq, int64Str, verMgr.mntPointRootIno)
+	if _, err = gMetaWrapper.Create_ll(verMgr.mntPointRootIno, int64Str, uint32(DefaultDirMode),0, 0,nil); err != nil {
+		log.LogErrorf("createMountPointDir.verSeq %v dir %v rootSnapshotMntIno %v", verSeq, int64Str, verMgr.mntPointRootIno)
+	}
 	return
 }

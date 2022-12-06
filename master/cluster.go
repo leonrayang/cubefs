@@ -2641,10 +2641,6 @@ func (c *Cluster) createVol(req *createVolReq) (vol *Vol, err error) {
 		goto errHandler
 	}
 
-	if err = vol.VersionMgr.init(c); err != nil {
-		log.LogError("init dataPartition error in verMgr init", err.Error())
-	}
-
 	if err = vol.initMetaPartitions(c, req.mpCount); err != nil {
 
 		vol.Status = markDelete
@@ -2656,6 +2652,10 @@ func (c *Cluster) createVol(req *createVolReq) (vol *Vol, err error) {
 
 		err = fmt.Errorf("action[createVol] initMetaPartitions failed,err[%v]", err)
 		goto errHandler
+	}
+
+	if err = vol.VersionMgr.init(c); err != nil {
+		log.LogError("init dataPartition error in verMgr init", err.Error())
 	}
 
 	if vol.CacheCapacity > 0 || (proto.IsHot(vol.VolType) && vol.Capacity > 0) {

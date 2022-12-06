@@ -82,8 +82,9 @@ type Super struct {
 	ebsc           *blobstore.BlobStoreClient
 	sc             *SummaryCache
 
-	SuperMap *sync.Map
-	MountOpt proto.MountOptions
+	SuperMap	*sync.Map
+	MountOpt	proto.MountOptions
+	RootMntSnapshotIno  uint64
 }
 
 // Functions that Super needs to implement
@@ -114,7 +115,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 	if err != nil {
 		return nil, errors.Trace(err, "NewMetaWrapper failed!"+err.Error())
 	}
-
+	s.mw.RootSnapshotIno = s.RootMntSnapshotIno
 	s.volname = opt.Volname
 	s.owner = opt.Owner
 	s.cluster = s.mw.Cluster()

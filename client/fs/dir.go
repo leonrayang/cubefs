@@ -126,7 +126,7 @@ func NewDir(s *Super, i *proto.InodeInfo, pino uint64, dirName string) fs.Node {
 	}
 }
 
-func buildSuperSnapshot(super *Super, opt *proto.MountOptions) (err error){
+func BuildSuperSnapshot(super *Super, opt *proto.MountOptions) (err error){
 	var mc = master.NewMasterClientFromString(opt.Master, false)
 	var (
 		superTmp *Super
@@ -135,88 +135,97 @@ func buildSuperSnapshot(super *Super, opt *proto.MountOptions) (err error){
 
 	verList, err = mc.AdminAPI().GetVerList(opt.Volname)
 	if err != nil {
-		log.LogErrorf("buildSuperSnapshot error %v", err)
+		log.LogErrorf("BuildSuperSnapshot error %v", err)
 		return
 	}
-	log.LogInfof("buildSuperSnapshot VerList len %v", len(verList.VerList))
+	super.RootMntSnapshotIno = verList.RootMntIno
+	log.LogInfof("BuildSuperSnapshot VerList len %v super.RootMntSnapshotIno %v", len(verList.VerList), super.RootMntSnapshotIno)
 	for id, ver := range verList.VerList {
 		if id == len(verList.VerList)-1 {
 			continue
 		}
+
 		var optTmp proto.MountOptions
 		optTmp = *opt
 		optTmp.VerReadSeq = ver.Ver
 		if ver.Ver == 0 {
 			optTmp.VerReadSeq = math.MaxUint64
 		}
+		if _, ok := super.SuperMap.Load(optTmp.VerReadSeq); ok {
+			continue
+		}
+
 		superTmp, err = NewSuper(&optTmp)
 		if err != nil {
-			log.LogErrorf("buildSuperSnapshot NewSuper error %v", err)
+			log.LogErrorf("BuildSuperSnapshot NewSuper error %v", err)
 			return
 		}
+
 		superTmp.SuperMap = super.SuperMap
-		log.LogDebugf("buildSuperSnapshot store seq(%v):super(%v)", optTmp.VerReadSeq, superTmp)
+		log.LogDebugf("BuildSuperSnapshot store seq(%v):super(%v)", optTmp.VerReadSeq, superTmp)
 		super.SuperMap.Store(optTmp.VerReadSeq, superTmp)
 	}
 	return
 }
 
 func (d *Dir) checkSnapshotDir(){
-	if strings.Contains(d.name, ".snapshot") {
-		log.LogDebugf("checkSnapshotDir. dir name %v d parino %v", d.name, d.parentIno)
+	if d.super == nil {
+		log.LogErrorf("checkSnapshotDir. name %v super is nil", d.name)
+		return
 	}
+	if d.parentIno != d.super.RootMntSnapshotIno || !strings.Contains(d.name, "snapshot") {
+		return
+	}
+
 	var (
 		reqVer uint64
 		retryTimes int
 		err error
 	)
 
-	if d.parentIno == 1 && strings.Contains(d.name, ".snapshot") {
-		strArr := strings.Split(d.name, "_")
-		log.LogDebugf("checkSnapshotDir. update super,dir name %v split to %v", d.name, strArr)
-		if len(strArr) <= 1 {
-			log.LogErrorf("checkSnapshotDir. update super,dir name %v split error len %v", d.name, len(strArr))
-			return
-		}
-	begin:
-		if d.super == nil {
-			log.LogErrorf("checkSnapshotDir. name %v super is nil", d.name)
-			return
-		}
-		if d.super.SuperMap == nil {
-			log.LogErrorf("checkSnapshotDir. SuperMap is nil name %v", d.name)
-			return
-		}
-		if reqVer, err = strconv.ParseUint(strArr[1], 10, 64); err != nil {
-			log.LogErrorf("checkSnapshotDir. strArr[1] %v ParseUint failed err %v", d.name, err)
-			return
-		}
+	strArr := strings.Split(d.name, "_")
+	log.LogDebugf("checkSnapshotDir. update super,dir name %v split to %v", d.name, strArr)
+	if len(strArr) <= 1 {
+		log.LogErrorf("checkSnapshotDir. update super,dir name %v split error len %v", d.name, len(strArr))
+		return
+	}
+begin:
+	if d.super.SuperMap == nil {
+		log.LogErrorf("checkSnapshotDir. SuperMap is nil name %v", d.name)
+		return
+	}
+	if reqVer, err = strconv.ParseUint(strArr[1], 10, 64); err != nil {
+		log.LogErrorf("checkSnapshotDir. strArr[1] %v ParseUint failed err %v", d.name, err)
+		return
+	}
 
-		if reqVer == 0 {
-			reqVer = math.MaxUint64
-		}
+	if reqVer == 0 {
+		reqVer = math.MaxUint64
+	}
 
-		log.LogDebugf("checkSnapshotDir. update super,dir name %v reqVer %v", d.name, reqVer)
-		if iter,ok := d.super.SuperMap.Load(reqVer); !ok {
-			log.LogInfof("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v failed", d.name, strArr[1], d.super.SuperMap)
-			retryTimes ++
-			if retryTimes == 1 {
-				if err = buildSuperSnapshot(d.super, &d.super.MountOpt); err != nil {
-					log.LogErrorf("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v failed error %v", d.name, strArr[1], err)
-					return
-				}
-				log.LogInfof("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v not found", d.name, strArr[1], d.super.SuperMap)
-				goto begin
-			}
-			return
-		} else {
-			log.LogInfof("checkSnapshotDir. get name %v", d.name)
-			if d.super, ok  = iter.(*Super); !ok {
-				log.LogErrorf("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v type not qualified", d.name, strArr[1])
+	log.LogDebugf("checkSnapshotDir. update super,dir name %v reqVer %v", d.name, reqVer)
+	if iter,ok := d.super.SuperMap.Load(reqVer); !ok {
+		log.LogInfof("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v failed", d.name, strArr[1], d.super.SuperMap)
+		retryTimes ++
+		if retryTimes == 1 {
+			if err = BuildSuperSnapshot(d.super, &d.super.MountOpt); err != nil {
+				log.LogErrorf("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v failed error %v", d.name, strArr[1], err)
 				return
 			}
+			log.LogInfof("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v not found", d.name, strArr[1], d.super.SuperMap)
+			goto begin
 		}
+		return
+	} else {
+		log.LogInfof("checkSnapshotDir. get name %v", d.name, d.super.RootMntSnapshotIno)
+		ino := d.super.RootMntSnapshotIno
+		if d.super, ok  = iter.(*Super); !ok {
+			log.LogErrorf("checkSnapshotDir. update super,dir name %v get %v from SuperMap %v type not qualified", d.name, strArr[1])
+			return
+		}
+		d.super.RootMntSnapshotIno = ino
 	}
+
 	return
 }
 
@@ -458,7 +467,9 @@ func (d *Dir) ReadDir(ctx context.Context, req *fuse.ReadRequest, resp *fuse.Rea
 	}()
 
 	parentIno := d.info.Inode
-	if strings.Contains(d.name, ".snapshot") {
+	log.LogDebugf("ReadDir ino %v name %v parentIno %v RootMntSnapshotIno %v", parentIno, d.name, d.parentIno, d.super.RootMntSnapshotIno)
+	if d.parentIno == d.super.RootMntSnapshotIno && strings.Contains(d.name, "snapshot") {
+		log.LogDebugf("ReadDir parentIno %v name %v be reset to 1", parentIno, d.name)
 		parentIno = 1
 	}
 
