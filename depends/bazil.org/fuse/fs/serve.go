@@ -144,6 +144,10 @@ type NodeSetattrer interface {
 	Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error
 }
 
+type NodeGetPerm interface {
+	GetPerm(ctx context.Context) bool
+}
+
 type NodeSymlinker interface {
 	// Symlink creates a new symbolic link in the receiver, which must be a directory.
 	//
@@ -1429,8 +1433,31 @@ func (c *Server) serve(r fuse.Request) {
 	responded = true
 }
 
+func (c *Server) checkPerm(ctx context.Context, node Node,r fuse.Request) error {
+	switch r.(type) {
+	default:
+		// Note: To FUSE, ENOSYS means "this server never implements this request."
+		// It would be inappropriate to return ENOSYS for other operations in this
+		// switch that might only be unavailable in some contexts, not all.
+		return nil
+	case *fuse.SetattrRequest,*fuse.LinkRequest,*fuse.RenameRequest,
+	*fuse.FlushRequest,*fuse.WriteRequest,*fuse.RemovexattrRequest,*fuse.SetxattrRequest,
+	*fuse.CreateRequest,*fuse.OpenRequest,*fuse.RemoveRequest, *fuse.MkdirRequest:
+		s := node.(NodeGetPerm)
+		if s.GetPerm(ctx) {
+			return fuse.EPERM
+		}
+		return nil
+	}
+}
+
 // handleRequest will either a) call done(s) and r.Respond(s) OR b) return an error.
 func (c *Server) handleRequest(ctx context.Context, node Node, snode *serveNode, r fuse.Request, done func(resp interface{})) error {
+
+	if err := c.checkPerm(ctx, node, r); err != nil {
+		return err
+	}
+
 	switch r := r.(type) {
 	default:
 		// Note: To FUSE, ENOSYS means "this server never implements this request."
@@ -1547,6 +1574,7 @@ func (c *Server) handleRequest(ctx context.Context, node Node, snode *serveNode,
 		if !ok {
 			return fuse.EIO /// XXX or EPERM?
 		}
+
 		err := n.Remove(ctx, r)
 		if err != nil {
 			return err
@@ -1884,7 +1912,6 @@ func (c *Server) handleRequest(ctx context.Context, node Node, snode *serveNode,
 		done(nil)
 		r.Respond()
 		return nil
-
 	case *fuse.MknodRequest:
 		n, ok := node.(NodeMknoder)
 		if !ok {

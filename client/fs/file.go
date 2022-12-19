@@ -576,6 +576,10 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 	return nil
 }
 
+func (f *File) GetPerm(ctx context.Context) bool {
+	return f.super.MountOpt.Rdonly
+}
+
 // Readlink handles the readlink request.
 func (f *File) Readlink(ctx context.Context, req *fuse.ReadlinkRequest) (string, error) {
 	var err error

@@ -148,6 +148,7 @@ func BuildSuperSnapshot(super *Super, opt *proto.MountOptions) (err error){
 		var optTmp proto.MountOptions
 		optTmp = *opt
 		optTmp.VerReadSeq = ver.Ver
+		optTmp.Rdonly = true
 		if ver.Ver == 0 {
 			optTmp.VerReadSeq = math.MaxUint64
 		}
@@ -673,6 +674,10 @@ func (d *Dir) Mknod(ctx context.Context, req *fuse.MknodRequest) (fs.Node, error
 	elapsed := time.Since(start)
 	log.LogDebugf("TRACE Mknod: parent(%v) req(%v) ino(%v) (%v)ns", d.info.Inode, req, info.Inode, elapsed.Nanoseconds())
 	return child, nil
+}
+
+func (d *Dir) GetPerm(ctx context.Context) bool {
+	return d.super.MountOpt.Rdonly
 }
 
 // Symlink handles the symlink request.
