@@ -124,7 +124,7 @@ func NewDataPartitionWrapper(client SimpleClientInfo, volName string, masters []
 			return
 		}
 	}
-	go w.update(client)
+
 	return
 }
 
