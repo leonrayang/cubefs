@@ -55,6 +55,7 @@ func (m *Server) handleLeaderChange(leader uint64) {
 			m.clusterName, m.leaderInfo.addr))
 		m.clearMetadata()
 		m.metaReady = false
+		WarnMetrics.reset()
 	}
 }
 
