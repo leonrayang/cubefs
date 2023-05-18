@@ -24,12 +24,16 @@ func TestRequestDoExtentRepair(t *testing.T) {
 
 	err := requestDoExtentRepair()
 	require.NoError(t, err)
-
+	var needBreak bool
 	for {
 		select {
 		case <-extentRepairLimitRater:
+			t.Logf("RepairLimit")
 		default:
-			return
+			needBreak = true
+		}
+		if needBreak {
+			break
 		}
 	}
 
@@ -45,12 +49,16 @@ func TestFininshDoExtentRepair(t *testing.T) {
 
 	err := requestDoExtentRepair()
 	require.NoError(t, err)
-
+	var needBreak bool
 	for {
 		select {
 		case <-extentRepairLimitRater:
+			t.Logf("RepairLimit")
 		default:
-			return
+			needBreak = true
+		}
+		if needBreak {
+			break
 		}
 	}
 

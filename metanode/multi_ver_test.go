@@ -62,6 +62,8 @@ func newPartition(conf *MetaPartitionConfig, manager *metadataManager) (mp *meta
 	}
 	mp.config.Cursor = 0
 	mp.config.End = 100000
+	mp.uidManager = NewUidMgr(conf.VolName, mp.config.PartitionId)
+	mp.mqMgr = NewQuotaManager(conf.VolName, mp.config.PartitionId)
 	return mp
 }
 

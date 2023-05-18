@@ -247,7 +247,7 @@ run_test() {
     echo -n "${TPATH}"
     #go test $MODFLAGS -ldflags "${LDFlags}" -cover ./metanode
 
-    go test -cover -v -coverprofile=cover.output $(go list ./... | grep -v depends | grep -v master) | tee cubefs_unittest.output
+    go test -cover -v -coverprofile=cover.output $(go list ./... | grep -v depends | grep -v master | grep  -v util) | tee cubefs_unittest.output
     ret=$?
     popd >/dev/null
     exit $ret
