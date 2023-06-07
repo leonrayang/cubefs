@@ -81,6 +81,15 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 			return
 		}
 		resp = mp.fsmUnlinkInode(ino)
+	case opFSMUnlinkByDirVer:
+		ino := NewInode(0, 0)
+		inodeDirVer := &InodeDirVer{
+			Ino: ino,
+		}
+		if err = inodeDirVer.Unmarshal(msg.V); err != nil {
+			return
+		}
+		resp = mp.fsmUnlinkInodeByDirVer(inodeDirVer)
 	case opFSMUnlinkInodeBatch:
 		inodes, err := InodeBatchUnmarshal(msg.V)
 		if err != nil {
@@ -130,6 +139,12 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 			return
 		}
 		resp = mp.fsmDeleteDentry(den, false)
+	case opFSMDDentryByDirVer:
+		dirVerDen := &DirVerDentry{}
+		if err = dirVerDen.Unmarshal(msg.V); err != nil {
+			return
+		}
+		resp = mp.fsmDeleteDentryByDirVerList(dirVerDen, false)
 	case opFSMDeleteDentryBatch:
 		db, err := DentryBatchUnmarshal(msg.V)
 		if err != nil {
@@ -399,9 +414,9 @@ func (mp *metaPartition) fsmVersionOp(reqData []byte) (err error) {
 			mp.verSeq = opData.VerSeq
 			return
 		}
-		newVer := &proto.VolVersionInfo{
+		newVer := &proto.VersionInfo{
 			Status: proto.VersionNormal,
-			Ctime:  time.Now(),
+			Ctime:  time.Now().Unix(),
 			Ver:    opData.VerSeq,
 		}
 		mp.verSeq = opData.VerSeq

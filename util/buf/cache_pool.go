@@ -2,7 +2,6 @@ package buf
 
 import (
 	"github.com/cubefs/cubefs/util"
-	"github.com/cubefs/cubefs/util/log"
 	"golang.org/x/net/context"
 	"golang.org/x/time/rate"
 	"sync"
@@ -45,8 +44,6 @@ func (fileCachePool *FileCachePool) Get() []byte {
 }
 
 func (fileCachePool *FileCachePool) Put(data []byte) {
-	log.LogInfof("action[FileCachePool.put] %v", fileCachePool)
-	log.LogInfof("action[FileCachePool.put] pool %v", fileCachePool.pool)
 	atomic.AddInt64(&cacheCount, -1)
 	fileCachePool.pool.Put(data)
 }

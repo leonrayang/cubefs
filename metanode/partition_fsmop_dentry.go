@@ -60,8 +60,8 @@ func (mp *metaPartition) fsmTxCreateDentry(txDentry *TxDentry, forceUpdate bool)
 func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 	forceUpdate bool) (status uint8) {
 	status = proto.OpOk
-	log.LogDebugf("action[fsmCreateDentry] ParentId [%v], dentry name [%v], inode [%v], verseq [%v]",
-		dentry.ParentId, dentry.Name, dentry.Inode, dentry.getSeqFiled())
+	log.LogDebugf("action[fsmCreateDentry] ParentId [%v], dentry name [%v], inode [%v], verseqFiled [%v], verseq [%v]",
+		dentry.ParentId, dentry.Name, dentry.Inode, dentry.getSeqFiled(), dentry.getVerSeq())
 	var parIno *Inode
 	if !forceUpdate {
 		item := mp.inodeTree.CopyGet(NewInode(dentry.ParentId, 0))
@@ -96,7 +96,7 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 			log.LogDebugf("action[fsmCreateDentry.ver] latest dentry already deleted.Now create new one [%v]", dentry)
 
 			if !forceUpdate {
-				parIno.IncNLink(mp.verSeq)
+				parIno.IncNLink(dentry.getVerSeq())
 				parIno.SetMtime()
 			}
 			return
@@ -112,7 +112,7 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 		status = proto.OpExistErr
 	} else {
 		if !forceUpdate {
-			parIno.IncNLink(mp.verSeq)
+			parIno.IncNLink(dentry.getVerSeq())
 			parIno.SetMtime()
 		}
 	}
@@ -180,13 +180,26 @@ func (mp *metaPartition) fsmTxDeleteDentry(txDentry *TxDentry, checkInode bool) 
 }
 
 // Delete dentry from the dentry tree.
-func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp *DentryResponse) {
+func (mp *metaPartition) fsmDeleteDentryByDirVerList(denParm *DirVerDentry, checkInode bool) (resp *DentryResponse) {
+	return mp.fsmDeleteDentryInner(denParm.Dentry, checkInode, denParm.VerList, false)
+}
 
+// Delete dentry from the dentry tree.
+func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp *DentryResponse) {
+	return mp.fsmDeleteDentryInner(denParm, checkInode, mp.getVerList(), true)
+}
+
+// Delete dentry from the dentry tree.
+func (mp *metaPartition) fsmDeleteDentryInner(denParm *Dentry, checkInode bool, verlist []*proto.VersionInfo, isVolVer bool) (resp *DentryResponse) {
+	var denFound *Dentry
 	log.LogDebugf("action[fsmDeleteDentry] delete param (%v) seq %v", denParm, denParm.getSeqFiled())
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
-	var denFound *Dentry
-	if denParm.getSeqFiled() != 0 {
+	var currVer uint64
+	if len(verlist) > 0 {
+		currVer = verlist[len(verlist)-1].Ver
+	}
+	if isVolVer && denParm.getSeqFiled() != 0 {
 		if err := mp.checkAndUpdateVerList(denParm.getSeqFiled()); err != nil {
 			resp.Status = proto.OpNotExistErr
 			log.LogErrorf("action[fsmDeleteDentry] dentry %v err %v", denParm, err)
@@ -210,23 +223,23 @@ func (mp *metaPartition) fsmDeleteDentry(denParm *Dentry, checkInode bool) (resp
 			if den.Inode != denParm.Inode {
 				return nil
 			}
-			if mp.verSeq == 0 {
+			if currVer == 0 {
 				log.LogDebugf("action[fsmDeleteDentry] volume snapshot not enabled,delete directly")
 				return mp.dentryTree.tree.Delete(den)
 			}
-			denFound, doMore, clean = den.deleteVerSnapshot(denParm.getSeqFiled(), mp.verSeq, mp.getVerList())
+			denFound, doMore, clean = den.deleteVerSnapshot(denParm.getSeqFiled(), currVer, verlist)
 			return den
 		})
 	} else {
 		log.LogDebugf("action[fsmDeleteDentry] denParm dentry %v", denParm)
 
-		if mp.verSeq == 0 {
+		if currVer == 0 {
 			item = mp.dentryTree.Delete(denParm)
 			denFound = item.(*Dentry)
 		} else {
 			item = mp.dentryTree.Get(denParm)
 			if item != nil {
-				denFound, doMore, clean = item.(*Dentry).deleteVerSnapshot(denParm.getSeqFiled(), mp.verSeq, mp.getVerList())
+				denFound, doMore, clean = item.(*Dentry).deleteVerSnapshot(denParm.getSeqFiled(), currVer, verlist)
 			}
 		}
 	}

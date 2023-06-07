@@ -197,7 +197,7 @@ func testCreateInode(t *testing.T, mode uint32) *Inode {
 	}
 
 	ino := NewInode(inoID, mode)
-	ino.setVer(mp.verSeq)
+	ino.setVolVer(mp.verSeq)
 	if t != nil {
 		t.Logf("testCreateInode ino %v", ino)
 	}
@@ -250,9 +250,9 @@ func TestEkMarshal(t *testing.T) {
 }
 
 func initVer() {
-	verInfo := &proto.VolVersionInfo{
+	verInfo := &proto.VersionInfo{
 		Ver:    0,
-		Ctime:  time.Unix(0, 0),
+		Ctime:  time.Unix(0, 0).Unix(),
 		Status: proto.VersionNormal,
 	}
 	mp.multiVersionList.VerList = append(mp.multiVersionList.VerList, verInfo)
@@ -373,9 +373,9 @@ func testCreateVer() (verSeq uint64) {
 	defer mp.multiVersionList.Unlock()
 
 	tm = tm + 1
-	verInfo := &proto.VolVersionInfo{
+	verInfo := &proto.VersionInfo{
 		Ver:    uint64(tm),
-		Ctime:  time.Now(),
+		Ctime:  time.Now().Unix(),
 		Status: proto.VersionNormal,
 	}
 	mp.multiVersionList.VerList = append(mp.multiVersionList.VerList, verInfo)
@@ -418,9 +418,9 @@ var seqAllArr = []uint64{0, ct, ct + 2111, ct + 10333, ct + 53456, ct + 60000, c
 func TestAppendList(t *testing.T) {
 	initMp(t)
 	for _, verSeq := range seqAllArr {
-		verInfo := &proto.VolVersionInfo{
+		verInfo := &proto.VersionInfo{
 			Ver:    verSeq,
-			Ctime:  time.Unix(int64(verSeq), 0),
+			Ctime:  time.Unix(int64(verSeq), 0).Unix(),
 			Status: proto.VersionNormal,
 		}
 		mp.multiVersionList.VerList = append(mp.multiVersionList.VerList, verInfo)
@@ -650,7 +650,7 @@ func testDelDirSnapshotVersion(t *testing.T, verSeq uint64, dirIno *Inode, dirDe
 	//testPrintAllDentry(t)
 
 	rDirIno := dirIno.Copy().(*Inode)
-	rDirIno.setVer(verSeq)
+	rDirIno.setVolVer(verSeq)
 
 	rspDelIno := mp.fsmUnlinkInode(rDirIno)
 
@@ -683,7 +683,7 @@ func testDelDirSnapshotVersion(t *testing.T, verSeq uint64, dirIno *Inode, dirDe
 		if ino.Status != proto.OpOk {
 			panic(nil)
 		}
-		rino.setVer(verSeq)
+		rino.setVolVer(verSeq)
 		rspDelIno = mp.fsmUnlinkInode(rino)
 
 		assert.True(t, rspDelIno.Status == proto.OpOk || rspDelIno.Status == proto.OpNotExistErr)

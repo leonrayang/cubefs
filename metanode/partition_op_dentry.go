@@ -211,6 +211,43 @@ func (mp *metaPartition) TxDeleteDentry(req *proto.TxDeleteDentryRequest, p *Pac
 }
 
 // DeleteDentry deletes a dentry.
+func (mp *metaPartition) DeleteDentryByDirVer(req *DeleteDentryReq, p *Packet) (err error) {
+
+	dirVerdentry := &DirVerDentry{
+		Dentry:&Dentry{
+			ParentId: req.ParentID,
+			Name:     req.Name,
+		},
+		VerList: p.DirVerList,
+	}
+	dirVerdentry.Dentry.setVerSeq(req.Verseq)
+	log.LogDebugf("action[DeleteDentry] den param(%v)", dirVerdentry.Dentry)
+
+	val, err := dirVerdentry.Marshal()
+	if err != nil {
+		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
+		return
+	}
+
+	log.LogDebugf("action[DeleteDentry] submit!")
+	r, err := mp.submit(opFSMDDentryByDirVer, val)
+	if err != nil {
+		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))
+		return
+	}
+
+	if r.(*DentryResponse).Status == proto.OpOk {
+		var reply []byte
+		resp := &DeleteDentryResp{
+			Inode: r.(*DentryResponse).Msg.Inode,
+		}
+		reply, err = json.Marshal(resp)
+		p.PacketOkWithBody(reply)
+	}
+	return
+}
+
+// DeleteDentry deletes a dentry.
 func (mp *metaPartition) DeleteDentry(req *DeleteDentryReq, p *Packet) (err error) {
 
 	dentry := &Dentry{

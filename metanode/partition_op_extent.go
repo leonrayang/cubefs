@@ -102,7 +102,7 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 	ext := req.Extent
 	// extent key verSeq not set value since marshal will not include verseq
 	// use inode verSeq instead
-	ino.setVer(mp.verSeq)
+	ino.setVolVer(mp.verSeq)
 	ino.Extents.Append(ext)
 	log.LogDebugf("ExtentAppendWithCheck: ino(%v) mp(%v) verSeq (%v) ext(%v)", req.Inode, req.PartitionID, mp.verSeq, ext)
 	// Store discard extents right after the append extent key.
@@ -152,7 +152,7 @@ func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList) 
 	for _, ver := range mp.multiVersionList.VerList {
 		verMapLocal[ver.Ver] = ver.Status
 	}
-	verMapMaster := make(map[uint64]*proto.VolVersionInfo)
+	verMapMaster := make(map[uint64]*proto.VersionInfo)
 	for _, ver := range masterListInfo.VerList {
 		verMapMaster[ver.Ver] = ver
 	}
@@ -292,7 +292,7 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 		if req.VerSeq > 0 && ino.getVer() > 0 && (req.VerSeq < ino.getVer() || isInitSnapVer(req.VerSeq)) {
 			mp.GetExtentByVer(ino, req, resp)
 			vIno := ino.Copy().(*Inode)
-			vIno.setVer(req.VerSeq)
+			vIno.setVolVer(req.VerSeq)
 			if vIno = mp.getInodeByVer(vIno); vIno != nil {
 				resp.Generation = vIno.Generation
 				resp.Size = vIno.Size
@@ -324,7 +324,7 @@ func (mp *metaPartition) ExtentsList(req *proto.GetExtentsRequest, p *Packet) (e
 // ObjExtentsList returns the list of obj extents and extents.
 func (mp *metaPartition) ObjExtentsList(req *proto.GetExtentsRequest, p *Packet) (err error) {
 	ino := NewInode(req.Inode, 0)
-	ino.setVer(req.VerSeq)
+	ino.setVolVer(req.VerSeq)
 	retMsg := mp.getInode(ino, false)
 	ino = retMsg.Msg
 	var (
@@ -382,7 +382,7 @@ func (mp *metaPartition) ExtentsTruncate(req *ExtentsTruncateReq, p *Packet) (er
 	}
 
 	ino.Size = req.Size
-	ino.setVer(mp.verSeq)
+	ino.setVolVer(mp.verSeq)
 	val, err := ino.Marshal()
 	if err != nil {
 		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))

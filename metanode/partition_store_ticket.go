@@ -39,7 +39,7 @@ type storeMsg struct {
 	//txRollbackInodes   map[uint64]*TxRollbackInode
 	txRbDentryTree *BTree
 	//txRollbackDentries map[string]*TxRollbackDentry
-	multiVerList []*proto.VolVersionInfo
+	multiVerList []*proto.VersionInfo
 }
 
 func (mp *metaPartition) startSchedule(curIndex uint64) {

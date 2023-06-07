@@ -169,6 +169,12 @@ const (
 	opFSMExtentSplit
 	opFSMDelVer
 	opFSMStoreTickV1
+
+	// dir snapshot
+	opFSMDDentryByDirVer
+	opFSMUnlinkByDirVer
+	opFSMDDentryBatchByDirVer
+	opFSMUnlinkBatchByDirVer
 )
 
 var (

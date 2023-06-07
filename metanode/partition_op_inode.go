@@ -27,6 +27,11 @@ import (
 	"github.com/cubefs/cubefs/util/log"
 )
 
+type  fsmUnlinkSt struct {
+	inode *Inode
+	VerList []uint64
+}
+
 func replyInfoNoCheck(info *proto.InodeInfo, ino *Inode, quotaIds []uint32) bool {
 	ino.RLock()
 	defer ino.RUnlock()
@@ -136,7 +141,12 @@ func (mp *metaPartition) CreateInode(req *CreateInoReq, p *Packet) (err error) {
 	ino := NewInode(inoID, req.Mode)
 	ino.Uid = req.Uid
 	ino.Gid = req.Gid
-	ino.setVer(mp.verSeq)
+
+	verSeq := mp.verSeq
+	if p.IsDirSnapshotOperate() {
+		verSeq = p.VerSeq
+	}
+	ino.setVolVer(verSeq)
 	ino.LinkTarget = req.Target
 
 	if defaultQuotaSwitch {
@@ -284,7 +294,7 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 	}
 
 	ino := NewInode(req.Inode, 0)
-	ino.setVer(req.VerSeq)
+	ino.setVolVer(req.VerSeq)
 	log.LogDebugf("action[UnlinkInode] verseq %v ino %v", ino.getVer(), ino)
 	item := mp.inodeTree.Get(ino)
 	if item == nil {
@@ -372,7 +382,7 @@ func (mp *metaPartition) UnlinkInodeBatch(req *BatchUnlinkInoReq, p *Packet) (er
 // InodeGet executes the inodeGet command from the client.
 func (mp *metaPartition) InodeGetSplitEk(req *InodeGetSplitReq, p *Packet) (err error) {
 	ino := NewInode(req.Inode, 0)
-	ino.setVer(req.VerSeq)
+	ino.setVolVer(req.VerSeq)
 
 	getAllVerInfo := req.VerAll
 	retMsg := mp.getInode(ino, getAllVerInfo)
@@ -427,7 +437,7 @@ func (mp *metaPartition) InodeGetSplitEk(req *InodeGetSplitReq, p *Packet) (err 
 func (mp *metaPartition) InodeGet(req *InodeGetReq, p *Packet) (err error) {
 
 	ino := NewInode(req.Inode, 0)
-	ino.setVer(req.VerSeq)
+	ino.setVolVer(req.VerSeq)
 	getAllVerInfo := req.VerAll
 	retMsg := mp.getInode(ino, getAllVerInfo)
 
@@ -590,7 +600,7 @@ func (mp *metaPartition) InodeGetBatch(req *InodeGetReqBatch, p *Packet) (err er
 	ino := NewInode(0, 0)
 	for _, inoId := range req.Inodes {
 		ino.Inode = inoId
-		ino.setVer(req.VerSeq)
+		ino.setVolVer(req.VerSeq)
 		retMsg := mp.getInode(ino, false)
 		quotaIds, err = mp.getInodeQuotaIds(inoId)
 		if err != nil {

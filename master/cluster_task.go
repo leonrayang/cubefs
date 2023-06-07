@@ -291,7 +291,7 @@ func (c *Cluster) handleLcNodeHeartbeatResp(nodeAddr string, resp *proto.LcNodeH
 										VolName: task.VolName,
 										VerSeq:  task.VerSeq,
 									},
-									dTime: volVerInfo.DelTime,
+									dTime: time.Unix(volVerInfo.DelTime,0),
 								},
 								updateTime: time.Now(),
 							}

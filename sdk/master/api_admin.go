@@ -693,28 +693,28 @@ func (api *AdminAPI) SetStrategy(volName string, periodic string, count string, 
 	return
 }
 
-func (api *AdminAPI) CreateVersion(volName string) (ver *proto.VolVersionInfo, err error) {
+func (api *AdminAPI) CreateVersion(volName string) (ver *proto.VersionInfo, err error) {
 	var buf []byte
 	var request = newAPIRequest(http.MethodGet, proto.AdminCreateVersion)
 	request.addParam("name", volName)
 	if buf, err = api.mc.serveRequest(request); err != nil {
 		return
 	}
-	ver = &proto.VolVersionInfo{}
+	ver = &proto.VersionInfo{}
 	if err = json.Unmarshal(buf, ver); err != nil {
 		return
 	}
 	return
 }
 
-func (api *AdminAPI) GetLatestVer(volName string) (ver *proto.VolVersionInfo, err error) {
+func (api *AdminAPI) GetLatestVer(volName string) (ver *proto.VersionInfo, err error) {
 	var buf []byte
 	var request = newAPIRequest(http.MethodGet, proto.AdminGetVersionInfo)
 	request.addParam("name", volName)
 	if buf, err = api.mc.serveRequest(request); err != nil {
 		return
 	}
-	ver = &proto.VolVersionInfo{}
+	ver = &proto.VersionInfo{}
 	if err = json.Unmarshal(buf, ver); err != nil {
 		return
 	}

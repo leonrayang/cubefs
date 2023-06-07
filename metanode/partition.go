@@ -160,6 +160,7 @@ type OpExtend interface {
 type OpDentry interface {
 	CreateDentry(req *CreateDentryReq, p *Packet) (err error)
 	DeleteDentry(req *DeleteDentryReq, p *Packet) (err error)
+    DeleteDentryByDirVer(req *DeleteDentryReq, p *Packet) (err error)
 	DeleteDentryBatch(req *BatchDeleteDentryReq, p *Packet) (err error)
 	UpdateDentry(req *UpdateDentryReq, p *Packet) (err error)
 	ReadDir(req *ReadDirReq, p *Packet) (err error)
@@ -510,7 +511,7 @@ func (mp *metaPartition) acucumUidSizeByLoad(ino *Inode) {
 	mp.uidManager.accumInoUidSize(ino, mp.uidManager.accumBase)
 }
 
-func (mp *metaPartition) getVerList() []*proto.VolVersionInfo {
+func (mp *metaPartition) getVerList() []*proto.VersionInfo {
 	mp.multiVersionList.RLock()
 	defer mp.multiVersionList.RUnlock()
 	return mp.multiVersionList.VerList

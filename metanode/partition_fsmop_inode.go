@@ -114,7 +114,7 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 		return
 	}
 
-	i.IncNLink(mp.verSeq)
+	i.IncNLink(ino.getVer())
 	resp.Msg = i
 	return
 }
@@ -231,10 +231,21 @@ func (mp *metaPartition) fsmTxUnlinkInode(txIno *TxInode) (resp *InodeResponse) 
 	return mp.fsmUnlinkInode(txIno.Inode)
 }
 
+func (mp *metaPartition) fsmUnlinkInodeByDirVer(inoDirVer *InodeDirVer) (resp *InodeResponse) {
+	return mp.fsmUnlinkInodeDoWork(inoDirVer.Ino, inoDirVer.DirVerList)
+}
+
 // normal unlink seq is 0
 // snapshot unlink seq is snapshotVersion
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
+	return mp.fsmUnlinkInodeDoWork(ino, mp.getVerList())
+}
+
+// normal unlink seq is 0
+// snapshot unlink seq is snapshotVersion
+// fsmUnlinkInode delete the specified inode from inode tree.
+func (mp *metaPartition) fsmUnlinkInodeDoWork(ino *Inode, verList []*proto.VersionInfo) (resp *InodeResponse) {
 	log.LogDebugf("action[fsmUnlinkInode]  ino %v", ino)
 	var (
 		ext2Del []proto.ExtentKey
@@ -266,7 +277,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 	)
 
 	if ino.getVer() == 0 {
-		ext2Del, doMore, status = inode.unlinkTopLayer(ino, mp.verSeq, mp.multiVersionList)
+		ext2Del, doMore, status = inode.unlinkTopLayer(ino, verList)
 	} else { // means drop snapshot
 		log.LogDebugf("action[fsmUnlinkInode] req drop assigned snapshot reqseq %v inode seq %v", ino.getVer(), inode.getVer())
 		if ino.getVer() > inode.getVer() && !isInitSnapVer(ino.getVer()) {
@@ -274,7 +285,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 				ino.Inode, ino.getVer(), inode.getVer())
 			return
 		} else {
-			ext2Del, doMore, status = inode.unlinkVerInList(ino, mp.verSeq, mp.multiVersionList)
+			ext2Del, doMore, status = inode.unlinkVerInList(ino, verList)
 		}
 	}
 	if !doMore {
@@ -465,7 +476,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		// only the ek itself will be moved to level before
 		// ino verseq be set with mp ver before submit in case other mp be updated while on flight, which will lead to
 		// inconsistent between raft pairs
-		delExtents, status = ino2.SplitExtentWithCheck(mp.verSeq, mp.multiVersionList, ino.getVer(), eks[0], ino.ModifyTime, mp.volType)
+		delExtents, status = ino2.SplitExtentWithCheck(mp.multiVersionList, ino.getVer(), eks[0], ino.ModifyTime, mp.volType)
 		ino2.DecSplitExts(delExtents)
 		mp.extDelCh <- delExtents
 		mp.uidManager.minusUidSpace(ino2.Uid, ino2.Inode, delExtents)
@@ -555,7 +566,7 @@ func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 		return
 	}
 
-	if delExtents, err = i.RestoreExts2NextLayer(delExtents, mp.verSeq, 0); err != nil {
+	if delExtents, err = i.RestoreExts2NextLayer(delExtents, 0); err != nil {
 		panic("RestoreExts2NextLayer should not be error")
 	}
 	mp.updateUsedInfo(int64(i.Size)-oldSize, 0, i.Inode)

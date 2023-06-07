@@ -274,15 +274,17 @@ type DecommissionProgress struct {
 	FailedDps []uint64
 }
 
-type VolVersionInfo struct {
+type VersionInfo struct {
 	Ver     uint64
-	Ctime   time.Time
-	DelTime time.Time
+	Ctime   int64
+	DelTime int64
 	Status  uint8 // building,normal,deleted,abnormal
 }
+const VersionSimpleSize int = 33
+
 
 type VolVersionInfoList struct {
-	VerList  []*VolVersionInfo
+	VerList  []*VersionInfo
 	Strategy VolumeVerStrategy
 	sync.RWMutex
 }

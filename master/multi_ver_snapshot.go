@@ -12,7 +12,7 @@ import (
 
 type Ver2PhaseCommit struct {
 	op            uint8
-	prepareInfo   *proto.VolVersionInfo
+	prepareInfo   *proto.VersionInfo
 	commitCnt     uint32
 	nodeCnt       uint32
 	dataNodeArray *sync.Map
@@ -35,14 +35,14 @@ func (commit *Ver2PhaseCommit) reset(volName string) {
 }
 
 type VolVersionPersist struct {
-	MultiVersionList []*proto.VolVersionInfo
+	MultiVersionList []*proto.VersionInfo
 	Strategy         proto.VolumeVerStrategy
 	VerSeq           uint64
 }
 
 type VolVersionManager struct {
 	// ALL snapshots not include deleted one,deleted one should write in error log
-	multiVersionList []*proto.VolVersionInfo
+	multiVersionList []*proto.VersionInfo
 	vol              *Vol
 	prepareCommit    *Ver2PhaseCommit
 	status           uint32
@@ -98,11 +98,11 @@ func (verMgr *VolVersionManager) loadMultiVersion(c *Cluster, val []byte) (err e
 	return nil
 }
 
-func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo) {
+func (verMgr *VolVersionManager) CommitVer() (ver *proto.VersionInfo) {
 	log.LogDebugf("action[CommitVer] vol %v %v", verMgr.vol.Name, verMgr)
 	if verMgr.prepareCommit.op == proto.CreateVersionPrepare {
 		ver = verMgr.prepareCommit.prepareInfo
-		commitVer := &proto.VolVersionInfo{
+		commitVer := &proto.VersionInfo{
 			Ver:    ver.Ver,
 			Ctime:  ver.Ctime,
 			Status: proto.VersionNormal,
@@ -118,7 +118,7 @@ func (verMgr *VolVersionManager) CommitVer() (ver *proto.VolVersionInfo) {
 			return
 		}
 		verMgr.multiVersionList[idx].Status = proto.VersionDeleting
-		verMgr.multiVersionList[idx].DelTime = time.Now()
+		verMgr.multiVersionList[idx].DelTime = time.Now().Unix()
 		verMgr.wait <- nil
 	} else {
 		log.LogErrorf("action[CommitVer] vol %v with seq %v wrong step", verMgr.vol.Name, verMgr.prepareCommit.prepareInfo.Ver)
@@ -140,17 +140,17 @@ func (verMgr *VolVersionManager) GenerateVer(verSeq uint64, op uint8) (err error
 	}
 
 	verMgr.prepareCommit.reset(verMgr.vol.Name)
-	verMgr.prepareCommit.prepareInfo = &proto.VolVersionInfo{
+	verMgr.prepareCommit.prepareInfo = &proto.VersionInfo{
 		Ver:    verSeq,
-		Ctime:  tm,
+		Ctime:  tm.Unix(),
 		Status: proto.VersionNormal,
 	}
 
 	verMgr.prepareCommit.op = op
 	size := len(verMgr.multiVersionList)
-	if size > 0 && tm.Before(verMgr.multiVersionList[size-1].Ctime) {
-		verMgr.prepareCommit.prepareInfo.Ctime = verMgr.multiVersionList[size-1].Ctime.Add(1)
-		verMgr.prepareCommit.prepareInfo.Ver = uint64(verMgr.multiVersionList[size-1].Ctime.Unix() + 1)
+	if size > 0 && tm.Before(time.Unix(verMgr.multiVersionList[size-1].Ctime,0)) {
+		verMgr.prepareCommit.prepareInfo.Ctime++
+		verMgr.prepareCommit.prepareInfo.Ver = uint64(verMgr.multiVersionList[size-1].Ctime) + 1
 		log.LogDebugf("action[GenerateVer] vol %v  use ver %v", verMgr.vol.Name, verMgr.prepareCommit.prepareInfo.Ver)
 	}
 	log.LogDebugf("action[GenerateVer] vol %v exit", verMgr.vol.Name)
@@ -219,7 +219,7 @@ func (verMgr *VolVersionManager) checkSnapshotStrategy() {
 		log.LogDebugf("checkSnapshotStrategy.vol %v try create snapshot", verMgr.vol.Name)
 		if _, err := verMgr.createVer2PhaseTask(verMgr.c, uint64(time.Now().Unix()), proto.CreateVersion, verMgr.strategy.ForceUpdate); err != nil {
 			verEle := verMgr.multiVersionList[len(verMgr.multiVersionList)-1]
-			if verEle.Ctime.Add(time.Duration(2*verMgr.strategy.Periodic) * time.Hour).Before(curTime) {
+			if verEle.Ctime + int64(verMgr.strategy.Periodic * 24 * 3600) < curTime.Unix() {
 				msg := fmt.Sprintf("[checkSnapshotStrategy] last version %v status %v for %v hours than 2times periodic", verEle.Ver, verEle.Status, 2*verMgr.strategy.Periodic)
 				Warn(verMgr.c.Name, msg)
 			}
@@ -237,7 +237,7 @@ func (verMgr *VolVersionManager) checkSnapshotStrategy() {
 		if verMgr.multiVersionList[0].Status != proto.VersionNormal {
 			log.LogDebugf("checkSnapshotStrategy.vol %v oldest ver %v status %v",
 				verMgr.vol.Name, verMgr.multiVersionList[0].Ver, verMgr.multiVersionList[0].Status)
-			if verMgr.multiVersionList[0].DelTime.Add(time.Duration(verMgr.strategy.Periodic) * time.Hour).Before(curTime) {
+			if verMgr.multiVersionList[0].DelTime + int64(verMgr.strategy.Periodic * 24 * 3600) < curTime.Unix() {
 				msg := fmt.Sprintf("[checkSnapshotStrategy] version %v in deleting status for %v hours than configure periodic [%v] hours",
 					verMgr.multiVersionList[0].Ver, verMgr.multiVersionList[0].Status, verMgr.strategy.Periodic)
 				Warn(verMgr.c.Name, msg)
@@ -484,7 +484,7 @@ func (verMgr *VolVersionManager) getLayInfo(verSeq uint64) (int, bool) {
 	return 0, false
 }
 
-func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op uint8, force bool) (ver *proto.VolVersionInfo, err error) {
+func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op uint8, force bool) (ver *proto.VersionInfo, err error) {
 	log.LogInfof("action[VolVersionManager.createTask] vol %v verSeq %v op %v force %v ,prepareCommit.nodeCnt %v",
 		verMgr.vol.Name, verSeq, op, force, verMgr.prepareCommit.nodeCnt)
 	verMgr.RLock()
@@ -504,7 +504,7 @@ func (verMgr *VolVersionManager) createTask(cluster *Cluster, verSeq uint64, op 
 	return
 }
 
-func (verMgr *VolVersionManager) initVer2PhaseTask(verSeq uint64, op uint8) (verRsp *proto.VolVersionInfo, err error, opRes uint8) {
+func (verMgr *VolVersionManager) initVer2PhaseTask(verSeq uint64, op uint8) (verRsp *proto.VersionInfo, err error, opRes uint8) {
 	verMgr.prepareCommit.reset(verMgr.vol.Name)
 	log.LogWarnf("action[VolVersionManager.initVer2PhaseTask] vol %v verMgr.status %v op %v verSeq %v", verMgr.vol.Name, verMgr.status, op, verSeq)
 	if op == proto.CreateVersion {
@@ -546,9 +546,9 @@ func (verMgr *VolVersionManager) initVer2PhaseTask(verSeq uint64, op uint8) (ver
 
 		verMgr.prepareCommit.op = op
 		verMgr.prepareCommit.prepareInfo =
-			&proto.VolVersionInfo{
+			&proto.VersionInfo{
 				Ver:    verSeq,
-				Ctime:  time.Now(),
+				Ctime:  time.Now().Unix(),
 				Status: proto.VersionWorking,
 			}
 	}
@@ -556,7 +556,7 @@ func (verMgr *VolVersionManager) initVer2PhaseTask(verSeq uint64, op uint8) (ver
 	return
 }
 
-func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq uint64, op uint8, force bool) (verRsp *proto.VolVersionInfo, err error) {
+func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq uint64, op uint8, force bool) (verRsp *proto.VersionInfo, err error) {
 	if err = verMgr.startWork(); err != nil {
 		return
 	}
@@ -677,9 +677,9 @@ func (verMgr *VolVersionManager) createVer2PhaseTask(cluster *Cluster, verSeq ui
 func (verMgr *VolVersionManager) init(cluster *Cluster) error {
 	verMgr.c = cluster
 	log.LogWarnf("action[VolVersionManager.init] vol %v", verMgr.vol.Name)
-	verMgr.multiVersionList = append(verMgr.multiVersionList, &proto.VolVersionInfo{
+	verMgr.multiVersionList = append(verMgr.multiVersionList, &proto.VersionInfo{
 		Ver:    0,
-		Ctime:  time.Now(),
+		Ctime:  time.Now().Unix(),
 		Status: 1,
 	})
 	if cluster.partition.IsRaftLeader() {
@@ -688,7 +688,7 @@ func (verMgr *VolVersionManager) init(cluster *Cluster) error {
 	return nil
 }
 
-func (verMgr *VolVersionManager) getVersionInfo(verGet uint64) (verInfo *proto.VolVersionInfo, err error) {
+func (verMgr *VolVersionManager) getVersionInfo(verGet uint64) (verInfo *proto.VersionInfo, err error) {
 	verMgr.RLock()
 	defer verMgr.RUnlock()
 

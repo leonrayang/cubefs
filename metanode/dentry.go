@@ -17,7 +17,6 @@ package metanode
 import (
 	"bytes"
 	"encoding/binary"
-
 	"fmt"
 	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/util/log"
@@ -44,9 +43,26 @@ import (
 //  | bytes |     4     |   KeyLength  |     4     |   ValLength  |
 //  +-------+-----------+--------------+-----------+--------------+
 
+const(
+	DirSnapshot = 1
+	VolSnapshot = 2
+)
+
 type DentryMultiSnap struct {
 	VerSeq     uint64
 	dentryList DentryBatch
+	VerList    []*proto.VersionInfo // for dir snapshot and no need to marshal and persist
+	SnapshotType  int8
+}
+
+type TxDentry struct {
+	Dentry *Dentry
+	TxInfo *proto.TransactionInfo
+}
+
+type  DirVerDentry struct {
+	Dentry  *Dentry
+	VerList []*proto.VersionInfo
 }
 
 type Dentry struct {
@@ -87,6 +103,13 @@ func (d *Dentry) getSeqFiled() (verSeq uint64) {
 		return 0
 	}
 	return d.multiSnap.VerSeq
+}
+
+func (d *Dentry) getVerSeqList() (verSeq []*proto.VersionInfo) {
+	if d.multiSnap == nil {
+		return
+	}
+	return d.multiSnap.VerList
 }
 
 func (d *Dentry) getVerSeq() (verSeq uint64) {
@@ -174,7 +197,7 @@ func (d *Dentry) getDentryFromVerList(verSeq uint64) (den *Dentry, idx int) {
 	return
 }
 
-func (d *Dentry) getLastestVer(reqVerSeq uint64, commit bool, verlist []*proto.VolVersionInfo) (uint64, bool) {
+func (d *Dentry) getLastestVer(reqVerSeq uint64, commit bool, verlist []*proto.VersionInfo) (uint64, bool) {
 	if len(verlist) == 0 {
 		return 0, false
 	}
@@ -196,7 +219,7 @@ func (d *Dentry) getLastestVer(reqVerSeq uint64, commit bool, verlist []*proto.V
 // the scope of  deleted happened from the DentryDeleted flag owner(include in) to the file with the same name be created is invisible,
 // if create anther dentry with larger verSeq, put the deleted dentry to the history list.
 // return doMore bool.True means need do next step on caller such as unlink parentIO
-func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []*proto.VolVersionInfo) (rd *Dentry, dmore bool, clean bool) { // bool is doMore
+func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []*proto.VersionInfo) (rd *Dentry, dmore bool, clean bool) { // bool is doMore
 	log.LogDebugf("action[deleteVerSnapshot] enter.dentry %v delVerSeq %v mpVer %v verList %v", d, delVerSeq, mpVerSeq, verlist)
 	// create denParm version
 	if !isInitSnapVer(delVerSeq) && delVerSeq > mpVerSeq {
@@ -228,8 +251,6 @@ func (d *Dentry) deleteVerSnapshot(delVerSeq uint64, mpVerSeq uint64, verlist []
 			d.setVerSeq(mpVerSeq)
 			d.multiSnap.dentryList = append([]*Dentry{dn.(*Dentry)}, d.multiSnap.dentryList...)
 			log.LogDebugf("action[deleteVerSnapshot.delSeq_0] create version and push to dentry list. dentry %v", dn.(*Dentry))
-		} else {
-			d.setVerSeq(mpVerSeq)
 		}
 		d.setVerSeq(mpVerSeq)
 		d.setDeleted() // denParm create at the same version.no need to push to history list
@@ -301,10 +322,6 @@ func (d *Dentry) String() string {
 	return str
 }
 
-type TxDentry struct {
-	Dentry *Dentry
-	TxInfo *proto.TransactionInfo
-}
 
 func NewTxDentry(parentID uint64, name string, ino uint64, mode uint32, txInfo *proto.TransactionInfo) *TxDentry {
 	dentry := &Dentry{
@@ -319,6 +336,70 @@ func NewTxDentry(parentID uint64, name string, ino uint64, mode uint32, txInfo *
 		TxInfo: txInfo,
 	}
 	return txDentry
+}
+
+func (vd *DirVerDentry) Marshal() (result []byte, err error) {
+	buff := bytes.NewBuffer(make([]byte, 0))
+	bs, err := vd.Dentry.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	if err = binary.Write(buff, binary.BigEndian, uint32(len(bs))); err != nil {
+		return nil, err
+	}
+	if _, err := buff.Write(bs); err != nil {
+		return nil, err
+	}
+	if err = binary.Write(buff, binary.BigEndian, uint32(len(vd.VerList))); err != nil {
+		return nil, err
+	}
+	if len(vd.VerList) > 0 {
+		if err = binary.Write(buff, binary.BigEndian, uint32(len(vd.VerList)* proto.VersionSimpleSize)); err != nil {
+			return nil, err
+		}
+		if err = binary.Write(buff, binary.BigEndian, vd.VerList); err != nil {
+			return nil, err
+		}
+	}
+	result = buff.Bytes()
+	return
+}
+
+func (vd *DirVerDentry) Unmarshal(raw []byte) (err error) {
+	buff := bytes.NewBuffer(raw)
+	var dataLen uint32
+	if err = binary.Read(buff, binary.BigEndian, &dataLen); err != nil {
+		return
+	}
+	data := make([]byte, int(dataLen))
+	if _, err = buff.Read(data); err != nil {
+		return
+	}
+
+	dentry := &Dentry{}
+	if err = dentry.Unmarshal(data); err != nil {
+		return
+	}
+	vd.Dentry = dentry
+
+	if err = binary.Read(buff, binary.BigEndian, &dataLen); err != nil {
+		return
+	}
+	vd.VerList = make([]*proto.VersionInfo, dataLen/uint32(proto.VersionSimpleSize))
+	if err = binary.Read(buff, binary.BigEndian, &vd.VerList); err != nil {
+		return
+	}
+
+	//data = make([]byte, int(dataLen))
+	//var i uint32 = 0
+	//for i < dataLen/uint32(proto.VersionSimpleSize) {
+	//	info := new(proto.VersionInfo)
+	//	binary.Read(buff, binary.BigEndian, info)
+	//	vd.VerList = append(vd.VerList, info)
+	//	log.LogDebugf("action[DirVerDentry] unmarshal,dentry %v seq %v", vd.Dentry, info)
+	//}
+
+	return
 }
 
 func (td *TxDentry) Marshal() (result []byte, err error) {
