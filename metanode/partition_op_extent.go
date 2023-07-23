@@ -60,6 +60,37 @@ func (mp *metaPartition) ExtentAppend(req *proto.AppendExtentKeyRequest, p *Pack
 	return
 }
 
+func (mp *metaPartition) buildAndSubmitInoPacket(ino *Inode, opCode uint32, dirOpCode uint32, p *Packet) (resp interface{}, err error){
+	var val []byte
+	var opFlag uint32
+	if len(p.DirVerList) > 0 {
+		dirInode := &InodeDirVer{
+			Ino: ino,
+			DirVerList: p.DirVerList,
+		}
+		val, err = dirInode.Marshal()
+		if err != nil {
+			p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
+			return
+		}
+		opFlag = dirOpCode
+	} else {
+		val, err = ino.Marshal()
+		if err != nil {
+			p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
+			return
+		}
+		opFlag = opCode
+	}
+
+	resp, err = mp.submit(opFlag, val)
+	if err != nil {
+		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))
+		return
+	}
+
+}
+
 // ExtentAppendWithCheck appends an extent with discard extents check.
 // Format: one valid extent key followed by non or several discard keys.
 func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithCheckRequest, p *Packet) (err error) {
@@ -109,18 +140,19 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 	if len(req.DiscardExtents) != 0 {
 		ino.Extents.eks = append(ino.Extents.eks, req.DiscardExtents...)
 	}
-	val, err := ino.Marshal()
-	if err != nil {
-		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
-		return
+
+
+	opDirFlag := opFSMExtentsAddWithCheckByDirVer
+	if req.IsSplit {
+		opDirFlag = opFSMExtentSplitByDir
 	}
+
 	opFlag := opFSMExtentsAddWithCheck
 	if req.IsSplit {
 		opFlag = opFSMExtentSplit
 	}
-	resp, err := mp.submit(opFlag, val)
-	if err != nil {
-		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))
+
+	if err = mp.buildAndSubmitInoPacket(ino, opDirFlag, opFlag, p); err != nil {
 		return
 	}
 
@@ -383,14 +415,8 @@ func (mp *metaPartition) ExtentsTruncate(req *ExtentsTruncateReq, p *Packet) (er
 
 	ino.Size = req.Size
 	ino.setVolVer(mp.verSeq)
-	val, err := ino.Marshal()
+	resp, err := mp.buildAndSubmitInoPacket(ino, opFSMExtentTruncate, opFSMExtentTruncateByDirVer, p)
 	if err != nil {
-		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
-		return
-	}
-	resp, err := mp.submit(opFSMExtentTruncate, val)
-	if err != nil {
-		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))
 		return
 	}
 	msg := resp.(*InodeResponse)

@@ -90,6 +90,15 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 			return
 		}
 		resp = mp.fsmUnlinkInodeByDirVer(inodeDirVer)
+	case opFSMTruncateDirVer:
+		ino := NewInode(0, 0)
+		inodeDirVer := &InodeDirVer{
+			Ino: ino,
+		}
+		if err = inodeDirVer.Unmarshal(msg.V); err != nil {
+			return
+		}
+		resp = mp.fsmExtentsTruncateByDirVer(inodeDirVer)
 	case opFSMUnlinkInodeBatch:
 		inodes, err := InodeBatchUnmarshal(msg.V)
 		if err != nil {

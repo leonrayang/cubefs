@@ -419,7 +419,9 @@ func (mp *metaPartition) fsmAppendExtents(ino *Inode) (status uint8) {
 	return
 }
 
-func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (status uint8) {
+func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, )
+
+func (mp *metaPartition) fsmAppendExtentsWithCheckDoWork(ino *Inode, verList []*proto.VersionInfo, isSplit bool) (status uint8) {
 	var (
 		delExtents []proto.ExtentKey
 	)
@@ -476,7 +478,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (st
 		// only the ek itself will be moved to level before
 		// ino verseq be set with mp ver before submit in case other mp be updated while on flight, which will lead to
 		// inconsistent between raft pairs
-		delExtents, status = ino2.SplitExtentWithCheck(mp.multiVersionList, ino.getVer(), eks[0], ino.ModifyTime, mp.volType)
+		delExtents, status = ino2.SplitExtentWithCheck(, ino.getVer(), eks[0], ino.ModifyTime, mp.volType)
 		ino2.DecSplitExts(delExtents)
 		mp.extDelCh <- delExtents
 		mp.uidManager.minusUidSpace(ino2.Uid, ino2.Inode, delExtents)
@@ -525,7 +527,15 @@ func (mp *metaPartition) fsmAppendObjExtents(ino *Inode) (status uint8) {
 	return
 }
 
+func (mp *metaPartition) fsmExtentsTruncateByDirVer(inoDirVer *InodeDirVer) (resp *InodeResponse) {
+	return mp.fsmExtentsTruncateDoWork(inoDirVer.Ino, inoDirVer.DirVerList)
+}
+
 func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
+	return mp.fsmExtentsTruncateDoWork(ino, mp.getVerList())
+}
+
+func (mp *metaPartition) fsmExtentsTruncateDoWork(ino *Inode, verList []*proto.VersionInfo) (resp *InodeResponse) {
 	var err error
 	resp = NewInodeResponse()
 	log.LogDebugf("fsmExtentsTruncate. req ino %v", ino)
@@ -550,13 +560,13 @@ func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 		eks = append(eks, *lastKey)
 		mp.uidManager.minusUidSpace(i.Uid, i.Inode, eks)
 	}
-	if i.getVer() != mp.verSeq {
-		i.CreateVer(mp.verSeq)
+	if i.getVer() != ino.getVer() {
+		i.CreateVer(ino.getVer())
 	}
 	i.Lock()
 	defer i.Unlock()
 
-	if err = i.CreateLowerVersion(i.getVer(), mp.multiVersionList); err != nil {
+	if err = i.CreateLowerVersion(i.getVer(), verList); err != nil {
 		return
 	}
 	oldSize := int64(i.Size)

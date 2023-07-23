@@ -309,15 +309,10 @@ func (mp *metaPartition) UnlinkInode(req *UnlinkInoReq, p *Packet) (err error) {
 		ino.Flag |= InodeDelTop
 	}
 
-	val, err := ino.Marshal()
-	if err != nil {
-		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
-		return
-	}
+
 	log.LogDebugf("action[UnlinkInode] ino %v submit", ino)
-	r, err := mp.submit(opFSMUnlinkInode, val)
+	r, err := mp.buildAndSubmitInoPacket(ino, opFSMUnlinkByDirVer, opFSMUnlinkInode, p)
 	if err != nil {
-		p.PacketErrorWithBody(proto.OpAgain, []byte(err.Error()))
 		return
 	}
 
