@@ -1,0 +1,201 @@
+package cubefssdk
+
+import (
+	"errors"
+	"fmt"
+	"github.com/cubefs/cubefs/proto"
+	"github.com/cubefs/cubefs/sdk/data/stream"
+	"github.com/cubefs/cubefs/sdk/meta"
+	"go.uber.org/zap"
+	"io"
+	gopath "path"
+	"syscall"
+)
+
+type DataApi struct {
+	ec *stream.ExtentClient
+}
+
+func NewDataApi(volName, endpoint string, mw *meta.MetaWrapper, logger *zap.Logger) (*DataApi, error) {
+	var (
+		ec      *stream.ExtentClient
+		err     error
+		masters []string
+	)
+
+	masters = append(masters, endpoint)
+	if ec, err = stream.NewExtentClient(&stream.ExtentConfig{
+		Volume:            volName,
+		Masters:           masters,
+		FollowerRead:      false,
+		OnAppendExtentKey: mw.AppendExtentKey,
+		OnGetExtents:      mw.GetExtents,
+		OnTruncate:        mw.Truncate,
+	}); err != nil {
+		logger.Error("newClient NewExtentClient failed", zap.Any("volName", volName),
+			zap.Any("masters", masters), zap.Any("err", err))
+		return nil, err
+	}
+	dataAPI := &DataApi{
+		ec: ec,
+	}
+	return dataAPI, nil
+}
+
+func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk) (err error) {
+	logger := sdk.logger
+	//获取源文件的inode信息。
+	srcInfo, err := sdk.LookupPath(srcPath)
+	if err != nil {
+		logger.Warn("LookupPath source failed", zap.Any("srcVol", sdk.volName), zap.Any("err", err))
+		return err
+	}
+	//如果是软连接
+	if proto.IsSymlink(srcInfo.Mode) {
+		return sdk.CopySymlinkToDir(srcPath, dstRoot, dstSdk)
+	}
+	//获取源文件名
+	_, fileName := gopath.Split(gopath.Clean(srcPath))
+	//获取目标路径信息
+	dstParentInfo, err := dstSdk.LookupPath(dstRoot)
+	if err != nil {
+		logger.Error("LookupPath target failed", zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
+		return err
+	}
+	//创建目标文件
+	dstInfo, err := dstSdk.CreateFile(dstParentInfo.Inode, fileName, srcInfo.Mode, srcInfo.Uid, srcInfo.Gid)
+	if err != nil {
+		if err != syscall.EEXIST {
+			logger.Error("Create target failed", zap.Any("dstRoot", dstRoot), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
+			return errors.New(fmt.Sprintf("Create target failed, dstRoot %s vol %s[%s]", dstRoot, dstSdk.volName, err.Error()))
+		}
+		dstInfo, err = dstSdk.LookupPath(gopath.Join(dstRoot, fileName))
+		if err != nil {
+			logger.Error("Open target failed", zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
+			return errors.New(fmt.Sprintf("Open exist target failed, dstRoot %s vol %s [%s]", dstRoot, dstSdk.volName, err.Error()))
+		}
+	}
+	var eks []proto.ExtentKey
+	srcEC := sdk.ecApi.ec
+	srcMW := sdk.mwApi.mw
+	dstEC := dstSdk.ecApi.ec
+	//dstInfo.Inode
+	dstEC.OpenStream(dstInfo.Inode)
+	srcEC.OpenStream(srcInfo.Inode)
+	//
+	_, _, eks, err = srcMW.GetExtents(srcInfo.Inode)
+	if err != nil {
+		logger.Error("GetExtents for source failed", zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
+		return errors.New(fmt.Sprintf("GetExtents for source failed %s vol %s[%s]", srcPath, sdk.volName, err.Error()))
+	}
+	for _, ek := range eks {
+		size := ek.Size
+		var buf = make([]byte, size)
+		var n int
+		n, err = sdk.read(srcInfo.Inode, int(ek.FileOffset), buf)
+		if err != nil {
+			logger.Error("Read  failed", zap.Any("FileOffset", ek.FileOffset), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
+			return errors.New(fmt.Sprintf("Read FileOffset %d from source %s vol %s [%s]",
+				ek.FileOffset, srcPath, sdk.volName, err.Error()))
+		}
+
+		if uint32(n) != size {
+			logger.Error("Read wrong size", zap.Any("FileOffset", ek.FileOffset), zap.Any("expect size", size),
+				zap.Any("actual size", n))
+			return errors.New(fmt.Sprintf("Read wrong size from source %s, %d[expect %d]",
+				srcPath, n, size))
+		}
+		_, err = dstSdk.write(dstInfo.Inode, dstParentInfo.Inode, int(ek.FileOffset), buf, 0)
+	}
+	//关闭文件
+	dstEC.CloseStream(dstInfo.Inode)
+	srcEC.CloseStream(srcInfo.Inode)
+	//检查文件大小是否一致
+	srcInfo, err = sdk.LookupPath(srcPath)
+	if err != nil {
+		logger.Warn("LookupPath source to check failed", zap.Any("srcVol", sdk.volName), zap.Any("err", err))
+		return err
+	}
+	dstInfo, err = dstSdk.LookupPath(gopath.Join(dstRoot, fileName))
+	if err != nil {
+		logger.Warn("LookupPath dst to check failed", zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
+	}
+	if srcInfo.Size != dstInfo.Size {
+		return errors.New(fmt.Sprintf("Copy size not the same %s[%s]", srcPath, gopath.Join(dstRoot, fileName)))
+	}
+	logger.Debug("Copy success", zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("dstPath", gopath.Join(dstRoot, fileName)),
+		zap.Any("dstVol", dstSdk.volName))
+	return nil
+}
+
+func (sdk *CubeFSSdk) CopySymlinkToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk) (err error) {
+	logger := sdk.logger
+	//获取源文件的inode信息。
+	srcInfo, err := sdk.LookupPath(srcPath)
+	if err != nil {
+		logger.Warn("LookupPath source failed", zap.Any("err", err))
+		return err
+	}
+	//获取源文件名
+	_, fileName := gopath.Split(gopath.Clean(srcPath))
+	//获取目标路径信息
+	dstParentInfo, err := dstSdk.LookupPath(dstRoot)
+	if err != nil {
+		logger.Error("LookupPath target failed", zap.Any("err", err))
+		return err
+	}
+	//创建目标文件
+	dstInfo, err := dstSdk.CreateSymlink(dstParentInfo.Inode, fileName, srcInfo.Mode, srcInfo.Uid, srcInfo.Gid, srcInfo.Target)
+	if err != nil {
+		if err != syscall.EEXIST {
+			logger.Error("Create target failed", zap.Any("dstRoot", dstRoot), zap.Any("err", err))
+			return errors.New(fmt.Sprintf("Create target failed, dstRoot %s[%s]", dstRoot, err.Error()))
+		}
+		dstInfo, err = dstSdk.LookupPath(gopath.Join(dstRoot, fileName))
+		if err != nil {
+			logger.Error("Open target failed", zap.Any("err", err))
+			return errors.New(fmt.Sprintf("Open exist target failed, dstRoot %s[%s]", dstRoot, err.Error()))
+		}
+	}
+	if string(dstInfo.Target) != string(srcInfo.Target) {
+		err = errors.New(fmt.Sprintf("Src[%v]target[%v]not equal dst[%v]target[%v]",
+			srcPath, string(srcInfo.Target), gopath.Join(dstRoot, fileName), string(dstInfo.Target)))
+		logger.Error("target not equal", zap.Any("err", err))
+		return
+	}
+	logger.Debug("Copy Symlink success", zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName),
+		zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstVol", dstSdk.volName))
+	return nil
+}
+func (sdk *CubeFSSdk) read(ino uint64, offset int, data []byte) (n int, err error) {
+	ec := sdk.ecApi.ec
+	n, err = ec.Read(ino, data, offset, len(data))
+	if err != nil && err != io.EOF {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (sdk *CubeFSSdk) write(ino, pino uint64, offset int, data []byte, flags int) (n int, err error) {
+	ec := sdk.ecApi.ec
+	ec.GetStreamer(ino).SetParentInode(pino)
+	checkFunc := func() error {
+		if !sdk.mwApi.mw.EnableQuota {
+			return nil
+		}
+
+		if ok := sdk.ecApi.ec.UidIsLimited(0); ok {
+			return syscall.ENOSPC
+		}
+
+		if sdk.mwApi.mw.IsQuotaLimitedById(ino, true, false) {
+			return syscall.ENOSPC
+		}
+		return nil
+	}
+	n, err = ec.Write(ino, offset, data, flags, checkFunc)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}

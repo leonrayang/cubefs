@@ -12,6 +12,8 @@ BIN_LIBSDK := $(BIN_PATH)/libsdk
 BIN_FDSTORE := $(BIN_PATH)/fdstore
 BIN_PRELOAD := $(BIN_PATH)/cfs-preload
 BIN_BCACHE:= $(BIN_PATH)/cfs-bcache
+BIN_MIGRATESERVER := $(BIN_PATH)/migrate-server
+BIN_MIGRATECLIENT := $(BIN_PATH)/migrate-client
 
 COMMON_SRC := build/build.sh Makefile
 COMMON_SRC += $(wildcard storage/*.go util/*/*.go util/*.go repl/*.go raftstore/*.go proto/*.go)
@@ -25,6 +27,9 @@ LIBSDK_SRC := $(wildcard libsdk/*.go)
 FDSTORE_SRC := $(wildcard fdstore/*.go)
 PRELOAD_SRC := $(wildcard preload/*.go)
 BCACHE_SRC := $(wildcard blockcache/*.go)
+MIGRATESERVER_SRC := $(wildcard migrateserver/*.go)
+MIGRATECLIENT_SRC := $(wildcard migrateclient/*.go)
+
 
 RM := $(shell [ -x /bin/rm ] && echo "/bin/rm" || echo "/usr/bin/rm" )
 
@@ -56,6 +61,10 @@ preload: $(BIN_PRELOAD)
 
 bcache: $(BIN_BCACHE)
 
+migrateserver: $(BIN_MIGRATESERVER)
+migrateclient: $(BIN_MIGRATECLIENT)
+
+
 $(BIN_SERVER): $(COMMON_SRC) $(SERVER_SRC)
 	@build/build.sh server
 
@@ -86,6 +95,12 @@ $(BIN_PRELOAD): $(COMMON_SRC) $(PRELOAD_SRC)
 $(BIN_BCACHE): $(COMMON_SRC) $(BCACHE_SRC)
 	@build/build.sh bcache
 
+$(BIN_MIGRATESERVER): $(COMMON_SRC) $(MIGRATESERVER_SRC)
+	@build/build.sh migrateserver
+
+$(BIN_MIGRATECLIENT): $(COMMON_SRC) $(MIGRATECLIENT_SRC)
+	@build/build.sh migrateclient
+	
 phony += clean
 clean:
 	@$(RM) -rf build/bin

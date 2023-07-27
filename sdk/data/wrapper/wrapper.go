@@ -240,7 +240,8 @@ func (w *Wrapper) update() {
 			w.UpdateSimpleVolView()
 			w.updateDataPartition(false)
 			w.updateDataNodeStatus()
-			w.CheckPermission()
+			// 迁移平台不需要
+			//w.CheckPermission()
 		case <-w.stopC:
 			return
 		}

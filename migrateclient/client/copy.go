@@ -1,0 +1,187 @@
+package client
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"github.com/cubefs/cubefs/util/migrate/cubefssdk"
+	"github.com/cubefs/cubefs/util/migrate/falconroute"
+	"github.com/cubefs/cubefs/util/migrate/proto"
+	"go.uber.org/zap"
+	gopath "path"
+	"sync"
+)
+
+func (cli *MigrateClient) doCopySingleFileOperation(task proto.Task) error {
+	var (
+		srcRouter falconroute.RouteInfo
+		dstRouter falconroute.RouteInfo
+		router    *falconroute.Router
+		ok        bool
+		clusterId = task.SourceCluster
+		srcPath   = task.Source
+		dstPath   = task.Target
+		logger    = cli.Logger
+		err       error
+	)
+	virSrcPath := falconroute.GetVirtualPathFromAbsDir(srcPath)
+	virDstPath := falconroute.GetVirtualPathFromAbsDir(dstPath)
+	//server做了路由检测，这里可以省略大部分步骤
+	if router, ok = cli.routerMap[clusterId]; !ok {
+		logger.Error("route not found in config", zap.String("clusterId", clusterId))
+		return errors.New(fmt.Sprintf("route not found in config %s", clusterId))
+	}
+
+	srcRouter, err = router.GetRoute(virSrcPath, logger)
+	if err != nil {
+		logger.Error("get route failed", zap.Any("virSrcPath", virSrcPath), zap.Error(err))
+		return errors.New(fmt.Sprintf("get route %s failed:%s ", virSrcPath, err.Error()))
+	}
+
+	dstRouter, err = router.GetRoute(virDstPath, logger)
+	if err != nil {
+		logger.Error("get router failed", zap.Any("virDstPath", virDstPath), zap.Error(err))
+		return errors.New(fmt.Sprintf("get router %s failed:%s ", virDstPath, err.Error()))
+	}
+
+	if err := execCopyFileCommand(cli.sdkManager, srcPath, dstPath, srcRouter.Pool, srcRouter.Endpoint, dstRouter.Pool, dstRouter.Endpoint, logger); err == nil {
+		return nil
+	} else {
+		return errors.New(fmt.Sprintf("Execute copy single file operation failed: %s", err.Error()))
+	}
+}
+
+func execCopyFileCommand(manager *cubefssdk.SdkManager, source, target, srcVol, srcEndpoint, dstVol, dstEndpoint string, logger *zap.Logger) (err error) {
+	//无论是否为文件或者文件夹，执行的mv操作一致
+	logger.Debug("execCopyFileCommand", zap.Any("src", source), zap.Any("dst", target), zap.Any("srcVol", srcVol), zap.Any("dstVol", dstVol))
+	cli, err := manager.GetCubeFSSdk(srcVol, srcEndpoint)
+	if err != nil {
+		return err
+	}
+	cliDst, err := manager.GetCubeFSSdk(dstVol, dstEndpoint)
+	if err != nil {
+		return err
+	}
+	return cli.CopyFileToDir(source, target, cliDst)
+}
+
+func (cli *MigrateClient) doCopyDirOperation(task proto.Task) (error, uint64) {
+	var (
+		srcRouter falconroute.RouteInfo
+		dstRouter falconroute.RouteInfo
+		router    *falconroute.Router
+		ok        bool
+		clusterId = task.SourceCluster
+		srcPath   = task.Source
+		dstPath   = task.Target
+		logger    = cli.Logger
+		err       error
+	)
+	virSrcPath := falconroute.GetVirtualPathFromAbsDir(srcPath)
+	virDstPath := falconroute.GetVirtualPathFromAbsDir(dstPath)
+	//server做了路由检测，这里可以省略大部分步骤
+	if router, ok = cli.routerMap[clusterId]; !ok {
+		logger.Error("route not found in config", zap.String("clusterId", clusterId))
+		return errors.New(fmt.Sprintf("route not found in config %s", clusterId)), 0
+	}
+
+	srcRouter, err = router.GetRoute(virSrcPath, logger)
+	if err != nil {
+		logger.Error("get route failed", zap.Any("virSrcPath", virSrcPath), zap.Error(err))
+		return errors.New(fmt.Sprintf("get route %s failed:%s ", virSrcPath, err.Error())), 0
+	}
+
+	dstRouter, err = router.GetRoute(virDstPath, logger)
+	if err != nil {
+		logger.Error("get router failed", zap.Any("virDstPath", virDstPath), zap.Error(err))
+		return errors.New(fmt.Sprintf("get router %s failed:%s ", virDstPath, err.Error())), 0
+	}
+
+	if err, totalSize := execCopyDirCommand(cli.sdkManager, srcPath, dstPath, srcRouter.Pool, srcRouter.Endpoint, dstRouter.Pool, dstRouter.Endpoint,
+		logger, cli.copyGoroutineLimit, cli.copyQueueLimit); err == nil {
+		return nil, totalSize
+	} else {
+		return errors.New(fmt.Sprintf("Execute copy single file operation failed: %s", err.Error())), 0
+	}
+}
+
+func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, srcEndpoint, dstVol, dstEndpoint string, logger *zap.Logger, goroutineLimit, taskLimit int) (err error, total uint64) {
+	//无论是否为文件或者文件夹，执行的mv操作一致
+	logger.Debug("execCopyDirCommand", zap.Any("src", source), zap.Any("from vol", srcVol), zap.Any("dst", target), zap.Any("to vol", dstVol))
+	total = 0
+	srcCli, err := manager.GetCubeFSSdk(srcVol, srcEndpoint)
+	if err != nil {
+		return err, 0
+	}
+	dstCli, err := manager.GetCubeFSSdk(dstVol, dstEndpoint)
+	if err != nil {
+		return err, 0
+	}
+	children, err := srcCli.ReadDir(source)
+	if err != nil {
+		logger.Debug("ReadDir failed", zap.Any("source", source), zap.Any("err", err))
+		return errors.New(fmt.Sprintf("ReadDir failed, dir %s[%s]", source, err.Error())), 0
+	}
+	errCh := make(chan error, 1)
+	taskCh := make(chan CopySubTask, taskLimit)
+	wg := sync.WaitGroup{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for i := 0; i < goroutineLimit; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for task := range taskCh {
+				select {
+				case <-ctx.Done():
+					return // Error somewhere, terminate
+				default: // Default is must to avoid blocking
+				}
+				err = srcCli.CopyFileToDir(task.source, task.target, dstCli)
+				if err != nil {
+					cancel()
+					select {
+					case errCh <- err:
+						logger.Warn("Copy failed", zap.Any("err", err))
+						return
+					default:
+						logger.Warn("to many errors", zap.Any("err", err))
+						return
+					}
+
+				}
+			}
+		}()
+	}
+	for _, child := range children {
+		if srcCli.IsDirByDentry(child) {
+			continue
+		}
+		childSize, err := srcCli.GetFileSize(gopath.Join(source, child.Name))
+		if err != nil {
+			logger.Warn("Failed to get file size", zap.Any("child", gopath.Join(source, child.Name)), zap.Any("err", err))
+			break
+		}
+		total += childSize
+		taskCh <- CopySubTask{source: gopath.Join(source, child.Name), target: target}
+	}
+	close(taskCh)
+	wg.Wait()
+	if len(errCh) == 0 {
+		return
+	} else {
+		for {
+			select {
+			case err := <-errCh:
+				return err, 0
+			default:
+				return
+			}
+		}
+	}
+}
+
+type CopySubTask struct {
+	source string
+	target string
+}

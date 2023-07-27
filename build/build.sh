@@ -283,6 +283,22 @@ build_client2() {
     popd >/dev/null
 }
 
+build_migrateserver() {
+    pre_build
+    pushd $SrcPath >/dev/null
+    echo -n "build migrateserver  "
+    go build $MODFLAGS -ldflags "${LDFlags}" -o ${BuildBinPath}/migrate-server ${SrcPath}/migrateserver/*.go  && echo "success" || echo "failed"
+    popd >/dev/null
+}
+
+build_migrateclient() {
+    pre_build
+    pushd $SrcPath >/dev/null
+    echo -n "build migrateclient  "
+    go build $MODFLAGS -ldflags "${LDFlags}" -o ${BuildBinPath}/migrate-client ${SrcPath}/migrateclient/*.go  && echo "success" || echo "failed"
+    popd >/dev/null
+}
+
 build_authtool() {
     pre_build
     pushd $SrcPath >/dev/null
@@ -419,6 +435,13 @@ case "$cmd" in
     "dist_clean")
         dist_clean
         ;;
+    "migrateserver")
+        build_migrateserver
+        ;;
+    "migrateclient")
+        build_migrateclient
+        ;;
+
     *)
         ;;
 esac
