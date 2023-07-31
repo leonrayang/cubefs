@@ -419,7 +419,13 @@ func (mp *metaPartition) fsmAppendExtents(ino *Inode) (status uint8) {
 	return
 }
 
-func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, )
+func (mp *metaPartition) fsmAppendExtentsWithCheckByDir(ino *InodeDirVer, isSplit bool) (status uint8) {
+	return mp.fsmAppendExtentsWithCheckDoWork(ino.Ino, ino.DirVerList, isSplit)
+}
+
+func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode, isSplit bool) (status uint8) {
+	return mp.fsmAppendExtentsWithCheckDoWork(ino, mp.getVerList(), isSplit)
+}
 
 func (mp *metaPartition) fsmAppendExtentsWithCheckDoWork(ino *Inode, verList []*proto.VersionInfo, isSplit bool) (status uint8) {
 	var (
@@ -460,7 +466,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheckDoWork(ino *Inode, verList []*
 
 	log.LogDebugf("action[fsmAppendExtentsWithCheck] ino %v isSplit %v ek %v hist len %v", ino2.Inode, isSplit, eks[0], ino2.getLayerLen())
 	if !isSplit {
-		delExtents, status = ino2.AppendExtentWithCheck(mp.verSeq, mp.multiVersionList, ino.getVer(), eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
+		delExtents, status = ino2.AppendExtentWithCheck(ino.getVer(), verList, ino.getVer(), eks[0], ino.ModifyTime, discardExtentKey, mp.volType)
 		if status == proto.OpOk {
 			log.LogInfof("action[fsmAppendExtentsWithCheck] delExtents [%v]", delExtents)
 			ino2.DecSplitExts(delExtents)
@@ -478,7 +484,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheckDoWork(ino *Inode, verList []*
 		// only the ek itself will be moved to level before
 		// ino verseq be set with mp ver before submit in case other mp be updated while on flight, which will lead to
 		// inconsistent between raft pairs
-		delExtents, status = ino2.SplitExtentWithCheck(, ino.getVer(), eks[0], ino.ModifyTime, mp.volType)
+		delExtents, status = ino2.SplitExtentWithCheck(verList, ino.getVer(), eks[0], ino.ModifyTime, mp.volType)
 		ino2.DecSplitExts(delExtents)
 		mp.extDelCh <- delExtents
 		mp.uidManager.minusUidSpace(ino2.Uid, ino2.Inode, delExtents)

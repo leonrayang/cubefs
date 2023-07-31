@@ -1591,7 +1591,7 @@ func (i *Inode) CreateLowerVersion(curVer uint64, verlist []*proto.VersionInfo) 
 
 func (i *Inode) AppendExtentWithCheck(
 	mpVer uint64,
-	multiVersionList *proto.VolVersionInfoList,
+	multiVersionList []*proto.VersionInfo,
 	reqVer uint64,
 	ek proto.ExtentKey,
 	ct int64,

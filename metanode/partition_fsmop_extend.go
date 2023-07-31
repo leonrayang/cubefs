@@ -25,9 +25,7 @@ func (mp *metaPartition) fsmSetXAttr(extend *Extend) (err error) {
 	treeItem := mp.extendTree.CopyGet(extend)
 	var e *Extend
 	if treeItem == nil {
-		e = NewExtend(extend.inode)
-		e.verSeq = extend.verSeq
-		mp.extendTree.ReplaceOrInsert(e, true)
+		mp.extendTree.ReplaceOrInsert(extend, true)
 	} else {
 		// attr multi-ver copy all attr for simplify management
 		e = treeItem.(*Extend)
@@ -41,8 +39,8 @@ func (mp *metaPartition) fsmSetXAttr(extend *Extend) (err error) {
 			})
 			e.verSeq = extend.verSeq
 		}
+		e.Merge(extend, true)
 	}
-	e.Merge(extend, true)
 	return
 }
 
