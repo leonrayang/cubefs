@@ -95,7 +95,11 @@ func (job *MigrateJob) delMigratingTask(task proto.Task) {
 	//重试的task不减少次数，不然任务可能提前结束，但是需要从migratingTask删除，不然
 	//再次分配到这个client可能就无法处理
 	if task.IsRetrying == false {
-		job.migratingTaskCnt.Dec()
+		if job.migratingTaskCnt.Load() > 0 {
+			job.migratingTaskCnt.Dec()
+		} else {
+			job.logger.Warn("cannot dec job cnt if cnt == 0 ", zap.Any("task", task.String()))
+		}
 	}
 	job.mapMigratingLk.Lock()
 	defer job.mapMigratingLk.Unlock()
