@@ -6,20 +6,21 @@ import (
 )
 
 const (
-	RegisterUrl                = "/register"
-	FetchTasksUrl              = "/get/tasks"
-	MoveLocalUrl               = "/moveLocalFiles"
-	MigrateDetails             = "/MigrateDetails"
-	QueryProgressUrl           = "/queryJobProgress"
-	QueryProgressesUrl         = "/queryJobsProgress"
-	CopyLocalUrl               = "/copyLocalFiles"
-	MigrateDirUrl              = "/migrateDir"
-	MigrateResourceGroupDirUrl = "/migrateResourceGroupDir"
-	MigrateUserUrl             = "/migrateUser"
-	MigrateResourceGroupUrl    = "/migrateResourceGroup"
-	MigratingTasksByJobUrl     = "/migratingTasksByJob"
-	StopMigratingJobUrl        = "/stopMigratingJob"
-	RetryMigratingJobUrl       = "/retryMigratingJob"
+	RegisterUrl                 = "/register"
+	FetchTasksUrl               = "/get/tasks"
+	MoveLocalUrl                = "/moveLocalFiles"
+	MigrateDetails              = "/MigrateDetails"
+	QueryProgressUrl            = "/queryJobProgress"
+	QueryProgressesUrl          = "/queryJobsProgress"
+	CopyLocalUrl                = "/copyLocalFiles"
+	MigrateDirUrl               = "/migrateDir"
+	MigrateResourceGroupDirUrl  = "/migrateResourceGroupDir"
+	MigrateUserUrl              = "/migrateUser"
+	MigrateResourceGroupUrl     = "/migrateResourceGroup"
+	MigratingTasksByJobUrl      = "/migratingTasksByJob"
+	StopMigratingJobUrl         = "/stopMigratingJob"
+	RetryMigratingJobUrl        = "/retryMigratingJob"
+	QueryClientMigratingTaskUrl = "/queryClientMigratingTask"
 )
 
 type HttpReply struct {
@@ -69,6 +70,7 @@ type Task struct {
 	SourceCluster string
 	TargetCluster string
 	IsRetrying    bool //正在重试的任务不影响job计数
+	ConsumeTime   string
 }
 
 func (t *Task) String() string {
@@ -160,9 +162,14 @@ type QueryJobsProgressReq struct {
 }
 
 type QueryJobProgressRsp struct {
-	Status   int     `json:"status"`
-	Progress float64 `json:"progress"`
-	ErrorMsg string  `json:"errMsg"`
+	Status             int      `json:"status"`
+	Progress           float64  `json:"progress"`
+	ErrorMsg           string   `json:"errMsg"`
+	ConsumeTime        string   `json:"consumeTime"`
+	SizeGB             float64  `json:"sizeGB"`
+	SubJobsIdTotal     []string `json:"subJobsIdTotal"`
+	SubJobsIdRunning   []string `json:"subJobsIdRunning"`
+	SubJobsIdCompleted []string `json:"subJobsIdCompleted"`
 }
 
 type JobProgressRsp struct {

@@ -23,35 +23,42 @@ import (
 )
 
 type MigrateClient struct {
-	severAddr          string
-	Logger             *zap.Logger
-	NodeId             int32
-	routerMap          map[string]*falconroute.Router
-	stopCh             chan bool
-	pendingTaskCh      chan proto.Task //待处理任务
-	successTaskCh      chan proto.Task //成功的任务
-	failedTaskCh       chan proto.Task //失败的任务
-	extraTaskCh        chan proto.Task //无法处理的
-	maxJobCnt          int32
-	curJobCnt          int32
-	copyGoroutineLimit int
-	copyQueueLimit     int
-	sdkManager         *cubefssdk.SdkManager
+	severAddr           string
+	Logger              *zap.Logger
+	NodeId              int32
+	routerMap           map[string]*falconroute.Router
+	stopCh              chan bool
+	pendingTaskCh       chan proto.Task //待处理任务
+	successTaskCh       chan proto.Task //成功的任务
+	failedTaskCh        chan proto.Task //失败的任务
+	extraTaskCh         chan proto.Task //无法处理的
+	maxJobCnt           int32
+	curJobCnt           int32
+	copyGoroutineLimit  int
+	copyQueueLimit      int
+	sdkManager          *cubefssdk.SdkManager
+	port                int
+	migratingTaskMap    map[string]proto.Task
+	mapMigratingTaskLk  sync.RWMutex
+	lastTaskExecuteTime time.Time
 }
 
 func NewMigrateClient(cfg *config.Config) *MigrateClient {
 	cli := &MigrateClient{
-		routerMap:          make(map[string]*falconroute.Router),
-		severAddr:          cfg.Server,
-		stopCh:             make(chan bool),
-		pendingTaskCh:      make(chan proto.Task, 102400),
-		successTaskCh:      make(chan proto.Task, 102400),
-		failedTaskCh:       make(chan proto.Task, 102400),
-		extraTaskCh:        make(chan proto.Task, 102400),
-		maxJobCnt:          int32(cfg.JobCnt),
-		curJobCnt:          0,
-		copyGoroutineLimit: cfg.CopyGoroutineLimit,
-		copyQueueLimit:     cfg.CopyQueueLimit,
+		routerMap:           make(map[string]*falconroute.Router),
+		severAddr:           cfg.Server,
+		stopCh:              make(chan bool),
+		pendingTaskCh:       make(chan proto.Task, 102400),
+		successTaskCh:       make(chan proto.Task, 102400),
+		failedTaskCh:        make(chan proto.Task, 102400),
+		extraTaskCh:         make(chan proto.Task, 102400),
+		maxJobCnt:           int32(cfg.JobCnt),
+		curJobCnt:           0,
+		copyGoroutineLimit:  cfg.CopyGoroutineLimit,
+		copyQueueLimit:      cfg.CopyQueueLimit,
+		port:                cfg.Port,
+		migratingTaskMap:    make(map[string]proto.Task),
+		lastTaskExecuteTime: time.Now(),
 	}
 	cli.Logger, _ = liblog.NewZapLoggerWithLevel(cfg.LogCfg)
 	for _, route := range cfg.FalconRoute {
@@ -92,6 +99,26 @@ func NewMigrateClient(cfg *config.Config) *MigrateClient {
 	sdkLog.InitLog(logDir, "migrate", level, nil)
 	cli.sdkManager = cubefssdk.NewCubeFSSdkManager(cli.Logger)
 	return cli
+}
+func (cli *MigrateClient) addMigrateTask(task proto.Task) {
+	cli.mapMigratingTaskLk.Lock()
+	defer cli.mapMigratingTaskLk.Unlock()
+	cli.migratingTaskMap[task.TaskId] = task
+}
+
+func (cli *MigrateClient) deleteMigrateTask(task proto.Task) {
+	cli.mapMigratingTaskLk.Lock()
+	defer cli.mapMigratingTaskLk.Unlock()
+	delete(cli.migratingTaskMap, task.TaskId)
+}
+
+func (cli *MigrateClient) getAllMigrateTask() (tasks []proto.Task) {
+	cli.mapMigratingTaskLk.Lock()
+	defer cli.mapMigratingTaskLk.Unlock()
+	for _, task := range cli.migratingTaskMap {
+		tasks = append(tasks, task)
+	}
+	return
 }
 
 func (cli *MigrateClient) Register() error {
@@ -135,11 +162,17 @@ func (cli *MigrateClient) Run() {
 }
 
 func (cli *MigrateClient) execute() {
+	exitTimer := time.NewTimer(time.Minute * 10)
 	go cli.scheduleFetchTasks()
 	busyRetry := 0 //无法处理时进行重试
 	logger := cli.Logger
 	for {
 		select {
+		case <-exitTimer.C:
+			if time.Since(cli.lastTaskExecuteTime) >= time.Hour {
+				logger.Fatal("No task executed within an hour, exiting program")
+				panic("No task executed within an hour, exiting program")
+			}
 		case <-cli.stopCh:
 			logger.Info("receive stop, exit run")
 			return
@@ -150,6 +183,7 @@ func (cli *MigrateClient) execute() {
 					go func(t proto.Task) {
 						defer atomic.AddInt32(&cli.curJobCnt, -1)
 						cli.executeTask(t)
+						cli.lastTaskExecuteTime = time.Now()
 					}(task)
 					busyRetry = 0
 					break
@@ -158,11 +192,11 @@ func (cli *MigrateClient) execute() {
 				atomic.AddInt32(&cli.curJobCnt, -1)
 				busyRetry++
 				time.Sleep(time.Second)
-				if busyRetry > 20 {
+				if busyRetry > 10 {
 					busyRetry = 0
 					select {
 					case cli.extraTaskCh <- task:
-						logger.Warn("no consume after 20s, send back to server", zap.String("task", task.String()))
+						logger.Warn("no consume after 10s, send back to server", zap.String("task", task.String()))
 					default:
 						logger.Error("extraTaskCh is full, discard it", zap.String("task", task.String()))
 					}
@@ -271,7 +305,12 @@ func (cli *MigrateClient) fetchTasks(idleCnt int, succTasks, failTasks, extraTas
 
 func (cli *MigrateClient) executeTask(task proto.Task) {
 	var err error
+	logger := cli.Logger.With()
+	start := time.Now()
 	defer func() {
+		cli.deleteMigrateTask(task)
+		task.ConsumeTime = time.Now().Sub(start).String()
+		logger.Debug("Task complete", zap.Any("task", task))
 		if err == nil {
 			cli.successTaskCh <- task
 		} else {
@@ -279,6 +318,8 @@ func (cli *MigrateClient) executeTask(task proto.Task) {
 			cli.failedTaskCh <- task
 		}
 	}()
+	logger.Debug("addMigrateTask ", zap.Any("task", task))
+	cli.addMigrateTask(task)
 	if task.WorkMode == proto.JobMove {
 		err = cli.doMoveOperation(task)
 	}
@@ -294,6 +335,19 @@ func (cli *MigrateClient) executeTask(task proto.Task) {
 	if task.WorkMode == proto.JobMigrateDir {
 		err, task.MigrateSize = cli.doMigrateDirOperation(task)
 	}
+}
+
+func (cli *MigrateClient) StartHttpServer() {
+	cli.registerRouter()
+	var server = &http.Server{
+		Addr: fmt.Sprintf(":%d", cli.port),
+	}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil {
+			cli.Logger.Fatal("start http failed", zap.Int("port", cli.port), zap.Error(err))
+		}
+	}()
 }
 
 func strToLevel(s string) (level sdkLog.Level) {

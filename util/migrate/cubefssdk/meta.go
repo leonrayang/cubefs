@@ -46,6 +46,7 @@ func NewMetaApi(volName, endpoint string, enableSummary bool, logger *zap.Logger
 	return metaAPI, nil
 }
 
+// 可以利用缓存提速
 func (sdk *CubeFSSdk) PathIsExist(path string) bool {
 	_, err := sdk.mwApi.mw.LookupPath(path)
 	if err != nil {
@@ -55,8 +56,24 @@ func (sdk *CubeFSSdk) PathIsExist(path string) bool {
 			return true
 		}
 	}
-
 	return true
+}
+
+func (sdk *CubeFSSdk) PathIsExistWithIno(path string) (uint64, bool) {
+	ino, err := sdk.mwApi.mw.LookupPath(path)
+	if err != nil {
+		if err != syscall.EEXIST {
+			return 0, false
+		} else {
+			return 0, true
+		}
+	}
+	return ino, true
+}
+
+func (sdk *CubeFSSdk) DeleteFile(parentID uint64, fileName string) error {
+	_, err := sdk.mwApi.mw.Delete_ll(parentID, fileName, false)
+	return err
 }
 
 func (sdk *CubeFSSdk) LookupPath(path string) (*proto.InodeInfo, error) {
@@ -72,6 +89,34 @@ func (sdk *CubeFSSdk) LookupPath(path string) (*proto.InodeInfo, error) {
 
 	return info, nil
 }
+
+//func (sdk *CubeFSSdk) LookupPathWithCache(filePath string) (info *proto.InodeInfo, err error) {
+//	//可能目录的全路径有缓存
+//	info = sdk.ic.Get(filePath)
+//	if info != nil {
+//		return info, nil
+//	}
+//	var ino uint64
+//	//可能文件路径的父目录有缓存
+//	parentInfo := sdk.ic.Get(gopath.Dir(filePath))
+//	if parentInfo != nil {
+//		ino, _, err = sdk.mwApi.mw.Lookup_ll(parentInfo.Inode, gopath.Base(filePath))
+//		if err != nil {
+//			return nil, errors.New(fmt.Sprintf("lookupPath path %v from vol[%v] failed:%v", filePath, sdk.volName, err.Error()))
+//		}
+//		return info, nil
+//	} else {
+//		ino, err = sdk.mwApi.mw.LookupPath(filePath)
+//		if err != nil {
+//			return nil, errors.New(fmt.Sprintf("lookupPath path %v from vol[%v] failed:%v", filePath, sdk.volName, err.Error()))
+//		}
+//	}
+//	info, err = sdk.mwApi.mw.InodeGet_ll(ino)
+//	if err != nil {
+//		return nil, errors.New(fmt.Sprintf("InodeGet_ll path %v fromvol[%v] failed:%v", filePath, sdk.volName, err.Error()))
+//	}
+//	return info, nil
+//}
 
 func (sdk *CubeFSSdk) Move(srcPath, dstPath string) error {
 	srcPathInfo, err := sdk.LookupPath(srcPath)
@@ -182,6 +227,10 @@ func (sdk *CubeFSSdk) ReadDir(path string) ([]proto.Dentry, error) {
 
 func (sdk *CubeFSSdk) IsDirByDentry(entry proto.Dentry) bool {
 	return proto.IsDir(entry.Type)
+}
+
+func (sdk *CubeFSSdk) Truncate(parentIno uint64, ino uint64) error {
+	return sdk.ecApi.ec.Truncate(sdk.mwApi.mw, parentIno, ino, 0)
 }
 
 //func (sdk *CubeFSSdk) MkDirAll(path string) error {

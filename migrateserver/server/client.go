@@ -106,7 +106,7 @@ func (mc *MigrateClient) start() {
 
 // 如果阻塞太多就重新发送
 func (mc *MigrateClient) getServerTaskPendingLimit() int {
-	return mc.jobCnt * 20
+	return mc.idleCnt * 1
 }
 func (mc *MigrateClient) putSendCh(tasks []proto.Task) {
 	if len(tasks) == 0 {
@@ -232,7 +232,7 @@ func (mc *MigrateClient) fetchTasks(succTasks, failTasks []proto.Task) (newTasks
 	select {
 	case tasks = <-mc.sendCh:
 	default:
-		//mc.logger.Debug("no new tasks")
+		mc.logger.Debug("no new tasks")
 	}
 	//更改owner
 	mc.svr.mapMigratingJobLk.Lock()
@@ -244,6 +244,7 @@ func (mc *MigrateClient) fetchTasks(succTasks, failTasks []proto.Task) (newTasks
 		task.Owner = mc.Addr
 		newTasks = append(newTasks, task)
 	}
+	mc.logger.Debug("get new tasks", zap.Any("num", len(newTasks)))
 	mc.svr.mapMigratingJobLk.Unlock()
 	//更新client的task列表，追加新任务，移除失败和成功的任务
 	mc.updateRunningTasksStatus(succTasks, failTasks, newTasks)

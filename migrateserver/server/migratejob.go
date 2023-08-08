@@ -53,7 +53,7 @@ func NewMigrateJob(srcPath, srcCluster, dstPath, dstCluster string, workMode, Su
 		CreateTime:            time.Now().Unix(),
 		failedTask:            make(map[string]proto.Task),
 		migratingTask:         make(map[string]proto.Task),
-		retryCh:               make(chan proto.Task, 10240),
+		retryCh:               make(chan proto.Task, 1024000),
 		WorkMode:              workMode,
 		TotalSize:             0,
 		SummaryGoroutineLimit: SummaryGoroutineLimit,
@@ -74,11 +74,25 @@ func NewMigrateJob(srcPath, srcCluster, dstPath, dstCluster string, workMode, Su
 }
 
 func (job *MigrateJob) GetMigratingTasks() (tasks []proto.Task) {
+	if job.hasSubMigrateJobs() {
+		return job.getMigratingTasksBySubJobs()
+	}
+
 	job.mapMigratingLk.Lock()
 	cache := job.migratingTask
 	job.mapMigratingLk.Unlock()
 	for _, task := range cache {
 		tasks = append(tasks, task)
+	}
+	return
+}
+
+func (job *MigrateJob) getMigratingTasksBySubJobs() (tasks []proto.Task) {
+	job.mapSubMigratingJobLk.Lock()
+	cache := job.subMigratingJob
+	job.mapSubMigratingJobLk.Unlock()
+	for _, sub := range cache {
+		tasks = append(tasks, sub.GetMigratingTasks()...)
 	}
 	return
 }
@@ -357,6 +371,28 @@ func (job *MigrateJob) newTask(source, target string, migrateSize uint64) proto.
 	return t
 }
 
+func (job *MigrateJob) getSubJobsId() (total, running, completed []string) {
+	if !job.hasSubMigrateJobs() {
+		return
+	}
+	job.mapSubCompleteJobLk.Lock()
+	cache := job.subCompleteMigrateJob
+	job.mapSubCompleteJobLk.Unlock()
+
+	for _, sub := range cache {
+		total = append(total, sub.JobId)
+		completed = append(completed, sub.JobId)
+	}
+
+	job.mapSubMigratingJobLk.Lock()
+	cache = job.subMigratingJob
+	job.mapSubMigratingJobLk.Unlock()
+	for _, sub := range cache {
+		total = append(total, sub.JobId)
+		running = append(running, sub.JobId)
+	}
+	return
+}
 func (job *MigrateJob) getProgress() (float64, int32) {
 	if job.GetJobStatus() == proto.JobSuccess {
 		return float64(1), proto.JobSuccess
@@ -381,6 +417,9 @@ func (job *MigrateJob) getProgress() (float64, int32) {
 	return progress, job.GetJobStatus()
 }
 
+func (job *MigrateJob) GetCompleteSize() uint64 {
+	return job.completeSize.Load()
+}
 func (job *MigrateJob) SetSourceSDK(sdk *cubefssdk.CubeFSSdk) {
 	job.srcSDK = sdk
 }
@@ -483,6 +522,7 @@ func (job *MigrateJob) getProgressBySubJobs() (float64, int32) {
 		failNum    int
 		runningNum int
 	)
+	//先看完成的
 	job.mapSubCompleteJobLk.Lock()
 	cache := job.subCompleteMigrateJob
 	job.mapSubCompleteJobLk.Unlock()
@@ -497,6 +537,7 @@ func (job *MigrateJob) getProgressBySubJobs() (float64, int32) {
 		job.logger.Debug("getProgressBySubJobs is called", zap.Any("progress", subProgress), zap.Any("sub", sub.JobId),
 			zap.Any("SrcPath", sub.SrcPath), zap.Any("DstPath", sub.DstPath))
 	}
+	//再看正在进行迁移的
 	job.mapSubMigratingJobLk.Lock()
 	cache = job.subMigratingJob
 	job.mapSubMigratingJobLk.Unlock()

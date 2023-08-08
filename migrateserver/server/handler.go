@@ -27,7 +27,7 @@ func (svr *MigrateServer) registerRouter() {
 	http.HandleFunc(proto.CopyLocalUrl, svr.copyLocalFilesHandler)
 	//查询拷贝/移动的进度
 	http.HandleFunc(proto.QueryProgressUrl, svr.queryJobProgressHandler)
-	//查询拷贝/移动的进度
+	//批量查询拷贝/移动的进度
 	http.HandleFunc(proto.QueryProgressesUrl, svr.queryJobsProgressHandler)
 	//迁移目录
 	http.HandleFunc(proto.MigrateDirUrl, svr.migrateDirHandler)
@@ -386,14 +386,14 @@ func (svr *MigrateServer) migrateUserHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	//err, id := svr.migrateUser(req.User, req.SrcClusterId, req.DstClusterId)
-	//
-	//if err != nil {
-	//	writeErr(w, proto.Fail, err.Error(), logger)
-	//	return
-	//}
-	//writeResp(w, id, logger)
-	writeErr(w, proto.ParmErr, "not support", logger)
+	err, id := svr.migrateUser(req.User, req.SrcClusterId, req.DstClusterId)
+
+	if err != nil {
+		writeErr(w, proto.Fail, err.Error(), logger)
+		return
+	}
+	writeResp(w, id, logger)
+	//writeErr(w, proto.ParmErr, "not support", logger)
 }
 
 func (svr *MigrateServer) queryJobProgressHandler(w http.ResponseWriter, r *http.Request) {
@@ -430,6 +430,18 @@ func (svr *MigrateServer) queryJobProgressHandler(w http.ResponseWriter, r *http
 	process, _ = FormatFloatFloor(process, 4)
 	rsp.Status = int(status)
 	rsp.Progress = process
+	//提供子任务进行查询
+	if job.hasSubMigrateJobs() {
+		rsp.SubJobsIdTotal, rsp.SubJobsIdRunning, rsp.SubJobsIdCompleted = job.getSubJobsId()
+	}
+	if status == proto.JobSuccess || status == proto.JobFailed {
+		rsp.ConsumeTime = job.completeTime.Sub(time.Unix(job.CreateTime, 0)).String()
+		rsp.SizeGB = float64(job.GetCompleteSize()) / float64(1024*1024*1024)
+	} else {
+		rsp.ConsumeTime = "Invalid"
+		rsp.SizeGB = 0
+	}
+
 	writeResp(w, rsp, logger)
 }
 
@@ -441,7 +453,7 @@ func (svr *MigrateServer) queryJobsProgressHandler(w http.ResponseWriter, r *htt
 		return
 	}
 	logger = logger.With(zap.Any("JobId", req.JobsId))
-	logger.Debug("queryJobProcessHandler is called")
+	logger.Debug("queryJobsProgressHandler is called")
 	if len(req.JobsId) == 0 {
 		writeErr(w, proto.ParmErr, "JobId array can't be empty ", logger)
 		return

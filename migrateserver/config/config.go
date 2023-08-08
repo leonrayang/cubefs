@@ -46,7 +46,7 @@ func ParseConfig(path string) (*Config, error) {
 		cfg.FailTaskReportLimit = 30
 	}
 	if cfg.CompleteJobTimeout <= 0 {
-		cfg.CompleteJobTimeout = 60 * 24
+		cfg.CompleteJobTimeout = 60 * 24 * 5
 	}
 	return cfg, nil
 }

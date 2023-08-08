@@ -20,17 +20,25 @@ func NewCubeFSSdkManager(logger *zap.Logger) *SdkManager {
 }
 
 func (manager *SdkManager) GetCubeFSSdk(volName, endpoint string) (sdk *CubeFSSdk, err error) {
-	manager.sdkCacheLk.Lock()
-	defer manager.sdkCacheLk.Unlock()
-	key := generateCubeFSSdkKey(volName, endpoint)
-	if sdk, ok := manager.sdkCache[key]; ok {
+	manager.sdkCacheLk.RLock()
+	if sdk, ok := manager.sdkCache[generateCubeFSSdkKey(volName, endpoint)]; ok {
+		manager.sdkCacheLk.RUnlock()
 		return sdk, nil
 	}
+	manager.sdkCacheLk.RUnlock()
+
+	manager.sdkCacheLk.Lock()
+	defer manager.sdkCacheLk.Unlock()
+
+	if sdk, ok := manager.sdkCache[generateCubeFSSdkKey(volName, endpoint)]; ok {
+		return sdk, nil
+	}
+
 	sdk, err = newCubeFSSdk(volName, endpoint, true, manager.logger)
 	if err != nil {
 		return nil, err
 	}
-	manager.sdkCache[key] = sdk
+	manager.sdkCache[generateCubeFSSdkKey(volName, endpoint)] = sdk
 	return sdk, nil
 }
 

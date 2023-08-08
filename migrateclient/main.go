@@ -26,6 +26,7 @@ func main() {
 		fmt.Printf("register failed %v\n", err.Error())
 		os.Exit(1)
 	}
+	go cli.StartHttpServer()
 	proto.InitBufferPool(32768)
 	signalC := make(chan os.Signal)
 	signal.Notify(signalC, syscall.SIGSEGV, syscall.SIGABRT, syscall.SIGTERM)

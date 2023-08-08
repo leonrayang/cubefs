@@ -10,6 +10,7 @@ import (
 	"io"
 	gopath "path"
 	"syscall"
+	"time"
 )
 
 type DataApi struct {
@@ -42,14 +43,24 @@ func NewDataApi(volName, endpoint string, mw *meta.MetaWrapper, logger *zap.Logg
 	return dataAPI, nil
 }
 
-func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk) (err error) {
-	logger := sdk.logger
+func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, taskId string) (err error) {
+	var (
+		srcEC  = sdk.ecApi.ec
+		srcMW  = sdk.mwApi.mw
+		dstEC  = dstSdk.ecApi.ec
+		start  = time.Now()
+		logger = sdk.logger
+		eks    []proto.ExtentKey
+	)
 	//获取源文件的inode信息。
+	//logger.Debug("CopyFileToDir lookup src", zap.Any("TaskId", taskId))
 	srcInfo, err := sdk.LookupPath(srcPath)
 	if err != nil {
-		logger.Warn("LookupPath source failed", zap.Any("srcVol", sdk.volName), zap.Any("err", err))
+		logger.Warn("LookupPath source failed", zap.Any("TaskId", taskId), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return err
 	}
+	srcEC.OpenStream(srcInfo.Inode)
+	//logger.Debug("CopyFileToDir IsSymlink", zap.Any("TaskId", taskId))
 	//如果是软连接
 	if proto.IsSymlink(srcInfo.Mode) {
 		return sdk.CopySymlinkToDir(srcPath, dstRoot, dstSdk)
@@ -57,74 +68,88 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk) 
 	//获取源文件名
 	_, fileName := gopath.Split(gopath.Clean(srcPath))
 	//获取目标路径信息
+	//logger.Debug("CopyFileToDir lookup dst", zap.Any("TaskId", taskId))
 	dstParentInfo, err := dstSdk.LookupPath(dstRoot)
 	if err != nil {
-		logger.Error("LookupPath target failed", zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
+		logger.Error("LookupPathWithCache target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 		return err
 	}
-	//创建目标文件
-	dstInfo, err := dstSdk.CreateFile(dstParentInfo.Inode, fileName, srcInfo.Mode, srcInfo.Uid, srcInfo.Gid)
-	if err != nil {
-		if err != syscall.EEXIST {
-			logger.Error("Create target failed", zap.Any("dstRoot", dstRoot), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
-			return errors.New(fmt.Sprintf("Create target failed, dstRoot %s vol %s[%s]", dstRoot, dstSdk.volName, err.Error()))
-		}
+	//dstSdk.ic.Put(dstRoot, dstParentInfo)
+	//logger.Debug("CopyFileToDir PathIsExist", zap.Any("TaskId", taskId))
+	var dstInfo *proto.InodeInfo
+	//如果目标文件已经存在，则要删除
+	if ino, isExist := dstSdk.PathIsExistWithIno(gopath.Join(dstRoot, fileName)); isExist {
+		//logger.Debug("CopyFileToDir open exist", zap.Any("TaskId", taskId))
 		dstInfo, err = dstSdk.LookupPath(gopath.Join(dstRoot, fileName))
 		if err != nil {
-			logger.Error("Open target failed", zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
+			logger.Error("Open target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 			return errors.New(fmt.Sprintf("Open exist target failed, dstRoot %s vol %s [%s]", dstRoot, dstSdk.volName, err.Error()))
 		}
+		dstEC.OpenStream(dstInfo.Inode)
+		//logger.Debug("CopyFileToDir DeleteFile", zap.Any("TaskId", taskId))
+		if err = dstSdk.Truncate(dstParentInfo.Inode, ino); err != nil {
+			logger.Error("Delete exist target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName),
+				zap.Any("dstFile", gopath.Join(dstRoot, fileName)), zap.Any("err", err),
+				zap.Any("dstParentInfo.Inode", dstParentInfo.Inode), zap.Any("ino", ino))
+			return err
+		}
+	} else {
+		//创建目标文件
+		dstInfo, err = dstSdk.CreateFile(dstParentInfo.Inode, fileName, srcInfo.Mode, srcInfo.Uid, srcInfo.Gid)
+		if err != nil {
+			logger.Error("Create target failed", zap.Any("TaskId", taskId), zap.Any("dstRoot", dstRoot), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
+			return errors.New(fmt.Sprintf("Create target failed, dstRoot %s vol %s[%s]", dstRoot, dstSdk.volName, err.Error()))
+		}
+		dstEC.OpenStream(dstInfo.Inode)
 	}
-	var eks []proto.ExtentKey
-	srcEC := sdk.ecApi.ec
-	srcMW := sdk.mwApi.mw
-	dstEC := dstSdk.ecApi.ec
-	//dstInfo.Inode
-	dstEC.OpenStream(dstInfo.Inode)
-	srcEC.OpenStream(srcInfo.Inode)
+	//logger.Debug("CopyFileToDir GetExtents", zap.Any("TaskId", taskId))
 	//
 	_, _, eks, err = srcMW.GetExtents(srcInfo.Inode)
 	if err != nil {
-		logger.Error("GetExtents for source failed", zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
+		logger.Error("GetExtents for source failed", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return errors.New(fmt.Sprintf("GetExtents for source failed %s vol %s[%s]", srcPath, sdk.volName, err.Error()))
 	}
+	//logger.Debug("CopyFileToDir copy extents", zap.Any("TaskId", taskId))
 	for _, ek := range eks {
 		size := ek.Size
 		var buf = make([]byte, size)
 		var n int
 		n, err = sdk.read(srcInfo.Inode, int(ek.FileOffset), buf)
 		if err != nil {
-			logger.Error("Read  failed", zap.Any("FileOffset", ek.FileOffset), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
+			logger.Error("Read  failed", zap.Any("TaskId", taskId), zap.Any("FileOffset", ek.FileOffset), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 			return errors.New(fmt.Sprintf("Read FileOffset %d from source %s vol %s [%s]",
 				ek.FileOffset, srcPath, sdk.volName, err.Error()))
 		}
 
 		if uint32(n) != size {
-			logger.Error("Read wrong size", zap.Any("FileOffset", ek.FileOffset), zap.Any("expect size", size),
+			logger.Error("Read wrong size", zap.Any("TaskId", taskId), zap.Any("FileOffset", ek.FileOffset), zap.Any("expect size", size),
 				zap.Any("actual size", n))
 			return errors.New(fmt.Sprintf("Read wrong size from source %s, %d[expect %d]",
 				srcPath, n, size))
 		}
 		_, err = dstSdk.write(dstInfo.Inode, dstParentInfo.Inode, int(ek.FileOffset), buf, 0)
 	}
+	//logger.Debug("CopyFileToDir CloseStream", zap.Any("TaskId", taskId))
 	//关闭文件
 	dstEC.CloseStream(dstInfo.Inode)
 	srcEC.CloseStream(srcInfo.Inode)
-	//检查文件大小是否一致
+	//logger.Debug("CopyFileToDir lookup src", zap.Any("TaskId", taskId))
+	//检查文件大小是否一致,这里不能用缓存
 	srcInfo, err = sdk.LookupPath(srcPath)
 	if err != nil {
-		logger.Warn("LookupPath source to check failed", zap.Any("srcVol", sdk.volName), zap.Any("err", err))
+		logger.Warn("LookupPath source to check failed", zap.Any("TaskId", taskId), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return err
 	}
+	//logger.Debug("CopyFileToDir lookup dst", zap.Any("TaskId", taskId))
 	dstInfo, err = dstSdk.LookupPath(gopath.Join(dstRoot, fileName))
 	if err != nil {
-		logger.Warn("LookupPath dst to check failed", zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
+		logger.Warn("LookupPath dst to check failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 	}
 	if srcInfo.Size != dstInfo.Size {
 		return errors.New(fmt.Sprintf("Copy size not the same %s[%s]", srcPath, gopath.Join(dstRoot, fileName)))
 	}
-	logger.Debug("Copy success", zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("dstPath", gopath.Join(dstRoot, fileName)),
-		zap.Any("dstVol", dstSdk.volName))
+	logger.Debug("Copy success", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("dstPath", gopath.Join(dstRoot, fileName)),
+		zap.Any("dstVol", dstSdk.volName), zap.Any("cost", time.Now().Sub(start).String()))
 	return nil
 }
 
