@@ -18,6 +18,7 @@ type Config struct {
 	SummaryGoroutineLimit     int              `json:"summaryGoroutine"`
 	FailTaskReportLimit       int              `json:"failTaskReportLimit"`
 	CompleteJobTimeout        int              `json:"completeJobTimeout"`
+	PprofPort                 string           `json:"pprof"`
 }
 
 type sdkLog struct {

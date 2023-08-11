@@ -70,8 +70,13 @@ func (mc *MigrateClient) start() {
 	reSendCh := mc.getReSendCh()
 	for {
 		//长时间没法送或者当前Server已经堆积了很多任务
-		if len(tasks) >= mc.getServerTaskPendingLimit() || time.Since(lastSendTime) > 2*time.Second {
-			mc.putSendCh(tasks)
+		if len(tasks) >= mc.tasksFetchLimit() || time.Since(lastSendTime) > 2*time.Second {
+			if len(tasks) > mc.tasksFetchLimit() {
+				mc.putReSendCh(tasks[mc.tasksFetchLimit():])
+				mc.putSendCh(tasks[0:mc.tasksFetchLimit()])
+			} else {
+				mc.putSendCh(tasks)
+			}
 			lastSendTime = time.Now()
 			tasks = make([]proto.Task, 0)
 		}
@@ -88,7 +93,7 @@ func (mc *MigrateClient) start() {
 		}
 		//重试的迁移任务
 		select {
-		case reTasks := <-reSendCh:
+		case reTasks := <-reSendCh: //数组?
 			tasks = append(tasks, reTasks...)
 			continue
 		default:
@@ -105,7 +110,7 @@ func (mc *MigrateClient) start() {
 }
 
 // 如果阻塞太多就重新发送
-func (mc *MigrateClient) getServerTaskPendingLimit() int {
+func (mc *MigrateClient) tasksFetchLimit() int {
 	return mc.idleCnt * 1
 }
 func (mc *MigrateClient) putSendCh(tasks []proto.Task) {

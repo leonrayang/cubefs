@@ -9,6 +9,7 @@ import (
 	"github.com/cubefs/cubefs/util/migrate/proto"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -67,6 +68,20 @@ func NewMigrateServer(cfg *config.Config) *MigrateServer {
 	}
 	svr.sdkManager = cubefssdk.NewCubeFSSdkManager(svr.Logger)
 	go svr.clearCompleteMigrateJob()
+	go func() {
+		if cfg.PprofPort != "" {
+			svr.Logger.Info("Start pprof with port:", zap.Any("port", cfg.PprofPort))
+			http.ListenAndServe(":"+cfg.PprofPort, nil)
+		} else {
+			pprofListener, err := net.Listen("tcp", ":0")
+			if err != nil {
+				svr.Logger.Error("Listen pprof failed", zap.Any("err", err))
+				os.Exit(1)
+			}
+			svr.Logger.Info("Start pprof with port:", zap.Any("port", pprofListener.Addr().(*net.TCPAddr).Port))
+			http.Serve(pprofListener, nil)
+		}
+	}()
 	return svr
 }
 

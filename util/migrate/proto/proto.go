@@ -126,11 +126,11 @@ type MoveLocalFilesReq struct {
 }
 
 type MigrateDetailsResp struct {
-	MigratingJobCnt int
-	FailedTasks     []Task
-	MigratingJobs   []MigratingJobInfo
-	MigrateClients  []MigrateClientInfo
-	MigratingTasks  []Task
+	MigratingJobCnt   int
+	FailedTasks       []Task
+	MigratingJobs     []MigratingJobInfo
+	MigrateClients    []MigrateClientInfo
+	MigratingTasksNum int
 }
 
 type MigratingJobInfo struct {

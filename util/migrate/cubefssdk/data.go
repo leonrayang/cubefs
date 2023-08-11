@@ -6,6 +6,7 @@ import (
 	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/sdk/data/stream"
 	"github.com/cubefs/cubefs/sdk/meta"
+	"github.com/cubefs/cubefs/util/migrate/util"
 	"go.uber.org/zap"
 	"io"
 	gopath "path"
@@ -104,19 +105,26 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	}
 	//logger.Debug("CopyFileToDir GetExtents", zap.Any("TaskId", taskId))
 	//
+
 	_, _, eks, err = srcMW.GetExtents(srcInfo.Inode)
 	if err != nil {
+		dstEC.CloseStream(dstInfo.Inode)
+		srcEC.CloseStream(srcInfo.Inode)
 		logger.Error("GetExtents for source failed", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return errors.New(fmt.Sprintf("GetExtents for source failed %s vol %s[%s]", srcPath, sdk.volName, err.Error()))
 	}
 	//logger.Debug("CopyFileToDir copy extents", zap.Any("TaskId", taskId))
 	for _, ek := range eks {
 		size := ek.Size
-		var buf = make([]byte, size)
+		var buf = util.Alloc(int(size))
 		var n int
 		n, err = sdk.read(srcInfo.Inode, int(ek.FileOffset), buf)
 		if err != nil {
-			logger.Error("Read  failed", zap.Any("TaskId", taskId), zap.Any("FileOffset", ek.FileOffset), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
+			logger.Error("Read extent failed", zap.Any("TaskId", taskId),
+				zap.Any("FileOffset", ek.FileOffset), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
+			util.Free(buf)
+			dstEC.CloseStream(dstInfo.Inode)
+			srcEC.CloseStream(srcInfo.Inode)
 			return errors.New(fmt.Sprintf("Read FileOffset %d from source %s vol %s [%s]",
 				ek.FileOffset, srcPath, sdk.volName, err.Error()))
 		}
@@ -124,16 +132,27 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 		if uint32(n) != size {
 			logger.Error("Read wrong size", zap.Any("TaskId", taskId), zap.Any("FileOffset", ek.FileOffset), zap.Any("expect size", size),
 				zap.Any("actual size", n))
+			util.Free(buf)
+			dstEC.CloseStream(dstInfo.Inode)
+			srcEC.CloseStream(srcInfo.Inode)
 			return errors.New(fmt.Sprintf("Read wrong size from source %s, %d[expect %d]",
 				srcPath, n, size))
 		}
 		_, err = dstSdk.write(dstInfo.Inode, dstParentInfo.Inode, int(ek.FileOffset), buf, 0)
+		if err != nil {
+			util.Free(buf)
+			dstEC.CloseStream(dstInfo.Inode)
+			srcEC.CloseStream(srcInfo.Inode)
+			logger.Error("Write extent failed", zap.Any("TaskId", taskId),
+				zap.Any("FileOffset", ek.FileOffset), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
+			return errors.New(fmt.Sprintf("Write FileOffset %d to  dst %s vol %s [%s]",
+				ek.FileOffset, srcPath, dstSdk.volName, err.Error()))
+		}
+		util.Free(buf)
 	}
-	//logger.Debug("CopyFileToDir CloseStream", zap.Any("TaskId", taskId))
-	//关闭文件
+	//logger.Debug("CopyFileToDir lookup src", zap.Any("TaskId", taskId))
 	dstEC.CloseStream(dstInfo.Inode)
 	srcEC.CloseStream(srcInfo.Inode)
-	//logger.Debug("CopyFileToDir lookup src", zap.Any("TaskId", taskId))
 	//检查文件大小是否一致,这里不能用缓存
 	srcInfo, err = sdk.LookupPath(srcPath)
 	if err != nil {
@@ -149,7 +168,8 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 		return errors.New(fmt.Sprintf("Copy size not the same %s[%s]", srcPath, gopath.Join(dstRoot, fileName)))
 	}
 	logger.Debug("Copy success", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("dstPath", gopath.Join(dstRoot, fileName)),
-		zap.Any("dstVol", dstSdk.volName), zap.Any("cost", time.Now().Sub(start).String()))
+		zap.Any("dstVol", dstSdk.volName), zap.Any("size", dstInfo.Size),
+		zap.Any("cost", time.Now().Sub(start).String()))
 	return nil
 }
 

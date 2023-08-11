@@ -49,11 +49,11 @@ func (svr *MigrateServer) migrateDetailsHandler(w http.ResponseWriter, r *http.R
 	logger := svr.Logger.With()
 	jobCnt, jobInfos := svr.getMigratingJobsInfo()
 	detail := &proto.MigrateDetailsResp{
-		FailedTasks:     svr.getFailedTasks(),
-		MigratingJobCnt: jobCnt,
-		MigratingJobs:   jobInfos,
-		MigrateClients:  svr.getAllMigrateClientInfo(),
-		//MigratingTasks:  svr.getMigratingTasks(), //单独接口获取
+		FailedTasks:       svr.getFailedTasks(),
+		MigratingJobCnt:   jobCnt,
+		MigratingJobs:     jobInfos,
+		MigrateClients:    svr.getAllMigrateClientInfo(),
+		MigratingTasksNum: len(svr.getMigratingTasks()), //单独接口获取
 	}
 	writeResp(w, detail, logger)
 }
