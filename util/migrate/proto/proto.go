@@ -37,6 +37,7 @@ const (
 
 const (
 	JobInitial = iota
+	JobScanning
 	JobRunning
 	JobSuccess
 	JobFailed
@@ -226,4 +227,20 @@ type StopMigratingJobReq struct {
 
 type RetryMigratingJobReq struct {
 	JobId string `json:"jobId"`
+}
+
+type WorkerMeta struct {
+	JobCnt  int //支持最大的任务数
+	IdleCnt int
+	NodeId  int32  //server分配的id
+	Addr    string //client地址
+}
+
+type MigrateJobMeta struct {
+	SrcPath    string
+	DstPath    string
+	JobId      string
+	WorkMode   int
+	SrcCluster string
+	DstCluster string
 }

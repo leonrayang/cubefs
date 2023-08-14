@@ -60,7 +60,13 @@ func (job *MigrateJob) walkDir(srcDir, dstDir string, svr *MigrateServer) {
 	}
 	wg.Wait()
 	task := job.newTask(srcDir, dstDir, 0)
-	job.sendTask(task, svr)
+	ok, successTask := svr.alreadySuccess(task)
+	if !ok {
+		job.sendTask(task, svr)
+	} else {
+		job.updateCompleteSize(successTask)
+	}
+
 }
 
 // 传入的是绝对路径，因为需要对应目录权限

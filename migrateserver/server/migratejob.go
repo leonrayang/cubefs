@@ -2,12 +2,14 @@ package server
 
 import (
 	"fmt"
+	"github.com/cubefs/cubefs/util/errors"
 	"github.com/cubefs/cubefs/util/mail"
 	"github.com/cubefs/cubefs/util/migrate/cubefssdk"
 	"github.com/cubefs/cubefs/util/migrate/proto"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"path"
+	"strings"
 	"sync"
 	"time"
 )
@@ -147,7 +149,6 @@ func (job *MigrateJob) GetFailedMigratingTask() (tasks []proto.Task) {
 	}
 	return
 }
-
 func (job *MigrateJob) SetJobStatus(status int32) {
 	job.Status.Store(status)
 }
@@ -157,6 +158,9 @@ func (job *MigrateJob) GetJobStatus() int32 {
 
 func (job *MigrateJob) updateCompleteSize(task proto.Task) {
 	job.completeSize.Add(task.MigrateSize)
+	if job.owner != nil {
+		job.owner.updateCompleteSize(task)
+	}
 }
 
 func (job *MigrateJob) execute(svr *MigrateServer) {
@@ -479,9 +483,10 @@ func (job *MigrateJob) clearSubCompleteMigrateJob(svr *MigrateServer) {
 		svr.removeCompleteMigrateJob(sub)
 		tasks := sub.GetFailedMigratingTask()
 		svr.removeFailedTask(tasks)
+		svr.removeSuccessTask(sub)
+		svr.removeOldJobRelationship(sub.JobId)
 	}
 	job.mapSubCompleteJobLk.Unlock()
-
 }
 
 func (job *MigrateJob) addMissMigrateJob(sub proto.MissMigrateJob) {
@@ -534,8 +539,9 @@ func (job *MigrateJob) getProgressBySubJobs() (float64, int32) {
 		} else if sub.GetJobStatus() == proto.JobFailed {
 			failNum += 1
 		}
-		job.logger.Debug("getProgressBySubJobs is called", zap.Any("progress", subProgress), zap.Any("sub", sub.JobId),
-			zap.Any("SrcPath", sub.SrcPath), zap.Any("DstPath", sub.DstPath))
+		//发布前注释
+		//job.logger.Debug("getProgressBySubJobs is called", zap.Any("progress", subProgress), zap.Any("sub", sub.JobId),
+		//	zap.Any("SrcPath", sub.SrcPath), zap.Any("DstPath", sub.DstPath))
 	}
 	//再看正在进行迁移的
 	job.mapSubMigratingJobLk.Lock()
@@ -545,12 +551,14 @@ func (job *MigrateJob) getProgressBySubJobs() (float64, int32) {
 	total := float64(successNum + failNum + runningNum)
 	for _, sub := range cache {
 		subProgress, _ := sub.getProgress()
-		job.logger.Debug("getProgressBySubJobs is called", zap.Any("progress", subProgress), zap.Any("sub", sub.JobId),
-			zap.Any("SrcPath", sub.SrcPath), zap.Any("DstPath", sub.DstPath))
+		//发布前注释
+		//job.logger.Debug("getProgressBySubJobs is called", zap.Any("progress", subProgress), zap.Any("sub", sub.JobId),
+		//	zap.Any("SrcPath", sub.SrcPath), zap.Any("DstPath", sub.DstPath))
 		progress += subProgress
 	}
-	job.logger.Debug("getProgressBySubJobs is called", zap.Any("progress", progress), zap.Any("status", job.GetJobStatus()),
-		zap.Any("total", total), zap.Any("runningNum", runningNum), zap.Any("failNum", failNum), zap.Any("successNum", successNum), zap.Any("result", progress/total))
+	//发布前注释
+	//job.logger.Debug("getProgressBySubJobs is called", zap.Any("progress", progress), zap.Any("status", job.GetJobStatus()),
+	//	zap.Any("total", total), zap.Any("runningNum", runningNum), zap.Any("failNum", failNum), zap.Any("successNum", successNum), zap.Any("result", progress/total))
 	//还有任务在跑就是说明进行中
 	if runningNum != 0 {
 		return progress / total, proto.JobRunning
@@ -590,4 +598,89 @@ func (job *MigrateJob) getErrorMsg(failTaskReportLimit int) (errorMsg string) {
 		errorMsg += fmt.Sprintf("[%v]%v;", index, task.StringToReport())
 	}
 	return
+}
+
+// 对于已完成的job，则持久化进度以及task等状态，
+func (job *MigrateJob) dump(svr *MigrateServer) proto.MigrateJobMeta {
+	//子任务就不参与dump
+	if !job.hasSubMigrateJobs() && job.owner != nil {
+		return proto.MigrateJobMeta{}
+	}
+	//如果本身就是之前的任务，要用之前的jobID
+	jobId := svr.findOldJobId(job.JobId)
+	if jobId == "" {
+		jobId = job.JobId
+	}
+	var meta = proto.MigrateJobMeta{
+		JobId:      jobId,
+		SrcPath:    job.SrcPath,
+		DstPath:    job.DstPath,
+		WorkMode:   job.WorkMode,
+		SrcCluster: job.SrcCluster,
+		DstCluster: job.DstCluster,
+	}
+	return meta
+}
+
+func (svr *MigrateServer) restoreMigrateJob(jobMeta proto.MigrateJobMeta) (err error) {
+	//重新提交job
+	var newJobId string
+	if jobMeta.WorkMode == proto.JobCopyFile || jobMeta.WorkMode == proto.JobCopyDir {
+		err, newJobId = svr.copyFilesInCluster(jobMeta.SrcPath, jobMeta.DstPath, jobMeta.SrcCluster)
+		if err != nil {
+			return err
+		}
+	} else if jobMeta.WorkMode == proto.JobMove {
+		err, newJobId = svr.moveFilesInCluster(jobMeta.SrcPath, jobMeta.DstPath, jobMeta.SrcCluster)
+		if err != nil {
+			return err
+		}
+	} else if jobMeta.WorkMode == proto.JobMigrateDir {
+		err, newJobId = svr.migrateTargetDir(jobMeta.SrcPath, jobMeta.SrcCluster, jobMeta.DstCluster)
+		if err != nil {
+			return err
+		}
+	} else if jobMeta.WorkMode == proto.JobMigrateResourceGroupDir {
+		//TODO
+		resourceGroup := jobMeta.SrcPath[strings.Index(jobMeta.SrcPath, "-")+1:]
+		err, newJobId = svr.migrateResourceGroupDir(resourceGroup, jobMeta.SrcCluster, jobMeta.DstCluster)
+		if err != nil {
+			return err
+		}
+	} else if jobMeta.WorkMode == proto.JobMigrateResourceGroup {
+		resourceGroup := jobMeta.SrcPath[strings.Index(jobMeta.SrcPath, "-")+1:]
+		err, newJobId = svr.migrateResourceGroup(resourceGroup, jobMeta.SrcCluster, jobMeta.DstCluster)
+		if err != nil {
+			return err
+		}
+	} else if jobMeta.WorkMode == proto.JobMigrateUser {
+		user := jobMeta.SrcPath[strings.Index(jobMeta.SrcPath, "-")+1:]
+		err, newJobId = svr.migrateUser(user, jobMeta.SrcCluster, jobMeta.DstCluster)
+		if err != nil {
+			return err
+		}
+	} else {
+		return errors.NewErrorf(fmt.Sprintf("Unexpected work mode %v", jobMeta.WorkMode))
+	}
+	svr.Logger.Info("Create job relationship", zap.Any("old", jobMeta.JobId), zap.Any("new", newJobId))
+	svr.addOldJobRelationship(jobMeta.JobId, newJobId)
+	return
+}
+
+func (svr *MigrateServer) addOldJobRelationship(oldJob, newJob string) {
+	svr.mapOldJobsLk.Lock()
+	defer svr.mapOldJobsLk.Unlock()
+	svr.oldJobs[oldJob] = newJob
+}
+
+func (svr *MigrateServer) removeOldJobRelationship(newJob string) {
+	svr.mapOldJobsLk.Lock()
+	defer svr.mapOldJobsLk.Unlock()
+	for key, value := range svr.oldJobs {
+		if value == newJob {
+			//发布前删除
+			//svr.Logger.Debug("Delete job relationship", zap.Any("old", key), zap.Any("new", newJob))
+			delete(svr.oldJobs, key)
+		}
+	}
 }

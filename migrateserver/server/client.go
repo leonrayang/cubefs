@@ -165,7 +165,9 @@ func (mc *MigrateClient) updateRunningTasksStatus(succTasks, failTasks, newTasks
 	for _, task := range succTasks {
 		key := task.Key()
 		if _, ok := mc.taskMap[key]; !ok {
-			logger.Warn("receive success task, but already been deleted", zap.String("task", task.String()))
+			logger.Warn("receive success task, but not found", zap.String("task", task.String()))
+			//直接丢弃
+			continue
 		} else {
 			delete(mc.taskMap, key)
 		}
@@ -178,6 +180,7 @@ func (mc *MigrateClient) updateRunningTasksStatus(succTasks, failTasks, newTasks
 		key := task.Key()
 		if _, ok := mc.taskMap[key]; !ok {
 			logger.Info("receive fail task false, already been deleted", zap.String("task", task.String()))
+			continue
 		} else {
 			//因为要换个worker，所以从当前worker删除
 			delete(mc.taskMap, key)
@@ -195,8 +198,9 @@ func (mc *MigrateClient) updateMigratingDirState(task proto.Task, succ bool) {
 		return
 	}
 	if succ {
+		//server重启可能会导致重复计算
 		job.updateCompleteSize(task)
-		logger.Debug("CompleteCopy add ", zap.Any("size", task.MigrateSize))
+		//logger.Debug("CompleteCopy add ", zap.Any("size", task.MigrateSize))
 		//如果重试成功,从失败列表中删除
 		if task.Retry > 0 {
 			job.delFailedMigratingTask(task)
@@ -237,7 +241,8 @@ func (mc *MigrateClient) fetchTasks(succTasks, failTasks []proto.Task) (newTasks
 	select {
 	case tasks = <-mc.sendCh:
 	default:
-		mc.logger.Debug("no new tasks")
+		//发布前修改注释掉
+		//		mc.logger.Debug("no new tasks")
 	}
 	//更改owner
 	mc.svr.mapMigratingJobLk.Lock()
@@ -249,9 +254,23 @@ func (mc *MigrateClient) fetchTasks(succTasks, failTasks []proto.Task) (newTasks
 		task.Owner = mc.Addr
 		newTasks = append(newTasks, task)
 	}
-	mc.logger.Debug("get new tasks", zap.Any("num", len(newTasks)))
+	//mc.logger.Debug("get new tasks", zap.Any("num", len(newTasks)))
 	mc.svr.mapMigratingJobLk.Unlock()
 	//更新client的task列表，追加新任务，移除失败和成功的任务
 	mc.updateRunningTasksStatus(succTasks, failTasks, newTasks)
 	return
+}
+
+func (mc *MigrateClient) dump() proto.WorkerMeta {
+	return proto.WorkerMeta{
+		JobCnt: mc.jobCnt,
+		NodeId: mc.NodeId,
+		Addr:   mc.Addr,
+	}
+}
+
+// 正在迁移的任务会全部重新尝试
+func (svr *MigrateServer) restoreMigrateClient(meta proto.WorkerMeta) {
+	cli := newMigrateClient(meta.Addr, meta.JobCnt, meta.NodeId, svr)
+	svr.addMigrateClient(cli)
 }

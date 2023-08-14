@@ -11,7 +11,6 @@ import (
 	"io"
 	gopath "path"
 	"syscall"
-	"time"
 )
 
 type DataApi struct {
@@ -46,10 +45,10 @@ func NewDataApi(volName, endpoint string, mw *meta.MetaWrapper, logger *zap.Logg
 
 func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, taskId string) (err error) {
 	var (
-		srcEC  = sdk.ecApi.ec
-		srcMW  = sdk.mwApi.mw
-		dstEC  = dstSdk.ecApi.ec
-		start  = time.Now()
+		srcEC = sdk.ecApi.ec
+		srcMW = sdk.mwApi.mw
+		dstEC = dstSdk.ecApi.ec
+		//		start  = time.Now()
 		logger = sdk.logger
 		eks    []proto.ExtentKey
 	)
@@ -167,9 +166,10 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	if srcInfo.Size != dstInfo.Size {
 		return errors.New(fmt.Sprintf("Copy size not the same %s[%s]", srcPath, gopath.Join(dstRoot, fileName)))
 	}
-	logger.Debug("Copy success", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("dstPath", gopath.Join(dstRoot, fileName)),
-		zap.Any("dstVol", dstSdk.volName), zap.Any("size", dstInfo.Size),
-		zap.Any("cost", time.Now().Sub(start).String()))
+	//优化打开
+	//logger.Debug("Copy success", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("dstPath", gopath.Join(dstRoot, fileName)),
+	//	zap.Any("dstVol", dstSdk.volName), zap.Any("size", dstInfo.Size),
+	//	zap.Any("cost", time.Now().Sub(start).String()))
 	return nil
 }
 

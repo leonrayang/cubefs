@@ -95,7 +95,7 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 		writeErr(w, proto.ParmErr, "MigrateClient not exist", logger)
 		return
 	}
-	//更新worker的时间戳
+	//更新worker的时间以及空闲个数
 	cli.updateStatics(req.IdleCnt)
 	//更新失败task的列表
 	svr.updateFailedTask(req.FailTasks, req.SuccTasks)
@@ -103,7 +103,7 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 	resp := &proto.FetchTasksResp{}
 
 	returnTasks := make([]proto.Task, 0)
-	//分配其他空闲client
+	//ExtraTasks为忙不过来的map,分配其他空闲client
 	if len(req.ExtraTasks) > 0 {
 		returnTasks = svr.allocateExtraTask(req.ExtraTasks, cli)
 	}
@@ -404,23 +404,16 @@ func (svr *MigrateServer) queryJobProgressHandler(w http.ResponseWriter, r *http
 		return
 	}
 	logger = logger.With(zap.String("JobId", req.JobId))
-	logger.Debug("queryJobProcessHandler is called")
+	//logger.Debug("queryJobProcessHandler is called")
 	if len(req.JobId) == 0 {
 		writeErr(w, proto.ParmErr, "JobId can't be empty ", logger)
 		return
 	}
-	svr.mapMigratingJobLk.Lock()
-	job := svr.migratingJobMap[req.JobId]
-	svr.mapMigratingJobLk.Unlock()
 
+	job := svr.findMigrateJob(req.JobId)
 	if job == nil {
-		svr.mapCompleteJobLk.Lock()
-		job = svr.completeJobMap[req.JobId]
-		svr.mapCompleteJobLk.Unlock()
-		if job == nil {
-			writeErr(w, proto.ParmErr, "JobId is invalid ", logger)
-			return
-		}
+		writeErr(w, proto.ParmErr, "JobId is invalid ", logger)
+		return
 	}
 	rsp := &proto.QueryJobProgressRsp{}
 	process, status := job.getProgress()
@@ -453,7 +446,7 @@ func (svr *MigrateServer) queryJobsProgressHandler(w http.ResponseWriter, r *htt
 		return
 	}
 	logger = logger.With(zap.Any("JobId", req.JobsId))
-	logger.Debug("queryJobsProgressHandler is called")
+	//logger.Debug("queryJobsProgressHandler is called")
 	if len(req.JobsId) == 0 {
 		writeErr(w, proto.ParmErr, "JobId array can't be empty ", logger)
 		return
@@ -467,18 +460,10 @@ func (svr *MigrateServer) queryJobsProgressHandler(w http.ResponseWriter, r *htt
 			resp.Resp = append(resp.Resp, res)
 			continue
 		}
-		svr.mapMigratingJobLk.Lock()
-		job := svr.migratingJobMap[jobId]
-		svr.mapMigratingJobLk.Unlock()
+		job := svr.findMigrateJob(jobId)
 		if job == nil {
-			svr.mapCompleteJobLk.Lock()
-			job = svr.completeJobMap[jobId]
-			svr.mapCompleteJobLk.Unlock()
-			if job == nil {
-				res.ErrorMsg = fmt.Sprintf("JobId %v is invalid", jobId)
-				resp.Resp = append(resp.Resp, res)
-				continue
-			}
+			writeErr(w, proto.ParmErr, "JobId is invalid ", logger)
+			return
 		}
 		process, status := job.getProgress()
 		if status == proto.JobFailed {

@@ -10,7 +10,6 @@ import (
 	"go.uber.org/zap"
 	gopath "path"
 	"sync"
-	"time"
 )
 
 func (cli *MigrateClient) doCopySingleFileOperation(task proto.Task) error {
@@ -112,9 +111,9 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	logger.Debug("execCopyDirCommand", zap.Any("src", source), zap.Any("from vol", srcVol),
 		zap.Any("dst", target), zap.Any("to vol", dstVol), zap.Any("TaskId", taskId))
 	total = 0
-	start := time.Now()
-	defer logger.Debug("execCopyDirCommand completed", zap.Any("TaskId", taskId),
-		zap.Any("consumeTime", time.Now().Sub(start).String()))
+	//start := time.Now()
+	//defer logger.Debug("execCopyDirCommand completed", zap.Any("TaskId", taskId),
+	//	zap.Any("consumeTime", time.Now().Sub(start).String()))
 	//logger.Debug("execCopyDirCommand get src SDK", zap.Any("TaskId", taskId))
 	srcCli, err := manager.GetCubeFSSdk(srcVol, srcEndpoint)
 	if err != nil {
@@ -125,6 +124,7 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	if err != nil {
 		return err, 0
 	}
+	//这里可以判断文件数目了
 	children, err := srcCli.ReadDir(source)
 	if err != nil {
 		logger.Debug("ReadDir failed", zap.Any("TaskId", taskId), zap.Any("source", source), zap.Any("err", err))
