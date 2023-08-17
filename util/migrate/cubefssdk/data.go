@@ -10,6 +10,9 @@ import (
 	"go.uber.org/zap"
 	"io"
 	gopath "path"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -17,6 +20,8 @@ import (
 type DataApi struct {
 	ec *stream.ExtentClient
 }
+
+type EnableDebugMsg func() bool
 
 func NewDataApi(volName, endpoint string, mw *meta.MetaWrapper, logger *zap.Logger) (*DataApi, error) {
 	var (
@@ -44,7 +49,30 @@ func NewDataApi(volName, endpoint string, mw *meta.MetaWrapper, logger *zap.Logg
 	return dataAPI, nil
 }
 
-func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, taskId string) (err error) {
+// 仅测试用
+func extractNumberFromFileName(fileName string) (int, error) {
+	// 提取文件名部分，不包括扩展名
+	fileName = strings.TrimSuffix(filepath.Base(fileName), filepath.Ext(fileName))
+
+	// 查找最后一个下划线的位置
+	index := strings.LastIndex(fileName, "_")
+	if index == -1 {
+		return 0, fmt.Errorf("Invalid file name format")
+	}
+
+	// 提取下划线后的数字部分
+	numberStr := fileName[index+1:]
+
+	// 解析为整数
+	number, err := strconv.Atoi(numberStr)
+	if err != nil {
+		return 0, err
+	}
+
+	return number, nil
+}
+
+func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, taskId string, debugFunc EnableDebugMsg) (err error) {
 	var (
 		srcEC  = sdk.ecApi.ec
 		srcMW  = sdk.mwApi.mw
@@ -53,6 +81,11 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 		logger = sdk.logger
 		eks    []proto.ExtentKey
 	)
+	//tmpName := gopath.Base(srcPath)
+	//index, _ := extractNumberFromFileName(tmpName)
+	//if index%10 == 0 {
+	//	return errors.New(fmt.Sprintf("chi errors for index %d", index))
+	//}
 	//获取源文件的inode信息。
 	//logger.Debug("CopyFileToDir lookup src", zap.Any("TaskId", taskId))
 	//这里查找文件应该缓存父目录的元数据
@@ -168,9 +201,11 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 		return errors.New(fmt.Sprintf("Copy size not the same %s[%s]", srcPath, gopath.Join(dstRoot, fileName)))
 	}
 	//优化打开
-	logger.Debug("Copy success", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("dstPath", gopath.Join(dstRoot, fileName)),
-		zap.Any("dstVol", dstSdk.volName), zap.Any("size", dstInfo.Size),
-		zap.Any("cost", time.Now().Sub(start).String()))
+	if debugFunc() {
+		logger.Debug("Copy success", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("dstPath", gopath.Join(dstRoot, fileName)),
+			zap.Any("dstVol", dstSdk.volName), zap.Any("size", dstInfo.Size),
+			zap.Any("cost", time.Now().Sub(start).String()))
+	}
 	return nil
 }
 

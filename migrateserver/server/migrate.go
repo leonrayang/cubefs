@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (svr *MigrateServer) migrateTargetDir(dir, srcClusterId, dstClusterId string) (err error, id string) {
+func (svr *MigrateServer) migrateTargetDir(dir, srcClusterId, dstClusterId string, overWrite bool) (err error, id string) {
 	var (
 		srcRouterInfo falconroute.RouteInfo
 		dstRouterInfo falconroute.RouteInfo
@@ -68,7 +68,7 @@ func (svr *MigrateServer) migrateTargetDir(dir, srcClusterId, dstClusterId strin
 		logger.Error("Migrate job is already exist")
 		return errors.New(fmt.Sprintf("Migrate job is already exist")), ""
 	}
-	job := NewMigrateJob(dir, srcClusterId, dir, dstClusterId, mode, svr.SummaryGoroutineLimit, svr.Logger)
+	job := NewMigrateJob(dir, srcClusterId, dir, dstClusterId, mode, svr.SummaryGoroutineLimit, svr.Logger, overWrite)
 	svr.addMigratingJob(job)
 	job.SetSourceSDK(srcCli)
 	job.SetTargetSDK(dstCli)
@@ -76,7 +76,7 @@ func (svr *MigrateServer) migrateTargetDir(dir, srcClusterId, dstClusterId strin
 	return nil, job.JobId
 }
 
-func (svr *MigrateServer) migrateResourceGroupDir(resourceGroup, srcClusterId, dstClusterId string) (err error, id string) {
+func (svr *MigrateServer) migrateResourceGroupDir(resourceGroup, srcClusterId, dstClusterId string, overwrite bool) (err error, id string) {
 	var (
 		logger        = svr.Logger
 		mode          = proto.JobMigrateResourceGroupDir
@@ -126,9 +126,9 @@ func (svr *MigrateServer) migrateResourceGroupDir(resourceGroup, srcClusterId, d
 		return errors.New(fmt.Sprintf("Migrate job is already exist")), ""
 	}
 	//生成一个job只是为了去封装子job
-	job := NewMigrateJob(jobSrc, srcClusterId, jobDst, dstClusterId, mode, svr.SummaryGoroutineLimit, svr.Logger)
+	job := NewMigrateJob(jobSrc, srcClusterId, jobDst, dstClusterId, mode, svr.SummaryGoroutineLimit, svr.Logger, overwrite)
 	svr.addMigratingJob(job)
-	err, subId = svr.migrateTargetDir(getVirtualPath(CodeRooTDir, GroupDir, resourceGroup), srcClusterId, dstClusterId)
+	err, subId = svr.migrateTargetDir(getVirtualPath(CodeRooTDir, GroupDir, resourceGroup), srcClusterId, dstClusterId, overwrite)
 	if err != nil {
 		job.addMissMigrateJob(proto.MissMigrateJob{SrcClusterId: srcClusterId, DstClusterId: dstClusterId, SrcVol: srcRouterInfo.Pool,
 			DstVol: dstRouterInfo.Pool, VirtualPath: getVirtualPath(CodeRooTDir, GroupDir, resourceGroup)})
@@ -136,7 +136,7 @@ func (svr *MigrateServer) migrateResourceGroupDir(resourceGroup, srcClusterId, d
 		subJob := svr.getMigratingJob(subId)
 		job.addSubMigrateJob(subJob)
 	}
-	err, subId = svr.migrateTargetDir(getVirtualPath(DataRooTDir, GroupDir, resourceGroup), srcClusterId, dstClusterId)
+	err, subId = svr.migrateTargetDir(getVirtualPath(DataRooTDir, GroupDir, resourceGroup), srcClusterId, dstClusterId, overwrite)
 	if err != nil {
 		job.addMissMigrateJob(proto.MissMigrateJob{SrcClusterId: srcClusterId, DstClusterId: dstClusterId, SrcVol: srcRouterInfo.Pool,
 			DstVol: dstRouterInfo.Pool, VirtualPath: getVirtualPath(DataRooTDir, GroupDir, resourceGroup)})
@@ -230,7 +230,7 @@ func (svr *MigrateServer) migrateResourceGroup(resourceGroup, srcClusterId, dstC
 	return nil, "invalid"
 }
 
-func (svr *MigrateServer) migrateUser(user, srcClusterId, dstClusterId string) (err error, id string) {
+func (svr *MigrateServer) migrateUser(user, srcClusterId, dstClusterId string, overwrite bool) (err error, id string) {
 	var (
 		logger        = svr.Logger
 		mode          = proto.JobMigrateUser
@@ -280,9 +280,9 @@ func (svr *MigrateServer) migrateUser(user, srcClusterId, dstClusterId string) (
 		return errors.New(fmt.Sprintf("Migrate job is already exist")), ""
 	}
 	//生成一个job只是为了去封装子job
-	job := NewMigrateJob(jobSrc, srcClusterId, jobDst, dstClusterId, mode, svr.SummaryGoroutineLimit, svr.Logger)
+	job := NewMigrateJob(jobSrc, srcClusterId, jobDst, dstClusterId, mode, svr.SummaryGoroutineLimit, svr.Logger, overwrite)
 	svr.addMigratingJob(job)
-	err, subId = svr.migrateTargetDir(getVirtualPath(CodeRooTDir, UserDir, user), srcClusterId, dstClusterId)
+	err, subId = svr.migrateTargetDir(getVirtualPath(CodeRooTDir, UserDir, user), srcClusterId, dstClusterId, overwrite)
 	if err != nil {
 		job.addMissMigrateJob(proto.MissMigrateJob{SrcClusterId: srcClusterId, DstClusterId: dstClusterId, SrcVol: srcRouterInfo.Pool,
 			DstVol: dstRouterInfo.Pool, VirtualPath: getVirtualPath(CodeRooTDir, UserDir, user)})
@@ -290,7 +290,7 @@ func (svr *MigrateServer) migrateUser(user, srcClusterId, dstClusterId string) (
 		subJob := svr.getMigratingJob(subId)
 		job.addSubMigrateJob(subJob)
 	}
-	err, subId = svr.migrateTargetDir(getVirtualPath(DataRooTDir, UserDir, user), srcClusterId, dstClusterId)
+	err, subId = svr.migrateTargetDir(getVirtualPath(DataRooTDir, UserDir, user), srcClusterId, dstClusterId, overwrite)
 	if err != nil {
 		job.addMissMigrateJob(proto.MissMigrateJob{SrcClusterId: srcClusterId, DstClusterId: dstClusterId, SrcVol: srcRouterInfo.Pool,
 			DstVol: dstRouterInfo.Pool, VirtualPath: getVirtualPath(DataRooTDir, UserDir, user)})

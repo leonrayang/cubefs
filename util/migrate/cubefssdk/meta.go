@@ -100,20 +100,16 @@ func (sdk *CubeFSSdk) getInodeInfo(ino uint64) (*proto.InodeInfo, error) {
 }
 
 func (sdk *CubeFSSdk) LookupFileWithParentCache(filePath string) (info *proto.InodeInfo, err error) {
-	logger := sdk.logger
-	logger.Error("LookupFileWithParentCache", zap.Any("filePath", filePath))
 	parentDir := gopath.Dir(filePath)
 	parentInfo, err := sdk.LookupPathWithCache(parentDir)
 	if err != nil {
 		return nil, err
 	}
 	//查找子项
-	logger.Error("LookupFileWithParentCache #2", zap.Any("entry", gopath.Base(filePath)))
 	ino, _, err := sdk.mwApi.mw.Lookup_ll(parentInfo.Inode, gopath.Base(filePath))
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("lookupPath path %v from vol[%v] failed:%v", filePath, sdk.volName, err.Error()))
 	}
-	logger.Error("LookupFileWithParentCache #3", zap.Any("entry", gopath.Base(filePath)), zap.Any("ino", ino))
 	info, err = sdk.mwApi.mw.InodeGet_ll(ino)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("InodeGet_ll path %v fromvol[%v] failed:%v", filePath, sdk.volName, err.Error()))
@@ -123,36 +119,29 @@ func (sdk *CubeFSSdk) LookupFileWithParentCache(filePath string) (info *proto.In
 
 func (sdk *CubeFSSdk) LookupPathWithCache(filePath string) (info *proto.InodeInfo, err error) {
 	//可能目录的全路径有缓存
-	logger := sdk.logger
-	logger.Error("LookupPathWithCache from icache", zap.Any("filePath", filePath))
 	info = sdk.ic.Get(filePath)
 	if info != nil {
 		return info, nil
 	}
 	var ino uint64
 	//可能文件路径的父目录有缓存,先查找ino号
-	logger.Error("LookupPathWithCache parent", zap.Any("parent", gopath.Dir(filePath)))
 	parentInfo := sdk.ic.Get(gopath.Dir(filePath))
 	if parentInfo != nil {
 		ino, _, err = sdk.mwApi.mw.Lookup_ll(parentInfo.Inode, gopath.Base(filePath))
 		if err != nil {
 			return nil, errors.New(fmt.Sprintf("lookupPath path %v from vol[%v] failed:%v", filePath, sdk.volName, err.Error()))
 		}
-		logger.Error("LookupPathWithCache find ino by parent", zap.Any("ino", ino))
 	} else {
-		logger.Error("LookupPathWithCache absoulte path", zap.Any("filePath", filePath))
 		ino, err = sdk.mwApi.mw.LookupPath(filePath)
 		if err != nil {
 			return nil, errors.New(fmt.Sprintf("lookupPath path %v from vol[%v] failed:%v", filePath, sdk.volName, err.Error()))
 		}
 	}
 	//通过ino号查找Inode信息
-	logger.Error("LookupPathWithCache get ino ", zap.Any("filePath", filePath))
 	info, err = sdk.mwApi.mw.InodeGet_ll(ino)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("InodeGet_ll path %v fromvol[%v] failed:%v", filePath, sdk.volName, err.Error()))
 	}
-	logger.Error("LookupPathWithCache store cache ", zap.Any("filePath", filePath))
 	sdk.ic.Put(filePath, info)
 	return info, nil
 }

@@ -21,6 +21,8 @@ const (
 	StopMigratingJobUrl         = "/stopMigratingJob"
 	RetryMigratingJobUrl        = "/retryMigratingJob"
 	QueryClientMigratingTaskUrl = "/queryClientMigratingTask"
+	EnableClientDebugUrl        = "/enableClientDebug"
+	DisableClientDebugUrl       = "/disableClientDebug"
 )
 
 type HttpReply struct {
@@ -131,6 +133,7 @@ type MoveLocalFilesReq struct {
 	ClusterId string `json:"clusterId"`
 	SrcPath   string `json:"srcPath"`
 	DstPath   string `json:"dstPath"`
+	Overwrite bool   `json:"overwrite"`
 }
 
 type MigrateDetailsResp struct {
@@ -195,18 +198,21 @@ type CopyLocalFilesReq struct {
 	ClusterId string `json:"clusterId"`
 	SrcPath   string `json:"srcPath"`
 	DstPath   string `json:"dstPath"`
+	Overwrite bool   `json:"overwrite"`
 }
 
 type MigrateDirReq struct {
 	SrcClusterId string `json:"srcClusterId"`
 	DstClusterId string `json:"dstClusterId"`
 	Dir          string `json:"dir"`
+	Overwrite    bool   `json:"overwrite"`
 }
 
 type MigrateResourceGroupDirReq struct {
 	SrcClusterId  string `json:"srcClusterId"`
 	DstClusterId  string `json:"dstClusterId"`
 	ResourceGroup string `json:"resourceGroup"`
+	Overwrite     bool   `json:"overwrite"`
 }
 
 type MissMigrateJob struct {
@@ -215,12 +221,14 @@ type MissMigrateJob struct {
 	VirtualPath  string `json:"virtualPath"`
 	SrcVol       string `json:"srcVol"`
 	DstVol       string `json:"dstVol"`
+	Overwrite    bool   `json:"overwrite"`
 }
 
 type MigrateUserReq struct {
 	SrcClusterId string
 	DstClusterId string `json:"dstClusterId"`
 	User         string `json:"user"`
+	Overwrite    bool   `json:"overwrite"`
 }
 
 type MigratingTasksResp struct {
@@ -244,10 +252,17 @@ type WorkerMeta struct {
 }
 
 type MigrateJobMeta struct {
-	SrcPath    string
-	DstPath    string
-	JobId      string
-	WorkMode   int
-	SrcCluster string
-	DstCluster string
+	SrcPath      string
+	DstPath      string
+	JobId        string
+	WorkMode     int
+	SrcCluster   string
+	DstCluster   string
+	Overwrite    bool
+	Status       int32
+	CompleteSize uint64
+	CreateTime   int64
+	CompleteTime int64
+	ErrorMsg     string
+	TotalSize    uint64
 }

@@ -69,11 +69,12 @@ func (mc *MigrateClient) start() {
 	taskCh := mc.getTaskCh()
 	reSendCh := mc.getReSendCh()
 	for {
+		fetchLimit := mc.tasksFetchLimit()
 		//长时间没法送或者当前Server已经堆积了很多任务
-		if len(tasks) >= mc.tasksFetchLimit() || time.Since(lastSendTime) > 2*time.Second {
-			if len(tasks) > mc.tasksFetchLimit() {
-				mc.putReSendCh(tasks[mc.tasksFetchLimit():])
-				mc.putSendCh(tasks[0:mc.tasksFetchLimit()])
+		if len(tasks) >= fetchLimit || time.Since(lastSendTime) > 2*time.Second {
+			if len(tasks) > fetchLimit {
+				mc.putReSendCh(tasks[fetchLimit:])
+				mc.putSendCh(tasks[0:fetchLimit])
 			} else {
 				mc.putSendCh(tasks)
 			}

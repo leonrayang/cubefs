@@ -156,7 +156,7 @@ func (svr *MigrateServer) moveLocalFilesHandler(w http.ResponseWriter, r *http.R
 	}
 	_, req.SrcPath = validateDirPath(req.SrcPath)
 	_, req.DstPath = validateDirPath(req.DstPath)
-	err, id := svr.moveFilesInCluster(req.SrcPath, req.DstPath, req.ClusterId)
+	err, id := svr.moveFilesInCluster(req.SrcPath, req.DstPath, req.ClusterId, req.Overwrite)
 
 	if err != nil {
 		writeErr(w, proto.Fail, err.Error(), logger)
@@ -198,7 +198,7 @@ func (svr *MigrateServer) copyLocalFilesHandler(w http.ResponseWriter, r *http.R
 	}
 	_, req.SrcPath = validateDirPath(req.SrcPath)
 	_, req.DstPath = validateDirPath(req.DstPath)
-	err, id := svr.copyFilesInCluster(req.SrcPath, req.DstPath, req.ClusterId)
+	err, id := svr.copyFilesInCluster(req.SrcPath, req.DstPath, req.ClusterId, req.Overwrite)
 
 	if err != nil {
 		writeErr(w, proto.Fail, err.Error(), logger)
@@ -245,7 +245,7 @@ func (svr *MigrateServer) migrateDirHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	_, req.Dir = validateDirPath(req.Dir)
-	err, id := svr.migrateTargetDir(req.Dir, req.SrcClusterId, req.DstClusterId)
+	err, id := svr.migrateTargetDir(req.Dir, req.SrcClusterId, req.DstClusterId, req.Overwrite)
 
 	if err != nil {
 		writeErr(w, proto.Fail, err.Error(), logger)
@@ -292,7 +292,7 @@ func (svr *MigrateServer) migrateResourceGroupDirHandler(w http.ResponseWriter, 
 		return
 	}
 
-	err, id := svr.migrateResourceGroupDir(req.ResourceGroup, req.SrcClusterId, req.DstClusterId)
+	err, id := svr.migrateResourceGroupDir(req.ResourceGroup, req.SrcClusterId, req.DstClusterId, req.Overwrite)
 
 	if err != nil {
 		writeErr(w, proto.Fail, err.Error(), logger)
@@ -386,7 +386,7 @@ func (svr *MigrateServer) migrateUserHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	err, id := svr.migrateUser(req.User, req.SrcClusterId, req.DstClusterId)
+	err, id := svr.migrateUser(req.User, req.SrcClusterId, req.DstClusterId, req.Overwrite)
 
 	if err != nil {
 		writeErr(w, proto.Fail, err.Error(), logger)

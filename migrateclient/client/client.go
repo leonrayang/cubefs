@@ -41,6 +41,7 @@ type MigrateClient struct {
 	migratingTaskMap    map[string]proto.Task
 	mapMigratingTaskLk  sync.RWMutex
 	lastTaskExecuteTime time.Time
+	enableDebug         bool
 }
 
 func NewMigrateClient(cfg *config.Config) *MigrateClient {
@@ -59,6 +60,7 @@ func NewMigrateClient(cfg *config.Config) *MigrateClient {
 		port:                cfg.Port,
 		migratingTaskMap:    make(map[string]proto.Task),
 		lastTaskExecuteTime: time.Now(),
+		enableDebug:         false,
 	}
 	cli.Logger, _ = liblog.NewZapLoggerWithLevel(cfg.LogCfg)
 	for _, route := range cfg.FalconRoute {
@@ -368,4 +370,8 @@ func strToLevel(s string) (level sdkLog.Level) {
 		level = sdkLog.InfoLevel
 	}
 	return
+}
+
+func (cli *MigrateClient) CheckDebugEnable() bool {
+	return cli.enableDebug
 }

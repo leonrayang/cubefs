@@ -43,9 +43,12 @@ type MigrateJob struct {
 	mapSubCompleteJobLk   sync.RWMutex
 	missMigrateJob        []proto.MissMigrateJob //如果是迁移资源组等包含多个迁移目录的任务，有可能没生成任务
 	owner                 *MigrateJob            //子迁移任务所属任务
+	overWrite             bool
+	ErrorMsg              string //仅用于master重启后使用
 }
 
-func NewMigrateJob(srcPath, srcCluster, dstPath, dstCluster string, workMode, SummaryGoroutineLimit int, logger *zap.Logger) *MigrateJob {
+func NewMigrateJob(srcPath, srcCluster, dstPath, dstCluster string, workMode,
+	SummaryGoroutineLimit int, logger *zap.Logger, overWrite bool) *MigrateJob {
 	job := &MigrateJob{
 		SrcPath:               path.Clean(srcPath),
 		DstPath:               path.Clean(dstPath),
@@ -63,6 +66,7 @@ func NewMigrateJob(srcPath, srcCluster, dstPath, dstCluster string, workMode, Su
 		subMigratingJob:       make(map[string]*MigrateJob),
 		subCompleteMigrateJob: make(map[string]*MigrateJob),
 		missMigrateJob:        make([]proto.MissMigrateJob, 0),
+		overWrite:             overWrite,
 	}
 	job.migratingTaskCnt.Store(0)
 	job.completeSize.Store(0)
@@ -87,6 +91,10 @@ func (job *MigrateJob) GetMigratingTasks() (tasks []proto.Task) {
 		tasks = append(tasks, task)
 	}
 	return
+}
+
+func (job *MigrateJob) ResetCompleteSize(size uint64) {
+	job.completeSize.Add(size)
 }
 
 func (job *MigrateJob) getMigratingTasksBySubJobs() (tasks []proto.Task) {
@@ -572,6 +580,9 @@ func (job *MigrateJob) getProgressBySubJobs() (float64, int32) {
 }
 
 func (job *MigrateJob) getErrorMsg(failTaskReportLimit int) (errorMsg string) {
+	if job.ErrorMsg != "" {
+		return job.ErrorMsg
+	}
 	if job.hasSubMigrateJobs() {
 		job.mapSubCompleteJobLk.Lock()
 		cache := job.subCompleteMigrateJob
@@ -600,6 +611,9 @@ func (job *MigrateJob) getErrorMsg(failTaskReportLimit int) (errorMsg string) {
 	}
 	return
 }
+func (job *MigrateJob) GetConsumeTime() string {
+	return job.completeTime.Sub(time.Unix(job.CreateTime, 0)).String()
+}
 
 // 对于已完成的job，则持久化进度以及task等状态，
 func (job *MigrateJob) dump(svr *MigrateServer) proto.MigrateJobMeta {
@@ -619,32 +633,67 @@ func (job *MigrateJob) dump(svr *MigrateServer) proto.MigrateJobMeta {
 		WorkMode:   job.WorkMode,
 		SrcCluster: job.SrcCluster,
 		DstCluster: job.DstCluster,
+		Overwrite:  job.overWrite,
+		Status:     job.GetJobStatus(),
+		CreateTime: job.CreateTime,
+	}
+	if meta.Status == proto.JobSuccess || meta.Status == proto.JobFailed {
+		meta.CompleteTime = job.completeTime.Unix()
+		meta.CompleteSize = job.GetCompleteSize()
+		meta.TotalSize = job.TotalSize
+	}
+	if meta.Status == proto.JobFailed {
+		meta.ErrorMsg = job.getErrorMsg(svr.FailTaskReportLimit)
 	}
 	return meta
 }
 
 func (svr *MigrateServer) restoreMigrateJob(jobMeta proto.MigrateJobMeta) (err error) {
+	if jobMeta.Status == proto.JobSuccess || jobMeta.Status == proto.JobFailed {
+		job := &MigrateJob{
+			SrcPath:               jobMeta.SrcPath,
+			SrcCluster:            jobMeta.SrcCluster,
+			DstPath:               jobMeta.DstPath,
+			DstCluster:            jobMeta.DstCluster,
+			WorkMode:              jobMeta.WorkMode,
+			SummaryGoroutineLimit: svr.SummaryGoroutineLimit,
+			logger:                svr.Logger,
+			overWrite:             jobMeta.Overwrite,
+			JobId:                 jobMeta.JobId,
+			CreateTime:            jobMeta.CreateTime,
+			completeTime:          time.Unix(jobMeta.CompleteTime, 0),
+			TotalSize:             jobMeta.TotalSize,
+		}
+		job.SetJobStatus(jobMeta.Status)
+		job.ResetCompleteSize(jobMeta.CompleteSize)
+		if jobMeta.Status == proto.JobFailed {
+			job.ErrorMsg = jobMeta.ErrorMsg
+		}
+		svr.saveJobProcess(job)
+		return
+	}
+
 	//重新提交job
 	var newJobId string
 	if jobMeta.WorkMode == proto.JobCopyFile || jobMeta.WorkMode == proto.JobCopyDir {
-		err, newJobId = svr.copyFilesInCluster(jobMeta.SrcPath, jobMeta.DstPath, jobMeta.SrcCluster)
+		err, newJobId = svr.copyFilesInCluster(jobMeta.SrcPath, jobMeta.DstPath, jobMeta.SrcCluster, jobMeta.Overwrite)
 		if err != nil {
 			return err
 		}
 	} else if jobMeta.WorkMode == proto.JobMove {
-		err, newJobId = svr.moveFilesInCluster(jobMeta.SrcPath, jobMeta.DstPath, jobMeta.SrcCluster)
+		err, newJobId = svr.moveFilesInCluster(jobMeta.SrcPath, jobMeta.DstPath, jobMeta.SrcCluster, jobMeta.Overwrite)
 		if err != nil {
 			return err
 		}
 	} else if jobMeta.WorkMode == proto.JobMigrateDir {
-		err, newJobId = svr.migrateTargetDir(jobMeta.SrcPath, jobMeta.SrcCluster, jobMeta.DstCluster)
+		err, newJobId = svr.migrateTargetDir(jobMeta.SrcPath, jobMeta.SrcCluster, jobMeta.DstCluster, jobMeta.Overwrite)
 		if err != nil {
 			return err
 		}
 	} else if jobMeta.WorkMode == proto.JobMigrateResourceGroupDir {
 		//TODO
 		resourceGroup := jobMeta.SrcPath[strings.Index(jobMeta.SrcPath, "-")+1:]
-		err, newJobId = svr.migrateResourceGroupDir(resourceGroup, jobMeta.SrcCluster, jobMeta.DstCluster)
+		err, newJobId = svr.migrateResourceGroupDir(resourceGroup, jobMeta.SrcCluster, jobMeta.DstCluster, jobMeta.Overwrite)
 		if err != nil {
 			return err
 		}
@@ -656,7 +705,7 @@ func (svr *MigrateServer) restoreMigrateJob(jobMeta proto.MigrateJobMeta) (err e
 		}
 	} else if jobMeta.WorkMode == proto.JobMigrateUser {
 		user := jobMeta.SrcPath[strings.Index(jobMeta.SrcPath, "-")+1:]
-		err, newJobId = svr.migrateUser(user, jobMeta.SrcCluster, jobMeta.DstCluster)
+		err, newJobId = svr.migrateUser(user, jobMeta.SrcCluster, jobMeta.DstCluster, jobMeta.Overwrite)
 		if err != nil {
 			return err
 		}

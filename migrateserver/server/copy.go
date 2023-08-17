@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func (svr *MigrateServer) copyFilesInCluster(srcPath, dstPath, clusterId string) (err error, id string) {
+func (svr *MigrateServer) copyFilesInCluster(srcPath, dstPath, clusterId string, overwrite bool) (err error, id string) {
 	var (
 		srcRouter falconroute.RouteInfo
 		dstRouter falconroute.RouteInfo
@@ -91,14 +91,14 @@ func (svr *MigrateServer) copyFilesInCluster(srcPath, dstPath, clusterId string)
 		logger.Error("Migrate job is already exist")
 		return errors.New(fmt.Sprintf("Migrate job is already exist")), ""
 	}
-	logger.Error("=============", zap.Any("srcPath", srcPath),
-		zap.Any("dstPath", dstPath), zap.Any("condition", strings.HasSuffix(dstPath, srcPath)), zap.Any("mode", mode))
+	//logger.Error("=============", zap.Any("srcPath", srcPath),
+	//	zap.Any("dstPath", dstPath), zap.Any("condition", strings.HasSuffix(dstPath, srcPath)), zap.Any("mode", mode))
 	if mode == proto.JobCopyDir && strings.HasPrefix(dstPath, srcPath) {
 		logger.Error("Cannot cp dir to its sub dir src %v dst %v", zap.Any("srcPath", srcPath),
 			zap.Any("dstPath", dstPath))
 		return errors.New(fmt.Sprintf("Cannot cp dir to its sub dir")), ""
 	}
-	job := NewMigrateJob(srcPath, clusterId, dstPath, clusterId, mode, svr.SummaryGoroutineLimit, svr.Logger)
+	job := NewMigrateJob(srcPath, clusterId, dstPath, clusterId, mode, svr.SummaryGoroutineLimit, svr.Logger, overwrite)
 	svr.addMigratingJob(job)
 	job.SetSourceSDK(cli)
 	job.SetTargetSDK(cliDst)

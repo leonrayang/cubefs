@@ -10,6 +10,21 @@ import (
 func (cli *MigrateClient) registerRouter() {
 	//查询worker当前有哪些迁移任务
 	http.HandleFunc(proto.QueryClientMigratingTaskUrl, cli.queryClientMigratingTask)
+	http.HandleFunc(proto.EnableClientDebugUrl, cli.enableClientDebug)
+	http.HandleFunc(proto.DisableClientDebugUrl, cli.disableClientDebug)
+
+}
+
+func (cli *MigrateClient) disableClientDebug(w http.ResponseWriter, r *http.Request) {
+	logger := cli.Logger.With()
+	cli.enableDebug = false
+	writeResp(w, "worker disable debug mode", logger)
+}
+
+func (cli *MigrateClient) enableClientDebug(w http.ResponseWriter, r *http.Request) {
+	logger := cli.Logger.With()
+	cli.enableDebug = true
+	writeResp(w, "worker enable debug mode", logger)
 }
 
 func (cli *MigrateClient) queryClientMigratingTask(w http.ResponseWriter, r *http.Request) {

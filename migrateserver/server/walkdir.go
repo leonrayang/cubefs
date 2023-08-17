@@ -61,7 +61,8 @@ func (job *MigrateJob) walkDir(srcDir, dstDir string, svr *MigrateServer) {
 	wg.Wait()
 	task := job.newTask(srcDir, dstDir, 0)
 	ok, successTask := svr.alreadySuccess(task)
-	if !ok {
+	//如果不存在或者开启overWrite则覆盖
+	if !ok || job.overWrite {
 		job.sendTask(task, svr)
 	} else {
 		job.updateCompleteSize(successTask)

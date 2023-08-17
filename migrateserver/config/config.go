@@ -43,9 +43,10 @@ func ParseConfig(path string) (*Config, error) {
 		cfg.SummaryGoroutineLimit = 8
 	}
 	//失败的时候最多30个失败任务信息，避免过长
-	if cfg.FailTaskReportLimit <= 0 {
-		cfg.FailTaskReportLimit = 30
+	if cfg.FailTaskReportLimit <= 0 || cfg.FailTaskReportLimit >= 10 {
+		cfg.FailTaskReportLimit = 10
 	}
+
 	if cfg.CompleteJobTimeout <= 0 {
 		cfg.CompleteJobTimeout = 60 * 24 * 5
 	}

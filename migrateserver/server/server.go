@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/cubefs/cubefs/depends/tiglabs/raft/logger"
 	"github.com/cubefs/cubefs/migrateserver/config"
 	"github.com/cubefs/cubefs/util/errors"
 	"github.com/cubefs/cubefs/util/liblog"
@@ -438,9 +437,10 @@ func (svr *MigrateServer) persistMeta() {
 	for {
 		select {
 		case <-svr.stopCh:
-			logger.Warn("receive svr stop ch, exit")
+			svr.Logger.Warn("receive svr stop ch, exit")
 			return
 		case <-ticker.C:
+			//			svr.Logger.Warn("persist.....")
 			svr.persistWorkerMap()
 			svr.persistMigratingJobMap()
 			svr.persistSuccessTask()
@@ -449,6 +449,7 @@ func (svr *MigrateServer) persistMeta() {
 }
 
 func (svr *MigrateServer) persistMigratingJobMap() {
+	logger := svr.Logger.With()
 	jobMetas := make([]proto.MigrateJobMeta, 0)
 	svr.mapMigratingJobLk.RLock()
 	//进行中的job
@@ -490,6 +491,7 @@ func (svr *MigrateServer) persistMigratingJobMap() {
 		logger.Error("Rename temp jobs meta failed", zap.Any("err", err))
 		return
 	}
+	//svr.Logger.Warn("persistMigratingJobMap success")
 }
 
 func (svr *MigrateServer) persistWorkerMap() {

@@ -49,9 +49,9 @@ func (cli *MigrateClient) doMigrateDirOperation(task proto.Task) (error, uint64)
 	}
 
 	if err, totalSize := execCopyDirCommand(cli.sdkManager, srcPath, dstPath, srcRouterInfo.Pool, srcRouterInfo.Endpoint, dstRouterInfo.Pool, dstRouterInfo.Endpoint,
-		logger, cli.copyGoroutineLimit, cli.copyQueueLimit, task.TaskId); err == nil {
+		logger, cli.copyGoroutineLimit, cli.copyQueueLimit, task.TaskId, cli.CheckDebugEnable); err == nil {
 		return nil, totalSize
 	} else {
-		return errors.New(fmt.Sprintf("Execute copy single file operation failed: %s", err.Error())), 0
+		return errors.New(fmt.Sprintf("Execute copy single file operation failed: %s", err.Error())), totalSize
 	}
 }

@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (svr *MigrateServer) moveFilesInCluster(srcPath, dstPath, clusterId string) (err error, id string) {
+func (svr *MigrateServer) moveFilesInCluster(srcPath, dstPath, clusterId string, overwrite bool) (err error, id string) {
 	logger := svr.Logger.With()
 	//虚拟路径只是用来查路由的，并不是完整路劲
 	virSrcPath := falconroute.GetVirtualPathFromAbsDir(srcPath)
@@ -26,7 +26,7 @@ func (svr *MigrateServer) moveFilesInCluster(srcPath, dstPath, clusterId string)
 		logger.Error("Migrate job is already exist")
 		return errors.New(fmt.Sprintf("Migrate job is already exist")), ""
 	}
-	job := NewMigrateJob(srcPath, clusterId, dstPath, clusterId, proto.JobMove, svr.SummaryGoroutineLimit, svr.Logger)
+	job := NewMigrateJob(srcPath, clusterId, dstPath, clusterId, proto.JobMove, svr.SummaryGoroutineLimit, svr.Logger, overwrite)
 	svr.addMigratingJob(job)
 	go job.execute(svr)
 	return nil, job.JobId

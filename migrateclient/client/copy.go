@@ -9,7 +9,13 @@ import (
 	"github.com/cubefs/cubefs/util/migrate/proto"
 	"go.uber.org/zap"
 	gopath "path"
+	"strings"
 	"sync"
+	"sync/atomic"
+)
+
+const (
+	TinyFileSize = 1024 * 1024
 )
 
 func (cli *MigrateClient) doCopySingleFileOperation(task proto.Task) error {
@@ -44,14 +50,16 @@ func (cli *MigrateClient) doCopySingleFileOperation(task proto.Task) error {
 		return errors.New(fmt.Sprintf("get router %s failed:%s ", virDstPath, err.Error()))
 	}
 
-	if err := execCopyFileCommand(cli.sdkManager, srcPath, dstPath, srcRouter.Pool, srcRouter.Endpoint, dstRouter.Pool, dstRouter.Endpoint, logger, task.TaskId); err == nil {
+	if err := execCopyFileCommand(cli.sdkManager, srcPath, dstPath, srcRouter.Pool, srcRouter.Endpoint,
+		dstRouter.Pool, dstRouter.Endpoint, logger, task.TaskId, cli.CheckDebugEnable); err == nil {
 		return nil
 	} else {
 		return errors.New(fmt.Sprintf("Execute copy single file operation failed: %s", err.Error()))
 	}
 }
 
-func execCopyFileCommand(manager *cubefssdk.SdkManager, source, target, srcVol, srcEndpoint, dstVol, dstEndpoint string, logger *zap.Logger, taskId string) (err error) {
+func execCopyFileCommand(manager *cubefssdk.SdkManager, source, target, srcVol, srcEndpoint, dstVol,
+	dstEndpoint string, logger *zap.Logger, taskId string, debugFunc cubefssdk.EnableDebugMsg) (err error) {
 	//无论是否为文件或者文件夹，执行的mv操作一致
 	logger.Debug("execCopyFileCommand", zap.Any("src", source), zap.Any("dst", target), zap.Any("srcVol", srcVol), zap.Any("dstVol", dstVol))
 	cli, err := manager.GetCubeFSSdk(srcVol, srcEndpoint)
@@ -62,7 +70,7 @@ func execCopyFileCommand(manager *cubefssdk.SdkManager, source, target, srcVol, 
 	if err != nil {
 		return err
 	}
-	return cli.CopyFileToDir(source, target, cliDst, taskId)
+	return cli.CopyFileToDir(source, target, cliDst, taskId, debugFunc)
 }
 
 func (cli *MigrateClient) doCopyDirOperation(task proto.Task) (error, uint64) {
@@ -98,19 +106,25 @@ func (cli *MigrateClient) doCopyDirOperation(task proto.Task) (error, uint64) {
 	}
 
 	if err, totalSize := execCopyDirCommand(cli.sdkManager, srcPath, dstPath, srcRouter.Pool, srcRouter.Endpoint, dstRouter.Pool, dstRouter.Endpoint,
-		logger, cli.copyGoroutineLimit, cli.copyQueueLimit, task.TaskId); err == nil {
+		logger, cli.copyGoroutineLimit, cli.copyQueueLimit, task.TaskId, cli.CheckDebugEnable); err == nil {
 		return nil, totalSize
 	} else {
-		return errors.New(fmt.Sprintf("Execute copy single file operation failed: %s", err.Error())), 0
+		return errors.New(fmt.Sprintf("Execute copy single file operation failed: %s", err.Error())), totalSize
 	}
 }
 
 // 增加耗时
-func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, srcEndpoint, dstVol, dstEndpoint string, logger *zap.Logger, goroutineLimit, taskLimit int, taskId string) (err error, total uint64) {
+func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, srcEndpoint, dstVol, dstEndpoint string,
+	logger *zap.Logger, goroutineLimit, taskLimit int, taskId string, debugFunc cubefssdk.EnableDebugMsg) (err error, copySuccess uint64) {
 	//无论是否为文件或者文件夹，执行的mv操作一致
 	logger.Debug("execCopyDirCommand", zap.Any("src", source), zap.Any("from vol", srcVol),
 		zap.Any("dst", target), zap.Any("to vol", dstVol), zap.Any("TaskId", taskId))
-	total = 0
+	copySuccess = 0
+	var (
+		fileCnt   uint64 = 0
+		succCnt   int32
+		totalSize uint64 = 0
+	)
 	//start := time.Now()
 	//defer logger.Debug("execCopyDirCommand completed", zap.Any("TaskId", taskId),
 	//	zap.Any("consumeTime", time.Now().Sub(start).String()))
@@ -130,11 +144,12 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 		logger.Debug("ReadDir failed", zap.Any("TaskId", taskId), zap.Any("source", source), zap.Any("err", err))
 		return errors.New(fmt.Sprintf("ReadDir failed, dir %s[%s]", source, err.Error())), 0
 	}
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 10)
 	taskCh := make(chan CopySubTask, taskLimit)
 	wg := sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	var errMsg string
 	for i := 0; i < goroutineLimit; i++ {
 		wg.Add(1)
 		go func() {
@@ -149,19 +164,23 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 					return // Error somewhere, terminate
 				default: // Default is must to avoid blocking
 				}
-				err = srcCli.CopyFileToDir(task.source, task.target, dstCli, taskId)
+				err = srcCli.CopyFileToDir(task.source, task.target, dstCli, taskId, debugFunc)
 				if err != nil {
-					cancel()
 					select {
 					case errCh <- err:
 						logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", err))
-						return
+						errMsg += fmt.Sprintf("%v;", err.Error())
 					default:
 						logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", err))
-						return
+						if !strings.Contains(errMsg, "[to many errors]") {
+							errMsg = fmt.Sprintf("[to many errors]%v", errMsg)
+						}
 					}
-
+				} else {
+					atomic.AddInt32(&succCnt, 1)
+					atomic.AddUint64(&copySuccess, task.size)
 				}
+
 			}
 		}()
 	}
@@ -174,30 +193,32 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 			logger.Warn("Failed to get file size", zap.Any("child", gopath.Join(source, child.Name)), zap.Any("err", err))
 			break
 		}
-		total += childSize
+		totalSize += childSize
+		fileCnt++
 		//logger.Debug("execCopyDirCommand  new copy task ", zap.Any("TaskId", taskId),
 		//	zap.Any("source", gopath.Join(source, child.Name)), zap.Any("target", target))
-		taskCh <- CopySubTask{source: gopath.Join(source, child.Name), target: target}
+		taskCh <- CopySubTask{source: gopath.Join(source, child.Name), target: target, size: childSize}
 	}
-	//logger.Debug("execCopyDirCommand  travers dir complete", zap.Any("TaskId", taskId))
+	//有可能fileCnt为0
+	if fileCnt != 0 {
+		//avergeSize := totalSize / fileCnt
+	}
+
 	close(taskCh)
 	wg.Wait()
+	//logger.Debug("execCopyDirCommand  ", zap.Any("avergeSize", avergeSize),
+	//	zap.Any("total", totalSize), zap.Any("fileCnt", fileCnt), zap.Any("succCnt", succCnt),
+	//	zap.Any("copySuccess", copySuccess))
 	//logger.Debug("execCopyDirCommand all goroutine is done", zap.Any("TaskId", taskId))
-	if len(errCh) == 0 {
-		return
+	if len(errMsg) == 0 {
+		return nil, copySuccess
 	} else {
-		for {
-			select {
-			case err := <-errCh:
-				return err, 0
-			default:
-				return
-			}
-		}
+		return errors.New(fmt.Sprintf("%v", errMsg)), copySuccess
 	}
 }
 
 type CopySubTask struct {
 	source string
 	target string
+	size   uint64
 }
