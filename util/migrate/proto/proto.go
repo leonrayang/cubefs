@@ -55,6 +55,11 @@ const (
 	JobMigrateUser
 )
 
+const (
+	TinyTask   = "tiny"
+	NormalTask = "normal"
+)
+
 const FetchTaskInterval = 5 * time.Second
 
 type Task struct {
@@ -72,12 +77,14 @@ type Task struct {
 	TargetCluster string
 	IsRetrying    bool //正在重试的任务不影响job计数
 	ConsumeTime   string
+	Type          string
 }
 
 func (t *Task) String() string {
 	return fmt.Sprintf("source(%s)_target(%s)_jobID(%s)_taskID(%s)_retry(%d)_client(%s)_"+
-		"start(%d)_mode(%v)_migrateSize(%v)",
-		t.Source, t.Target, t.JobId, t.TaskId, t.Retry, t.Owner, t.JobStartTime, t.WorkMode, t.MigrateSize)
+		"start(%d)_mode(%v)_migrateSize(%v)_Type(%s)",
+		t.Source, t.Target, t.JobId, t.TaskId, t.Retry, t.Owner, t.JobStartTime, t.WorkMode,
+		t.MigrateSize, t.Type)
 }
 
 func (t *Task) StringToReport() string {

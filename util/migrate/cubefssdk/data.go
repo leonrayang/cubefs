@@ -11,6 +11,7 @@ import (
 	"io"
 	gopath "path"
 	"syscall"
+	"time"
 )
 
 type DataApi struct {
@@ -45,16 +46,17 @@ func NewDataApi(volName, endpoint string, mw *meta.MetaWrapper, logger *zap.Logg
 
 func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, taskId string) (err error) {
 	var (
-		srcEC = sdk.ecApi.ec
-		srcMW = sdk.mwApi.mw
-		dstEC = dstSdk.ecApi.ec
-		//		start  = time.Now()
+		srcEC  = sdk.ecApi.ec
+		srcMW  = sdk.mwApi.mw
+		dstEC  = dstSdk.ecApi.ec
+		start  = time.Now()
 		logger = sdk.logger
 		eks    []proto.ExtentKey
 	)
 	//获取源文件的inode信息。
 	//logger.Debug("CopyFileToDir lookup src", zap.Any("TaskId", taskId))
-	srcInfo, err := sdk.LookupPath(srcPath)
+	//这里查找文件应该缓存父目录的元数据
+	srcInfo, err := sdk.LookupFileWithParentCache(srcPath)
 	if err != nil {
 		logger.Warn("LookupPath source failed", zap.Any("TaskId", taskId), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return err
@@ -69,18 +71,17 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	_, fileName := gopath.Split(gopath.Clean(srcPath))
 	//获取目标路径信息
 	//logger.Debug("CopyFileToDir lookup dst", zap.Any("TaskId", taskId))
-	dstParentInfo, err := dstSdk.LookupPath(dstRoot)
+	dstParentInfo, err := dstSdk.LookupPathWithCache(dstRoot)
 	if err != nil {
 		logger.Error("LookupPathWithCache target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 		return err
 	}
-	//dstSdk.ic.Put(dstRoot, dstParentInfo)
 	//logger.Debug("CopyFileToDir PathIsExist", zap.Any("TaskId", taskId))
 	var dstInfo *proto.InodeInfo
 	//如果目标文件已经存在，则要删除
-	if ino, isExist := dstSdk.PathIsExistWithIno(gopath.Join(dstRoot, fileName)); isExist {
+	if ino, isExist := dstSdk.PathIsExistWithIno(dstParentInfo.Inode, gopath.Join(dstRoot, fileName)); isExist {
 		//logger.Debug("CopyFileToDir open exist", zap.Any("TaskId", taskId))
-		dstInfo, err = dstSdk.LookupPath(gopath.Join(dstRoot, fileName))
+		dstInfo, err = dstSdk.getInodeInfo(ino)
 		if err != nil {
 			logger.Error("Open target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 			return errors.New(fmt.Sprintf("Open exist target failed, dstRoot %s vol %s [%s]", dstRoot, dstSdk.volName, err.Error()))
@@ -153,13 +154,13 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	dstEC.CloseStream(dstInfo.Inode)
 	srcEC.CloseStream(srcInfo.Inode)
 	//检查文件大小是否一致,这里不能用缓存
-	srcInfo, err = sdk.LookupPath(srcPath)
+	srcInfo, err = sdk.LookupFileWithParentCache(srcPath)
 	if err != nil {
 		logger.Warn("LookupPath source to check failed", zap.Any("TaskId", taskId), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return err
 	}
 	//logger.Debug("CopyFileToDir lookup dst", zap.Any("TaskId", taskId))
-	dstInfo, err = dstSdk.LookupPath(gopath.Join(dstRoot, fileName))
+	dstInfo, err = dstSdk.LookupFileWithParentCache(gopath.Join(dstRoot, fileName))
 	if err != nil {
 		logger.Warn("LookupPath dst to check failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 	}
@@ -167,9 +168,9 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 		return errors.New(fmt.Sprintf("Copy size not the same %s[%s]", srcPath, gopath.Join(dstRoot, fileName)))
 	}
 	//优化打开
-	//logger.Debug("Copy success", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("dstPath", gopath.Join(dstRoot, fileName)),
-	//	zap.Any("dstVol", dstSdk.volName), zap.Any("size", dstInfo.Size),
-	//	zap.Any("cost", time.Now().Sub(start).String()))
+	logger.Debug("Copy success", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("dstPath", gopath.Join(dstRoot, fileName)),
+		zap.Any("dstVol", dstSdk.volName), zap.Any("size", dstInfo.Size),
+		zap.Any("cost", time.Now().Sub(start).String()))
 	return nil
 }
 

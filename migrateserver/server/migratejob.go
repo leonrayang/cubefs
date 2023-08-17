@@ -406,6 +406,7 @@ func (job *MigrateJob) getProgress() (float64, int32) {
 		return job.getProgressBySubJobs()
 	}
 	//有可能是空文件夹，或者是没有统计到容量的新目录，还是可以返回job的状态
+
 	if job.TotalSize == 0 {
 		job.logger.Debug("totalMigrate cannot be zero")
 		//任务完成时，返回1，其他时候为无效值0

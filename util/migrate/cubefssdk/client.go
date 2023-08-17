@@ -9,14 +9,14 @@ type CubeFSSdk struct {
 	ecApi   *DataApi
 	logger  *zap.Logger
 	volName string
-	//ic      *InodeCache
+	ic      *InodeCache
 }
 
 func newCubeFSSdk(volName, endpoint string, enableSummary bool, logger *zap.Logger) (*CubeFSSdk, error) {
 	sdk := &CubeFSSdk{
 		logger:  logger,
 		volName: volName,
-		//ic:      NewInodeCache(logger),
+		ic:      NewInodeCache(logger),
 	}
 	var err error
 
