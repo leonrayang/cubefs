@@ -298,6 +298,7 @@ func (svr *MigrateServer) migrateUser(user, srcClusterId, dstClusterId string, o
 		subJob := svr.getMigratingJob(subId)
 		job.addSubMigrateJob(subJob)
 	}
+	//TODO 这里是否考虑优化
 	job.SetJobStatus(proto.JobRunning)
 	return nil, job.JobId
 }

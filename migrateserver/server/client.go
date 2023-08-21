@@ -187,7 +187,7 @@ func (mc *MigrateClient) updateRunningTasksStatus(succTasks, failTasks, newTasks
 			delete(mc.taskMap, key)
 		}
 		mc.updateMigratingDirState(task, false)
-		logger.Debug("receive fail task ok", zap.String("task", task.String()), zap.String("error", task.ErrorMsg))
+		logger.Debug("receive fail task", zap.String("task", task.String()), zap.String("error", task.ErrorMsg))
 	}
 }
 
@@ -210,7 +210,9 @@ func (mc *MigrateClient) updateMigratingDirState(task proto.Task, succ bool) {
 	} else {
 		//更新重试次数
 		task.Retry++
+		//发布前修改
 		if task.Retry <= mc.svr.taskRetryLimit {
+			//if task.Retry <= 1 {
 			task.IsRetrying = true
 			select {
 			case job.retryCh <- task:

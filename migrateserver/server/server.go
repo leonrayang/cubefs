@@ -265,7 +265,7 @@ func (svr *MigrateServer) getMigratingJobsInfo() (int, []proto.MigratingJobInfo)
 			SrcCluster:       job.SrcCluster,
 			DstCluster:       job.DstCluster,
 			WorkMode:         job.WorkMode,
-			TotalSize:        job.TotalSize,
+			TotalSize:        job.TotalSize.Load(),
 			MigratingTaskCnt: job.GetMigratingTaskCnt(),
 		})
 	}
@@ -357,7 +357,6 @@ func (svr *MigrateServer) clearCompleteMigrateJob() {
 					if job.hasSubMigrateJobs() {
 						job.clearSubCompleteMigrateJob(svr)
 					}
-					//clear failed task
 				}
 			}
 

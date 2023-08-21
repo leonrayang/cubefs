@@ -220,6 +220,7 @@ func (sdk *CubeFSSdk) CreateSymlink(pino uint64, name string, mode, uid, gid uin
 	return sdk.mwApi.mw.Create_ll(pino, name, fuseMode, uid, gid, target)
 }
 
+// 单个文件拷贝适合
 func (sdk *CubeFSSdk) GetFileSize(path string) (uint64, error) {
 	info, err := sdk.LookupPath(path)
 	if err != nil {

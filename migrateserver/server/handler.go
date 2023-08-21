@@ -500,7 +500,7 @@ func (svr *MigrateServer) queryMigratingTasksByJobHandler(w http.ResponseWriter,
 	}
 	tasks := job.GetMigratingTasks()
 	rsp := &proto.MigratingTasksResp{}
-	rsp.MigratingTaskCnt = len(tasks)
+	rsp.MigratingTaskCnt = int(job.GetMigratingTaskCnt())
 	rsp.MigratingTasks = tasks
 	writeResp(w, rsp, logger)
 }
@@ -518,10 +518,11 @@ func (svr *MigrateServer) stopMigratingJobHandler(w http.ResponseWriter, r *http
 		writeErr(w, proto.ParmErr, "JobId can't be empty ", logger)
 		return
 	}
-	svr.mapMigratingJobLk.Lock()
-	job := svr.migratingJobMap[req.JobId]
-	svr.mapMigratingJobLk.Unlock()
-
+	job := svr.findMigrateJob(req.JobId)
+	if job == nil {
+		writeErr(w, proto.ParmErr, "JobId is invalid ", logger)
+		return
+	}
 	if job == nil {
 		writeErr(w, proto.ParmErr, "JobId is invalid ", logger)
 		return
@@ -547,9 +548,11 @@ func (svr *MigrateServer) retryMigratingJobHandler(w http.ResponseWriter, r *htt
 		writeErr(w, proto.ParmErr, "JobId can't be empty ", logger)
 		return
 	}
-	svr.mapMigratingJobLk.Lock()
-	job := svr.migratingJobMap[req.JobId]
-	svr.mapMigratingJobLk.Unlock()
+	job := svr.findMigrateJob(req.JobId)
+	if job == nil {
+		writeErr(w, proto.ParmErr, "JobId is invalid ", logger)
+		return
+	}
 
 	if job == nil {
 		writeErr(w, proto.ParmErr, "JobId is invalid ", logger)

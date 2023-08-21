@@ -58,6 +58,7 @@ const (
 )
 
 const (
+	TinyFile   = 1024 * 1024
 	TinyTask   = "tiny"
 	NormalTask = "normal"
 )
@@ -83,9 +84,9 @@ type Task struct {
 }
 
 func (t *Task) String() string {
-	return fmt.Sprintf("source(%s)_target(%s)_jobID(%s)_taskID(%s)_retry(%d)_client(%s)_"+
+	return fmt.Sprintf("source(%s)_target(%s)_jobID(%s)_taskID(%s)_retry(%d)_isRetrying(%v)_client(%s)_"+
 		"start(%d)_mode(%v)_migrateSize(%v)_Type(%s)",
-		t.Source, t.Target, t.JobId, t.TaskId, t.Retry, t.Owner, t.JobStartTime, t.WorkMode,
+		t.Source, t.Target, t.JobId, t.TaskId, t.Retry, t.IsRetrying, t.Owner, t.JobStartTime, t.WorkMode,
 		t.MigrateSize, t.Type)
 }
 

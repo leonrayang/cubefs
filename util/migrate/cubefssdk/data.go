@@ -148,6 +148,7 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	}
 	//logger.Debug("CopyFileToDir copy extents", zap.Any("TaskId", taskId))
 	for _, ek := range eks {
+		logger.Warn("========debug===========", zap.Any("ek", ek), zap.Any("fileName", fileName))
 		size := ek.Size
 		var buf = util.Alloc(int(size))
 		var n int
@@ -198,7 +199,8 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 		logger.Warn("LookupPath dst to check failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 	}
 	if srcInfo.Size != dstInfo.Size {
-		return errors.New(fmt.Sprintf("Copy size not the same %s[%s]", srcPath, gopath.Join(dstRoot, fileName)))
+		return errors.New(fmt.Sprintf("Copy size not the same src[%s:%v]   dst[%s:%v]", srcPath, srcInfo.Size,
+			gopath.Join(dstRoot, fileName), dstInfo.Size))
 	}
 	//优化打开
 	if debugFunc() {

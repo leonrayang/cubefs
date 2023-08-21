@@ -26,7 +26,7 @@ type MigrateJob struct {
 	mapMigratingLk        sync.RWMutex
 	mapFailedLk           sync.RWMutex
 	completeSize          atomic.Uint64
-	TotalSize             uint64
+	TotalSize             atomic.Uint64
 	retryCh               chan proto.Task
 	WorkMode              int
 	SrcCluster            string
@@ -60,7 +60,6 @@ func NewMigrateJob(srcPath, srcCluster, dstPath, dstCluster string, workMode,
 		migratingTask:         make(map[string]proto.Task),
 		retryCh:               make(chan proto.Task, 1024000),
 		WorkMode:              workMode,
-		TotalSize:             0,
 		SummaryGoroutineLimit: SummaryGoroutineLimit,
 		stopCh:                make(chan bool),
 		subMigratingJob:       make(map[string]*MigrateJob),
@@ -70,11 +69,12 @@ func NewMigrateJob(srcPath, srcCluster, dstPath, dstCluster string, workMode,
 	}
 	job.migratingTaskCnt.Store(0)
 	job.completeSize.Store(0)
+	job.TotalSize.Store(0)
 	job.SetJobStatus(proto.JobInitial)
 	job.logger = logger.With(zap.String("job", job.JobId), zap.String("srcDir", srcPath),
 		zap.String("srcCluster", srcCluster), zap.String("dstDir", dstPath), zap.String("dstCluster", dstCluster),
 		zap.Any("mode", job.WorkMode), zap.Any("CreateTime", time.Unix(job.CreateTime, 0).Format("2006-01-02 15:04:05")),
-		zap.Any("TotalSize", job.TotalSize))
+		zap.Any("TotalSize", job.TotalSize.Load()))
 	job.logger.Debug("Create new job ")
 	return job
 }
@@ -111,6 +111,7 @@ func (job *MigrateJob) addMigratingTask(task proto.Task) {
 	job.mapMigratingLk.Lock()
 	defer job.mapMigratingLk.Unlock()
 
+	job.addTotalSize(task.MigrateSize)
 	key := task.Key()
 	job.migratingTask[key] = task
 }
@@ -191,7 +192,7 @@ func (job *MigrateJob) executeInMoveMode(svr *MigrateServer) {
 	logger := job.logger
 	logger.Debug("start executeInMoveMode")
 	defer job.close(svr)
-	task := job.newTask(job.SrcPath, job.DstPath, 0)
+	task := job.newTask(job.SrcPath, job.DstPath, 0, proto.NormalTask)
 	job.sendTask(task, svr)
 	job.SetJobStatus(proto.JobRunning)
 	job.waitUtilTaskDone(svr)
@@ -208,10 +209,12 @@ func (job *MigrateJob) executeInCopySingleFileMode(svr *MigrateServer) {
 	logger := job.logger
 	logger.Debug("start executeInCopySingleFileMode")
 	defer job.close(svr)
+	var fileSize uint64 = 0
 	if job.srcSDK != nil {
-		job.TotalSize, _ = job.srcSDK.GetFileSize(job.SrcPath)
+		fileSize, _ = job.srcSDK.GetFileSize(job.SrcPath)
+		job.TotalSize.Store(fileSize)
 	}
-	task := job.newTask(job.SrcPath, job.DstPath, job.TotalSize)
+	task := job.newTask(job.SrcPath, job.DstPath, fileSize, proto.NormalTask)
 	job.sendTask(task, svr)
 	job.SetJobStatus(proto.JobRunning)
 	job.waitUtilTaskDone(svr)
@@ -236,7 +239,7 @@ func (job *MigrateJob) executeInCopyDirMode(svr *MigrateServer) {
 		job.saveWalkFailedTask(job.SrcPath, job.DstPath, err)
 		return
 	}
-	job.TotalSize, _ = job.srcSDK.GetDirSize(job.SrcPath, job.SummaryGoroutineLimit)
+	//job.TotalSize, _ = job.srcSDK.GetDirSize(job.SrcPath, job.SummaryGoroutineLimit)
 	//拷贝到目标目录下，那么需要对目标路径进行修正
 	_, srcRoot := path.Split(job.SrcPath)
 	dstPath := path.Join(job.DstPath, srcRoot)
@@ -265,8 +268,8 @@ func (job *MigrateJob) executeInMigrateDirMode(svr *MigrateServer) {
 		job.saveWalkFailedTask(job.SrcPath, job.DstPath, err)
 		return
 	}
-	job.TotalSize, _ = job.srcSDK.GetDirSize(job.SrcPath, job.SummaryGoroutineLimit)
-
+	//job.TotalSize, _ = job.srcSDK.GetDirSize(job.SrcPath, job.SummaryGoroutineLimit)
+	//
 	job.walkDir(job.SrcPath, job.DstPath, svr)
 	job.SetJobStatus(proto.JobRunning)
 	logger.Debug("walk done")
@@ -294,6 +297,9 @@ func (job *MigrateJob) close(svr *MigrateServer) {
 	}
 }
 
+func (job *MigrateJob) addTotalSize(size uint64) {
+	job.TotalSize.Add(size)
+}
 func (job *MigrateJob) sendEmail(svr *MigrateServer) {
 	progress, status := job.getProgress()
 	progress, _ = FormatFloatFloor(progress, 4)
@@ -334,7 +340,8 @@ func (job *MigrateJob) idle(svr *MigrateServer) bool {
 			}
 		}
 	}
-	return job.migratingTaskCnt.Load() == 0
+	tasks := job.GetMigratingTasks()
+	return job.migratingTaskCnt.Load() == 0 || len(tasks) == 0
 }
 
 func (job *MigrateJob) sendTask(task proto.Task, svr *MigrateServer) {
@@ -366,7 +373,7 @@ func (job *MigrateJob) GetMigratingTaskCnt() int64 {
 	return job.migratingTaskCnt.Load()
 }
 
-func (job *MigrateJob) newTask(source, target string, migrateSize uint64) proto.Task {
+func (job *MigrateJob) newTask(source, target string, migrateSize uint64, taskType string) proto.Task {
 	t := proto.Task{
 		Source:        path.Clean(source),
 		Target:        path.Clean(target),
@@ -379,6 +386,7 @@ func (job *MigrateJob) newTask(source, target string, migrateSize uint64) proto.
 		SourceCluster: job.SrcCluster,
 		TargetCluster: job.DstCluster,
 		IsRetrying:    false,
+		Type:          taskType,
 	}
 	return t
 }
@@ -409,13 +417,16 @@ func (job *MigrateJob) getProgress() (float64, int32) {
 	if job.GetJobStatus() == proto.JobSuccess {
 		return float64(1), proto.JobSuccess
 	}
+
 	//复合任务
 	if job.hasSubMigrateJobs() {
 		return job.getProgressBySubJobs()
 	}
 	//有可能是空文件夹，或者是没有统计到容量的新目录，还是可以返回job的状态
-
-	if job.TotalSize == 0 {
+	if job.GetJobStatus() == proto.JobInitial {
+		return float64(0), proto.JobInitial
+	}
+	if job.TotalSize.Load() == 0 {
 		job.logger.Debug("totalMigrate cannot be zero")
 		//任务完成时，返回1，其他时候为无效值0
 		progress := float64(0)
@@ -424,7 +435,7 @@ func (job *MigrateJob) getProgress() (float64, int32) {
 		}
 		return progress, job.GetJobStatus()
 	}
-	progress := float64(job.completeSize.Load()) / float64(job.TotalSize)
+	progress := float64(job.completeSize.Load()) / float64(job.TotalSize.Load())
 	//job.logger.Debug("getCopyProgress is called", zap.Any("progress", progress), zap.Any("status", job.GetJobStatus()),
 	//	zap.Any("completeSize", job.completeSize.Load()))
 	return progress, job.GetJobStatus()
@@ -535,6 +546,7 @@ func (job *MigrateJob) getProgressBySubJobs() (float64, int32) {
 		successNum int
 		failNum    int
 		runningNum int
+		initialNum int
 	)
 	//先看完成的
 	job.mapSubCompleteJobLk.Lock()
@@ -557,13 +569,21 @@ func (job *MigrateJob) getProgressBySubJobs() (float64, int32) {
 	cache = job.subMigratingJob
 	job.mapSubMigratingJobLk.Unlock()
 	runningNum = len(cache)
+
 	total := float64(successNum + failNum + runningNum)
+
 	for _, sub := range cache {
-		subProgress, _ := sub.getProgress()
+		subProgress, subStatus := sub.getProgress()
+		if subStatus == proto.JobInitial {
+			initialNum++
+		}
 		//发布前注释
 		//job.logger.Debug("getProgressBySubJobs is called", zap.Any("progress", subProgress), zap.Any("sub", sub.JobId),
 		//	zap.Any("SrcPath", sub.SrcPath), zap.Any("DstPath", sub.DstPath))
 		progress += subProgress
+	}
+	if initialNum > 0 {
+		return 0, proto.JobInitial
 	}
 	//发布前注释
 	//job.logger.Debug("getProgressBySubJobs is called", zap.Any("progress", progress), zap.Any("status", job.GetJobStatus()),
@@ -640,7 +660,7 @@ func (job *MigrateJob) dump(svr *MigrateServer) proto.MigrateJobMeta {
 	if meta.Status == proto.JobSuccess || meta.Status == proto.JobFailed {
 		meta.CompleteTime = job.completeTime.Unix()
 		meta.CompleteSize = job.GetCompleteSize()
-		meta.TotalSize = job.TotalSize
+		meta.TotalSize = job.TotalSize.Load()
 	}
 	if meta.Status == proto.JobFailed {
 		meta.ErrorMsg = job.getErrorMsg(svr.FailTaskReportLimit)
@@ -662,8 +682,8 @@ func (svr *MigrateServer) restoreMigrateJob(jobMeta proto.MigrateJobMeta) (err e
 			JobId:                 jobMeta.JobId,
 			CreateTime:            jobMeta.CreateTime,
 			completeTime:          time.Unix(jobMeta.CompleteTime, 0),
-			TotalSize:             jobMeta.TotalSize,
 		}
+		job.TotalSize.Add(jobMeta.TotalSize)
 		job.SetJobStatus(jobMeta.Status)
 		job.ResetCompleteSize(jobMeta.CompleteSize)
 		if jobMeta.Status == proto.JobFailed {

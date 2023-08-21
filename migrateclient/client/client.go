@@ -42,6 +42,7 @@ type MigrateClient struct {
 	mapMigratingTaskLk  sync.RWMutex
 	lastTaskExecuteTime time.Time
 	enableDebug         bool
+	tinyFactor          int
 }
 
 func NewMigrateClient(cfg *config.Config) *MigrateClient {
@@ -61,6 +62,7 @@ func NewMigrateClient(cfg *config.Config) *MigrateClient {
 		migratingTaskMap:    make(map[string]proto.Task),
 		lastTaskExecuteTime: time.Now(),
 		enableDebug:         false,
+		tinyFactor:          cfg.TinyFactor,
 	}
 	cli.Logger, _ = liblog.NewZapLoggerWithLevel(cfg.LogCfg)
 	for _, route := range cfg.FalconRoute {

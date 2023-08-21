@@ -16,6 +16,7 @@ type Config struct {
 	CopyGoroutineLimit int              `json:"copyLimit"`
 	CopyQueueLimit     int              `json:"copyQueueLimit"`
 	PprofPort          string           `json:"pprof"`
+	TinyFactor         int              `json:"TinyFactor"`
 }
 
 type sdkLog struct {
@@ -41,6 +42,9 @@ func ParseConfig(path string) (*Config, error) {
 	}
 	if cfg.JobCnt <= 0 {
 		cfg.JobCnt = 30
+	}
+	if cfg.TinyFactor <= 0 {
+		cfg.TinyFactor = 80
 	}
 	return cfg, nil
 }

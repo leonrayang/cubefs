@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/cubefs/cubefs/proto"
+	migrateProto "github.com/cubefs/cubefs/util/migrate/proto"
 	"go.uber.org/zap"
 	gopath "path"
 	"strings"
@@ -41,9 +42,21 @@ func (job *MigrateJob) walkDir(srcDir, dstDir string, svr *MigrateServer) {
 		job.walkDir(srcDir, dstDir, svr)
 		svr.ReleaseTraverseToken()
 	}
-
+	//反正所有文件都要遍历，可以在这里统计个数和总大小
+	var (
+		totalSize uint64 = 0
+		fileCnt   uint64 = 0
+	)
 	for _, child := range children {
 		if !job.srcSDK.IsDirByDentry(child) {
+			srcInfo, err := job.srcSDK.LookupFileWithParentCache(gopath.Join(srcDir, child.Name))
+			if err != nil {
+				logger.Warn("Get file size failed", zap.Any("file", gopath.Join(srcDir, child.Name)),
+					zap.Any("err", err))
+			} else {
+				fileCnt++
+				totalSize += srcInfo.Size
+			}
 			continue
 		}
 		traverCh := svr.TraverseDirGoroutineLimit
@@ -59,7 +72,12 @@ func (job *MigrateJob) walkDir(srcDir, dstDir string, svr *MigrateServer) {
 		}
 	}
 	wg.Wait()
-	task := job.newTask(srcDir, dstDir, 0)
+	//每个task就有自己的totalSize
+	var taskType = migrateProto.NormalTask
+	if totalSize != 0 && fileCnt != 0 && totalSize/fileCnt <= migrateProto.TinyFile {
+		taskType = migrateProto.TinyTask
+	}
+	task := job.newTask(srcDir, dstDir, totalSize, taskType)
 	ok, successTask := svr.alreadySuccess(task)
 	//如果不存在或者开启overWrite则覆盖
 	if !ok || job.overWrite {
@@ -103,7 +121,7 @@ func (job *MigrateJob) createDestDir(srcDir, dstDir string) (err error) {
 }
 
 func (job *MigrateJob) saveWalkFailedTask(srcPath, dstPath string, err error) {
-	task := job.newTask(srcPath, dstPath, 0)
+	task := job.newTask(srcPath, dstPath, 0, migrateProto.NormalTask)
 	task.ErrorMsg = fmt.Sprintf("create dst dir failed:%v", err.Error())
 	job.logger.Debug("saveWalkFailedTask", zap.Any("task", task))
 	job.saveFailedMigratingTask(task)
