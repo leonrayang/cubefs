@@ -97,6 +97,10 @@ func (job *MigrateJob) ResetCompleteSize(size uint64) {
 	job.completeSize.Add(size)
 }
 
+func (job *MigrateJob) ResetCreateTime(time int64) {
+	job.CreateTime = time
+}
+
 func (job *MigrateJob) getMigratingTasksBySubJobs() (tasks []proto.Task) {
 	job.mapSubMigratingJobLk.Lock()
 	cache := job.subMigratingJob
@@ -299,6 +303,9 @@ func (job *MigrateJob) close(svr *MigrateServer) {
 
 func (job *MigrateJob) addTotalSize(size uint64) {
 	job.TotalSize.Add(size)
+	if job.owner != nil {
+		job.owner.addTotalSize(size)
+	}
 }
 func (job *MigrateJob) sendEmail(svr *MigrateServer) {
 	progress, status := job.getProgress()
@@ -732,6 +739,8 @@ func (svr *MigrateServer) restoreMigrateJob(jobMeta proto.MigrateJobMeta) (err e
 	} else {
 		return errors.NewErrorf(fmt.Sprintf("Unexpected work mode %v", jobMeta.WorkMode))
 	}
+	//对齐job的启动时间
+	svr.getMigratingJob(newJobId).ResetCreateTime(jobMeta.CreateTime)
 	svr.Logger.Info("Create job relationship", zap.Any("old", jobMeta.JobId), zap.Any("new", newJobId))
 	svr.addOldJobRelationship(jobMeta.JobId, newJobId)
 	return

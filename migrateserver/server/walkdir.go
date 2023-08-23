@@ -84,6 +84,7 @@ func (job *MigrateJob) walkDir(srcDir, dstDir string, svr *MigrateServer) {
 		job.sendTask(task, svr)
 	} else {
 		job.updateCompleteSize(successTask)
+		job.addTotalSize(successTask.MigrateSize)
 	}
 
 }
