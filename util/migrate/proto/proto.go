@@ -39,7 +39,6 @@ const (
 
 const (
 	JobInitial = iota
-	JobScanning
 	JobRunning
 	JobSuccess
 	JobFailed
