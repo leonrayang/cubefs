@@ -606,16 +606,15 @@ func (s *ExtentStore) GetExtentSnapshotModOffset(extentID uint64, allocSize uint
 		return
 	}
 	log.LogDebugf("action[ExtentStore.GetExtentSnapshotModOffset] extId %v SnapshotDataOff %v", extentID, einfo.SnapshotDataOff)
-	// snapshot write may in sequence
-	//watermark = int64(einfo.SnapshotDataOff)
-	//if watermark%PageSize != 0 {
-	//	watermark = watermark + (PageSize - watermark%PageSize)
-	//}
+
 	if einfo.SnapPreAllocDataOff == 0 {
 		einfo.SnapPreAllocDataOff = einfo.SnapshotDataOff
 	}
 	watermark = int64(einfo.SnapPreAllocDataOff)
-	einfo.SnapPreAllocDataOff += uint64(allocSize)
+	if watermark%util.PageSize != 0 {
+		watermark = watermark + (util.PageSize - watermark%util.PageSize)
+	}
+	einfo.SnapPreAllocDataOff = uint64(watermark) + uint64(allocSize)
 
 	return
 }
