@@ -19,7 +19,7 @@ func newCubeFSSdk(volName, endpoint string, enableSummary bool, logger *zap.Logg
 		ic:      NewInodeCache(logger),
 	}
 	var err error
-
+	//log.InitLog("/home/service/var/logs/sdk", "sdk", log.DebugLevel, nil)
 	if endpoint == "10.236.0.150:17010,10.236.0.151:17010,10.236.0.152:17010" {
 		endpoint = "cfs-bhw-starfire-ssd.oppo.local"
 	}

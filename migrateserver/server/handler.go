@@ -48,12 +48,16 @@ func (svr *MigrateServer) registerRouter() {
 func (svr *MigrateServer) migrateDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	logger := svr.Logger.With()
 	jobCnt, jobInfos := svr.getMigratingJobsInfo()
+	var taskTotal int64 = 0
+	for _, info := range jobInfos {
+		taskTotal += info.MigratingTaskCnt
+	}
 	detail := &proto.MigrateDetailsResp{
 		FailedTasks:       svr.getFailedTasks(),
 		MigratingJobCnt:   jobCnt,
 		MigratingJobs:     jobInfos,
 		MigrateClients:    svr.getAllMigrateClientInfo(),
-		MigratingTasksNum: len(svr.getMigratingTasks()), //单独接口获取
+		MigratingTasksNum: taskTotal, //单独接口获取
 	}
 	writeResp(w, detail, logger)
 }

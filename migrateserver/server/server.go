@@ -174,7 +174,7 @@ func (svr *MigrateServer) addMigrateClient(mc *MigrateClient) {
 	svr.cliMap[mc.NodeId] = mc
 }
 
-const MigrateClientTimeout = proto.FetchTaskInterval * 10
+const MigrateClientTimeout = proto.FetchTaskInterval * 40
 
 func (svr *MigrateServer) removeInactiveMigrateClient() {
 	svr.mapCliLk.Lock()
@@ -267,6 +267,7 @@ func (svr *MigrateServer) getMigratingJobsInfo() (int, []proto.MigratingJobInfo)
 			WorkMode:         job.WorkMode,
 			TotalSize:        job.TotalSize.Load(),
 			MigratingTaskCnt: job.GetMigratingTaskCnt(),
+			JobStatus:        job.GetJobStatus(),
 		})
 	}
 
@@ -431,7 +432,7 @@ func (svr *MigrateServer) alreadySuccess(task proto.Task) (bool, proto.Task) {
 
 func (svr *MigrateServer) persistMeta() {
 	//发布前修改：请调整大小
-	ticker := time.NewTicker(10 * time.Minute)
+	ticker := time.NewTicker(2 * time.Minute)
 
 	for {
 		select {

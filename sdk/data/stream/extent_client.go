@@ -473,7 +473,9 @@ func (client *ExtentClient) Truncate(mw *meta.MetaWrapper, parentIno uint64, ino
 	var oldSize uint64
 	if mw.EnableSummary {
 		info, err = mw.InodeGet_ll(inode)
-		oldSize = info.Size
+		if info != nil {
+			oldSize = info.Size
+		}
 	}
 	err = s.IssueTruncRequest(size)
 	if err != nil {

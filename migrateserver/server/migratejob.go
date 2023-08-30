@@ -26,6 +26,8 @@ type MigrateJob struct {
 	mapMigratingLk        sync.RWMutex
 	mapFailedLk           sync.RWMutex
 	completeSize          atomic.Uint64
+	completeTaskNum       atomic.Uint64
+	totalTaskNum          atomic.Uint64
 	TotalSize             atomic.Uint64
 	retryCh               chan proto.Task
 	WorkMode              int
@@ -70,6 +72,8 @@ func NewMigrateJob(srcPath, srcCluster, dstPath, dstCluster string, workMode,
 	job.migratingTaskCnt.Store(0)
 	job.completeSize.Store(0)
 	job.TotalSize.Store(0)
+	job.completeTaskNum.Store(0)
+	job.totalTaskNum.Store(0)
 	job.SetJobStatus(proto.JobInitial)
 	job.logger = logger.With(zap.String("job", job.JobId), zap.String("srcDir", srcPath),
 		zap.String("srcCluster", srcCluster), zap.String("dstDir", dstPath), zap.String("dstCluster", dstCluster),
@@ -83,10 +87,9 @@ func (job *MigrateJob) GetMigratingTasks() (tasks []proto.Task) {
 	if job.hasSubMigrateJobs() {
 		return job.getMigratingTasksBySubJobs()
 	}
-
-	job.mapMigratingLk.Lock()
+	job.mapMigratingLk.RLock()
 	cache := job.migratingTask
-	job.mapMigratingLk.Unlock()
+	job.mapMigratingLk.RUnlock()
 	for _, task := range cache {
 		tasks = append(tasks, task)
 	}
@@ -116,6 +119,7 @@ func (job *MigrateJob) addMigratingTask(task proto.Task) {
 	defer job.mapMigratingLk.Unlock()
 
 	job.addTotalSize(task.MigrateSize)
+	job.totalTaskNum.Add(1)
 	key := task.Key()
 	job.migratingTask[key] = task
 }
@@ -433,16 +437,16 @@ func (job *MigrateJob) getProgress() (float64, int32) {
 	if job.GetJobStatus() == proto.JobInitial {
 		return float64(0), proto.JobInitial
 	}
-	if job.TotalSize.Load() == 0 {
-		job.logger.Debug("totalMigrate cannot be zero")
-		//任务完成时，返回1，其他时候为无效值0
-		progress := float64(0)
-		if job.GetJobStatus() == proto.JobSuccess {
-			progress = float64(1)
-		}
-		return progress, job.GetJobStatus()
-	}
-	progress := float64(job.completeSize.Load()) / float64(job.TotalSize.Load())
+	//if job.TotalSize.Load() == 0 {
+	//	job.logger.Debug("totalMigrate cannot be zero")
+	//	//任务完成时，返回1，其他时候为无效值0
+	//	progress := float64(0)
+	//	if job.GetJobStatus() == proto.JobSuccess {
+	//		progress = float64(1)
+	//	}
+	//	return progress, job.GetJobStatus()
+	//}
+	progress := float64(job.completeTaskNum.Load()) / float64(job.totalTaskNum.Load())
 	//job.logger.Debug("getCopyProgress is called", zap.Any("progress", progress), zap.Any("status", job.GetJobStatus()),
 	//	zap.Any("completeSize", job.completeSize.Load()))
 	return progress, job.GetJobStatus()

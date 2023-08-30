@@ -42,21 +42,21 @@ func (job *MigrateJob) walkDir(srcDir, dstDir string, svr *MigrateServer) {
 		job.walkDir(srcDir, dstDir, svr)
 		svr.ReleaseTraverseToken()
 	}
-	//反正所有文件都要遍历，可以在这里统计个数和总大小
-	var (
-		totalSize uint64 = 0
-		fileCnt   uint64 = 0
-	)
+	////反正所有文件都要遍历，可以在这里统计个数和总大小,会降低server效率
+	//var (
+	//	totalSize uint64 = 0
+	//	fileCnt   uint64 = 0
+	//)
 	for _, child := range children {
 		if !job.srcSDK.IsDirByDentry(child) {
-			srcInfo, err := job.srcSDK.LookupFileWithParentCache(gopath.Join(srcDir, child.Name))
-			if err != nil {
-				logger.Warn("Get file size failed", zap.Any("file", gopath.Join(srcDir, child.Name)),
-					zap.Any("err", err))
-			} else {
-				fileCnt++
-				totalSize += srcInfo.Size
-			}
+			//srcInfo, err := job.srcSDK.LookupFileWithParentCache(gopath.Join(srcDir, child.Name))
+			//if err != nil {
+			//	logger.Warn("Get file size failed", zap.Any("file", gopath.Join(srcDir, child.Name)),
+			//		zap.Any("err", err))
+			//} else {
+			//	fileCnt++
+			//	totalSize += srcInfo.Size
+			//}
 			continue
 		}
 		traverCh := svr.TraverseDirGoroutineLimit
@@ -74,10 +74,10 @@ func (job *MigrateJob) walkDir(srcDir, dstDir string, svr *MigrateServer) {
 	wg.Wait()
 	//每个task就有自己的totalSize
 	var taskType = migrateProto.NormalTask
-	if totalSize != 0 && fileCnt != 0 && totalSize/fileCnt <= migrateProto.TinyFile {
-		taskType = migrateProto.TinyTask
-	}
-	task := job.newTask(srcDir, dstDir, totalSize, taskType)
+	//if totalSize != 0 && fileCnt != 0 && totalSize/fileCnt <= migrateProto.TinyFile {
+	//	taskType = migrateProto.TinyTask
+	//}
+	task := job.newTask(srcDir, dstDir, 0, taskType)
 	ok, successTask := svr.alreadySuccess(task)
 	//如果不存在或者开启overWrite则覆盖
 	if !ok || job.overWrite {

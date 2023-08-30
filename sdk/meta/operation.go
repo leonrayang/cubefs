@@ -223,8 +223,13 @@ func (mw *MetaWrapper) sendToMetaPartitionWithTx(mp *MetaPartition, req *proto.P
 	for {
 		packet, err = mw.sendToMetaPartition(mp, req)
 		if err != nil {
-			log.LogErrorf("sendToMetaPartitionWithTx: packet(%v) mp(%v) reqType(%v) err(%v)",
-				packet, mp, packet.GetOpMsg(), err)
+			if packet != nil {
+				log.LogErrorf("sendToMetaPartitionWithTx: packet(%v) mp(%v) reqType(%v) err(%v)",
+					packet, mp, packet.GetOpMsg(), err)
+			} else {
+				log.LogErrorf("sendToMetaPartitionWithTx: packet(%v) mp(%v) err(%v)",
+					packet, mp, err)
+			}
 			return
 		}
 

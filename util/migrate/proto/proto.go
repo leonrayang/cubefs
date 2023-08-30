@@ -141,7 +141,7 @@ type MigrateDetailsResp struct {
 	FailedTasks       []Task
 	MigratingJobs     []MigratingJobInfo
 	MigrateClients    []MigrateClientInfo
-	MigratingTasksNum int
+	MigratingTasksNum int64
 }
 
 type MigratingJobInfo struct {
@@ -154,6 +154,7 @@ type MigratingJobInfo struct {
 	WorkMode         int
 	TotalSize        uint64
 	MigratingTaskCnt int64
+	JobStatus        int32
 }
 
 type MigrateClientInfo struct {

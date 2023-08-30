@@ -163,14 +163,17 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 				return // Error somewhere, terminate
 			default: // Default is must to avoid blocking
 			}
-			err = srcCli.CopyFileToDir(task.source, task.target, dstCli, taskId, debugFunc)
-			if err != nil {
+			var taskErr error
+			taskErr = srcCli.CopyFileToDir(task.source, task.target, dstCli, taskId, debugFunc)
+			if taskErr != nil {
 				select {
-				case errCh <- err:
-					logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", err))
-					errMsg += fmt.Sprintf("%v;", err.Error())
+				case errCh <- taskErr:
+					if taskErr != nil {
+						logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
+						errMsg += fmt.Sprintf("%v;", taskErr.Error())
+					}
 				default:
-					logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", err))
+					logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
 					if !strings.Contains(errMsg, "[to many errors]") {
 						errMsg = fmt.Sprintf("[to many errors]%v", errMsg)
 					}
@@ -182,6 +185,7 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 
 		}
 	}
+	//目前无法启用
 	if taskType == proto.TinyTask {
 		goroutineLimit = tinyFactor * goroutineLimit
 		//发布前删除
@@ -207,6 +211,10 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 		taskCh <- CopySubTask{source: gopath.Join(source, child.Name), target: target, size: childSize}
 	}
 	//	logger.Debug("execCopyDirCommand  ", zap.Any("total", totalSize), zap.Any("fileCnt", fileCnt))
+
+	//if totalSize != 0 && fileCnt != 0 && totalSize/fileCnt <= migrateProto.TinyFile {
+	//	taskType = migrateProto.TinyTask
+	//}
 
 	close(taskCh)
 	wg.Wait()

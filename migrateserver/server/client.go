@@ -229,6 +229,7 @@ func (mc *MigrateClient) updateMigratingDirState(task proto.Task, succ bool) {
 		job.saveFailedMigratingTask(task)
 	}
 	job.delMigratingTask(task)
+	job.completeTaskNum.Add(1)
 }
 
 func (mc *MigrateClient) removeTaskMap(task proto.Task) {

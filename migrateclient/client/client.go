@@ -298,7 +298,7 @@ func (cli *MigrateClient) fetchTasks(idleCnt int, succTasks, failTasks, extraTas
 	resp := &proto.FetchTasksResp{}
 	err := util.DoPostWithJson(url, req, resp, logger)
 	if err != nil {
-		if strings.Contains(err.Error(), "MigrateClient not exis") {
+		if strings.Contains(err.Error(), "MigrateClient not exist") {
 			logger.Fatal("please restart")
 		}
 		logger.Error("do getTasks failed", zap.String("url", url), zap.Any("req", req), zap.Error(err))

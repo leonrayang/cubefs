@@ -127,6 +127,7 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 				zap.Any("dstParentInfo.Inode", dstParentInfo.Inode), zap.Any("ino", ino))
 			return err
 		}
+		//logger.Error("delete old file success", zap.Any("file", gopath.Join(dstRoot, fileName)))
 	} else {
 		//创建目标文件
 		dstInfo, err = dstSdk.CreateFile(dstParentInfo.Inode, fileName, srcInfo.Mode, srcInfo.Uid, srcInfo.Gid)
@@ -135,6 +136,7 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 			return errors.New(fmt.Sprintf("Create target failed, dstRoot %s vol %s[%s]", dstRoot, dstSdk.volName, err.Error()))
 		}
 		dstEC.OpenStream(dstInfo.Inode)
+		//logger.Error("create new file success", zap.Any("file", gopath.Join(dstRoot, fileName)))
 	}
 	//logger.Debug("CopyFileToDir GetExtents", zap.Any("TaskId", taskId))
 	//
@@ -148,7 +150,6 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	}
 	//logger.Debug("CopyFileToDir copy extents", zap.Any("TaskId", taskId))
 	for _, ek := range eks {
-		logger.Warn("========debug===========", zap.Any("ek", ek), zap.Any("fileName", fileName))
 		size := ek.Size
 		var buf = util.Alloc(int(size))
 		var n int
@@ -188,19 +189,20 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	dstEC.CloseStream(dstInfo.Inode)
 	srcEC.CloseStream(srcInfo.Inode)
 	//检查文件大小是否一致,这里不能用缓存
-	srcInfo, err = sdk.LookupFileWithParentCache(srcPath)
+	srcInfo2, err := sdk.LookupFileWithParentCache(srcPath)
 	if err != nil {
 		logger.Warn("LookupPath source to check failed", zap.Any("TaskId", taskId), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return err
 	}
 	//logger.Debug("CopyFileToDir lookup dst", zap.Any("TaskId", taskId))
-	dstInfo, err = dstSdk.LookupFileWithParentCache(gopath.Join(dstRoot, fileName))
+	dstInfo2, err := dstSdk.LookupFileWithParentCache(gopath.Join(dstRoot, fileName))
 	if err != nil {
 		logger.Warn("LookupPath dst to check failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
+		return err
 	}
-	if srcInfo.Size != dstInfo.Size {
-		return errors.New(fmt.Sprintf("Copy size not the same src[%s:%v]   dst[%s:%v]", srcPath, srcInfo.Size,
-			gopath.Join(dstRoot, fileName), dstInfo.Size))
+	if srcInfo2.Size != dstInfo2.Size {
+		return errors.New(fmt.Sprintf("Copy size not the same src[%s:%v]   dst[%s:%v]", srcPath, srcInfo2.Size,
+			gopath.Join(dstRoot, fileName), dstInfo2.Size))
 	}
 	//优化打开
 	if debugFunc() {
