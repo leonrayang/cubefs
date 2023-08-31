@@ -393,15 +393,14 @@ func (job *MigrateJob) newTask(source, target string, migrateSize uint64, taskTy
 		JobStartTime:  job.CreateTime,
 		WorkMode:      job.WorkMode,
 		MigrateSize:   migrateSize,
-		TaskId:        GenerateUUID(),
 		SourceCluster: job.SrcCluster,
 		TargetCluster: job.DstCluster,
 		IsRetrying:    false,
 		Type:          taskType,
 	}
+	t.TaskId = t.GenerateTaskID()
 	return t
 }
-
 func (job *MigrateJob) getSubJobsId() (total, running, completed []string) {
 	if !job.hasSubMigrateJobs() {
 		return

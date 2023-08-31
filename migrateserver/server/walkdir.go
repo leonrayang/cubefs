@@ -78,7 +78,7 @@ func (job *MigrateJob) walkDir(srcDir, dstDir string, svr *MigrateServer) {
 	//	taskType = migrateProto.TinyTask
 	//}
 	task := job.newTask(srcDir, dstDir, 0, taskType)
-	ok, successTask := svr.alreadySuccess(task)
+	ok, successTask := svr.alreadySuccess(task.TaskId)
 	//如果不存在或者开启overWrite则覆盖
 	if !ok || job.overWrite {
 		job.sendTask(task, svr)

@@ -416,18 +416,14 @@ func (svr *MigrateServer) findOldJobId(newId string) string {
 	return ""
 }
 
-func (svr *MigrateServer) alreadySuccess(task proto.Task) (bool, proto.Task) {
+func (svr *MigrateServer) alreadySuccess(taskKey string) (bool, proto.Task) {
 	svr.mapTaskCacheLk.RLock()
 	defer svr.mapTaskCacheLk.RUnlock()
-	for _, cacheTask := range svr.successTasks {
-		if task.Source == cacheTask.Source && task.Target == cacheTask.Target &&
-			task.SourceCluster == cacheTask.SourceCluster && task.TargetCluster == cacheTask.TargetCluster &&
-			task.WorkMode == cacheTask.WorkMode {
-			svr.Logger.Warn("task is migrate success before", zap.Any("task", task), zap.Any("cacheTask", cacheTask))
-			return true, cacheTask
-		}
+	if cacheTask, ok := svr.successTasks[taskKey]; ok {
+		return true, cacheTask
+	} else {
+		return false, proto.Task{}
 	}
-	return false, proto.Task{}
 }
 
 func (svr *MigrateServer) persistMeta() {

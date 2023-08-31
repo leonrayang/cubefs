@@ -182,7 +182,7 @@ func (cli *MigrateClient) execute() {
 			return
 		case task := <-cli.pendingTaskCh:
 			for {
-				//处理分配的任务
+				//处理分配的任务,curJobCnt跟map数目对齐
 				if atomic.AddInt32(&cli.curJobCnt, 1) <= cli.maxJobCnt {
 					go func(t proto.Task) {
 						defer atomic.AddInt32(&cli.curJobCnt, -1)

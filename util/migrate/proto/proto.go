@@ -1,6 +1,8 @@
 package proto
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"time"
 )
@@ -97,6 +99,12 @@ func (t *Task) StringToReport() string {
 
 func (t *Task) Key() string {
 	return fmt.Sprintf("%s_%s", t.JobId, t.TaskId)
+}
+
+func (t *Task) GenerateTaskID() string {
+	data := fmt.Sprintf("%s-%s-%s-%s-%d", t.Source, t.Target, t.SourceCluster, t.TargetCluster, t.WorkMode)
+	hash := md5.Sum([]byte(data))
+	return hex.EncodeToString(hash[:])
 }
 
 type RegisterReq struct {
