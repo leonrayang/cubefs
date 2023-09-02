@@ -3,9 +3,11 @@ package client
 import (
 	"errors"
 	"fmt"
+	"github.com/cubefs/cubefs/util/liblog"
 	"github.com/cubefs/cubefs/util/migrate/falconroute"
 	"github.com/cubefs/cubefs/util/migrate/proto"
 	"go.uber.org/zap"
+	"path"
 )
 
 func (cli *MigrateClient) doMigrateDirOperation(task proto.Task) (error, uint64) {
@@ -47,10 +49,20 @@ func (cli *MigrateClient) doMigrateDirOperation(task proto.Task) (error, uint64)
 		logger.Error("get route failed", zap.Any("virDstPath", virDstPath), zap.Error(err))
 		return errors.New(fmt.Sprintf("get route %s failed:%s ", virDstPath, err.Error())), 0
 	}
+	cfg := &liblog.Config{
+		ScreenOutput: false,
+		LogFile:      path.Join(path.Dir(cli.logCfg.LogFile), "tasks", fmt.Sprintf("%v.list", task.TaskId)),
+		LogLevel:     "debug",
+		MaxSizeMB:    1024,
+		MaxBackups:   5, //保留的日志文件个数
+		MaxAge:       7,
+		Compress:     false,
+	}
+	copyLogger, _ := liblog.NewZapLoggerWithLevel(cfg)
 
 	if err, totalSize := execCopyDirCommand(cli.sdkManager, srcPath, dstPath, srcRouterInfo.Pool, srcRouterInfo.Endpoint,
 		dstRouterInfo.Pool, dstRouterInfo.Endpoint, logger, cli.copyGoroutineLimit, cli.copyQueueLimit,
-		task.TaskId, task.Type, cli.tinyFactor, cli.CheckDebugEnable); err == nil {
+		task.TaskId, cli.tinyFactor, cli.CheckDebugEnable, copyLogger, task.OverWrite, cli.localAddr); err == nil {
 		return nil, totalSize
 	} else {
 		return errors.New(fmt.Sprintf("Execute copy single file operation failed: %s", err.Error())), totalSize

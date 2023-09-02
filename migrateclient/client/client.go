@@ -43,6 +43,8 @@ type MigrateClient struct {
 	lastTaskExecuteTime time.Time
 	enableDebug         bool
 	tinyFactor          int
+	logCfg              *liblog.Config
+	localAddr           string
 }
 
 func NewMigrateClient(cfg *config.Config) *MigrateClient {
@@ -63,6 +65,7 @@ func NewMigrateClient(cfg *config.Config) *MigrateClient {
 		lastTaskExecuteTime: time.Now(),
 		enableDebug:         false,
 		tinyFactor:          cfg.TinyFactor,
+		logCfg:              cfg.LogCfg,
 	}
 	cli.Logger, _ = liblog.NewZapLoggerWithLevel(cfg.LogCfg)
 	for _, route := range cfg.FalconRoute {
@@ -146,6 +149,7 @@ func (cli *MigrateClient) Register() error {
 	logger.Info("register resp", zap.Any("resp", resp))
 
 	cli.NodeId = resp.NodeId
+	cli.localAddr = resp.Addr
 	return nil
 }
 

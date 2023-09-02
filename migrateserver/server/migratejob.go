@@ -200,7 +200,7 @@ func (job *MigrateJob) executeInMoveMode(svr *MigrateServer) {
 	logger := job.logger
 	logger.Debug("start executeInMoveMode")
 	defer job.close(svr)
-	task := job.newTask(job.SrcPath, job.DstPath, 0, proto.NormalTask)
+	task := job.newTask(job.SrcPath, job.DstPath, 0, proto.NormalTask, job.overWrite)
 	job.sendTask(task, svr)
 	job.SetJobStatus(proto.JobRunning)
 	job.waitUtilTaskDone(svr)
@@ -222,7 +222,7 @@ func (job *MigrateJob) executeInCopySingleFileMode(svr *MigrateServer) {
 		fileSize, _ = job.srcSDK.GetFileSize(job.SrcPath)
 		job.TotalSize.Store(fileSize)
 	}
-	task := job.newTask(job.SrcPath, job.DstPath, fileSize, proto.NormalTask)
+	task := job.newTask(job.SrcPath, job.DstPath, fileSize, proto.NormalTask, job.overWrite)
 	job.sendTask(task, svr)
 	job.SetJobStatus(proto.JobRunning)
 	job.waitUtilTaskDone(svr)
@@ -384,7 +384,7 @@ func (job *MigrateJob) GetMigratingTaskCnt() int64 {
 	return job.migratingTaskCnt.Load()
 }
 
-func (job *MigrateJob) newTask(source, target string, migrateSize uint64, taskType string) proto.Task {
+func (job *MigrateJob) newTask(source, target string, migrateSize uint64, taskType string, overWrite bool) proto.Task {
 	t := proto.Task{
 		Source:        path.Clean(source),
 		Target:        path.Clean(target),
@@ -396,7 +396,7 @@ func (job *MigrateJob) newTask(source, target string, migrateSize uint64, taskTy
 		SourceCluster: job.SrcCluster,
 		TargetCluster: job.DstCluster,
 		IsRetrying:    false,
-		Type:          taskType,
+		OverWrite:     overWrite,
 	}
 	t.TaskId = t.GenerateTaskID()
 	return t
@@ -513,7 +513,7 @@ func (job *MigrateJob) clearSubCompleteMigrateJob(svr *MigrateServer) {
 		svr.removeCompleteMigrateJob(sub)
 		tasks := sub.GetFailedMigratingTask()
 		svr.removeFailedTask(tasks)
-		svr.removeSuccessTask(sub)
+		//svr.removeSuccessTask(sub)
 		svr.removeOldJobRelationship(sub.JobId)
 	}
 	job.mapSubCompleteJobLk.Unlock()

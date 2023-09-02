@@ -81,14 +81,14 @@ type Task struct {
 	TargetCluster string
 	IsRetrying    bool //正在重试的任务不影响job计数
 	ConsumeTime   string
-	Type          string
+	OverWrite     bool
 }
 
 func (t *Task) String() string {
 	return fmt.Sprintf("source(%s)_target(%s)_jobID(%s)_taskID(%s)_retry(%d)_isRetrying(%v)_client(%s)_"+
-		"start(%d)_mode(%v)_migrateSize(%v)_Type(%s)",
+		"start(%d)_mode(%v)_migrateSize(%v)OverWrite(%v)",
 		t.Source, t.Target, t.JobId, t.TaskId, t.Retry, t.IsRetrying, t.Owner, t.JobStartTime, t.WorkMode,
-		t.MigrateSize, t.Type)
+		t.MigrateSize, t.OverWrite)
 }
 
 func (t *Task) StringToReport() string {
@@ -117,6 +117,7 @@ func (r *RegisterReq) String() string {
 }
 
 type RegisterResp struct {
+	Addr   string
 	NodeId int32 // global uniq int
 }
 

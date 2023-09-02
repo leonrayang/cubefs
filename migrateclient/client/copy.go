@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cubefs/cubefs/util/liblog"
 	"github.com/cubefs/cubefs/util/migrate/cubefssdk"
 	"github.com/cubefs/cubefs/util/migrate/falconroute"
 	"github.com/cubefs/cubefs/util/migrate/proto"
@@ -51,7 +52,7 @@ func (cli *MigrateClient) doCopySingleFileOperation(task proto.Task) error {
 	}
 
 	if err := execCopyFileCommand(cli.sdkManager, srcPath, dstPath, srcRouter.Pool, srcRouter.Endpoint,
-		dstRouter.Pool, dstRouter.Endpoint, logger, task.TaskId, cli.CheckDebugEnable); err == nil {
+		dstRouter.Pool, dstRouter.Endpoint, logger, task.TaskId, cli.CheckDebugEnable, task.OverWrite, cli.localAddr); err == nil {
 		return nil
 	} else {
 		return errors.New(fmt.Sprintf("Execute copy single file operation failed: %s", err.Error()))
@@ -59,7 +60,7 @@ func (cli *MigrateClient) doCopySingleFileOperation(task proto.Task) error {
 }
 
 func execCopyFileCommand(manager *cubefssdk.SdkManager, source, target, srcVol, srcEndpoint, dstVol,
-	dstEndpoint string, logger *zap.Logger, taskId string, debugFunc cubefssdk.EnableDebugMsg) (err error) {
+	dstEndpoint string, logger *zap.Logger, taskId string, debugFunc cubefssdk.EnableDebugMsg, overWrite bool, addr string) (err error) {
 	//无论是否为文件或者文件夹，执行的mv操作一致
 	logger.Debug("execCopyFileCommand", zap.Any("src", source), zap.Any("dst", target), zap.Any("srcVol", srcVol), zap.Any("dstVol", dstVol))
 	cli, err := manager.GetCubeFSSdk(srcVol, srcEndpoint)
@@ -70,7 +71,7 @@ func execCopyFileCommand(manager *cubefssdk.SdkManager, source, target, srcVol, 
 	if err != nil {
 		return err
 	}
-	return cli.CopyFileToDir(source, target, cliDst, taskId, debugFunc)
+	return cli.CopyFileToDir(source, target, cliDst, taskId, debugFunc, nil, overWrite, addr)
 }
 
 func (cli *MigrateClient) doCopyDirOperation(task proto.Task) (error, uint64) {
@@ -104,18 +105,32 @@ func (cli *MigrateClient) doCopyDirOperation(task proto.Task) (error, uint64) {
 		logger.Error("get router failed", zap.Any("virDstPath", virDstPath), zap.Error(err))
 		return errors.New(fmt.Sprintf("get router %s failed:%s ", virDstPath, err.Error())), 0
 	}
+	cfg := &liblog.Config{
+		ScreenOutput: false,
+		LogFile:      gopath.Join(gopath.Dir(cli.logCfg.LogFile), "tasks", fmt.Sprintf("%v.list", task.TaskId)),
+		LogLevel:     "debug",
+		MaxSizeMB:    1024,
+		MaxBackups:   5, //保留的日志文件个数
+		MaxAge:       7,
+		Compress:     false,
+	}
+	copyLogger, _ := liblog.NewZapLoggerWithLevel(cfg)
 
 	if err, totalSize := execCopyDirCommand(cli.sdkManager, srcPath, dstPath, srcRouter.Pool, srcRouter.Endpoint, dstRouter.Pool, dstRouter.Endpoint,
-		logger, cli.copyGoroutineLimit, cli.copyQueueLimit, task.TaskId, task.Type, cli.tinyFactor, cli.CheckDebugEnable); err == nil {
+		logger, cli.copyGoroutineLimit, cli.copyQueueLimit, task.TaskId, cli.tinyFactor,
+		cli.CheckDebugEnable, copyLogger, task.OverWrite, cli.localAddr); err == nil {
 		return nil, totalSize
 	} else {
 		return errors.New(fmt.Sprintf("Execute copy single file operation failed: %s", err.Error())), totalSize
 	}
 }
 
+const TinyCopyFileLimit = 10000
+
 // 增加耗时
 func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, srcEndpoint, dstVol, dstEndpoint string,
-	logger *zap.Logger, goroutineLimit, taskLimit int, taskId string, taskType string, tinyFactor int, debugFunc cubefssdk.EnableDebugMsg) (err error, copySuccess uint64) {
+	logger *zap.Logger, goroutineLimit, taskLimit int, taskId string,
+	tinyFactor int, debugFunc cubefssdk.EnableDebugMsg, copyLogger *zap.Logger, overWrite bool, addr string) (err error, copySuccess uint64) {
 	//无论是否为文件或者文件夹，执行的mv操作一致
 	logger.Debug("execCopyDirCommand", zap.Any("src", source), zap.Any("from vol", srcVol),
 		zap.Any("dst", target), zap.Any("to vol", dstVol), zap.Any("TaskId", taskId))
@@ -164,18 +179,24 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 			default: // Default is must to avoid blocking
 			}
 			var taskErr error
-			taskErr = srcCli.CopyFileToDir(task.source, task.target, dstCli, taskId, debugFunc)
+			taskErr = srcCli.CopyFileToDir(task.source, task.target, dstCli, taskId, debugFunc,
+				copyLogger, overWrite, addr)
 			if taskErr != nil {
-				select {
-				case errCh <- taskErr:
-					if taskErr != nil {
+				if strings.Contains(taskErr.Error(), "modify time") {
+					if !strings.Contains(errMsg, "modify time") {
+						errMsg += fmt.Sprintf("%v;", taskErr.Error())
+						logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
+					}
+				} else {
+					select {
+					case errCh <- taskErr:
 						logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
 						errMsg += fmt.Sprintf("%v;", taskErr.Error())
-					}
-				default:
-					logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
-					if !strings.Contains(errMsg, "[to many errors]") {
-						errMsg = fmt.Sprintf("[to many errors]%v", errMsg)
+					default:
+						//logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
+						if !strings.Contains(errMsg, "[to many errors]") {
+							errMsg = fmt.Sprintf("[to many errors]%v", errMsg)
+						}
 					}
 				}
 			} else {
@@ -186,10 +207,11 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 		}
 	}
 	//目前无法启用
-	if taskType == proto.TinyTask {
+	logger.Warn("len(children)", zap.Any("len(children)", len(children)))
+	if len(children) >= TinyCopyFileLimit {
 		goroutineLimit = tinyFactor * goroutineLimit
 		//发布前删除
-		//logger.Warn("for tiny", zap.Any("goroutineLimit", goroutineLimit))
+		logger.Warn("work as tiny")
 	}
 	for i := 0; i < goroutineLimit; i++ {
 		wg.Add(1)

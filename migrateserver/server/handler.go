@@ -78,6 +78,7 @@ func (svr *MigrateServer) registerHandler(w http.ResponseWriter, r *http.Request
 	cli := newMigrateClient(req.Addr, req.JobCnt, nodeId, svr)
 	svr.addMigrateClient(cli)
 	resp := &proto.RegisterResp{
+		Addr:   req.Addr,
 		NodeId: nodeId,
 	}
 	writeResp(w, resp, logger)

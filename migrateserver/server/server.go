@@ -26,16 +26,16 @@ const (
 )
 
 type MigrateServer struct {
-	Logger                    *zap.Logger
-	port                      int
-	stopCh                    chan bool
-	cliMap                    map[int32]*MigrateClient
-	taskCh                    chan proto.Task
-	reSendTaskCh              chan []proto.Task
-	migratingJobMap           map[string]*MigrateJob
-	completeJobMap            map[string]*MigrateJob
-	failTasks                 map[string]proto.Task
-	successTasks              map[string]proto.Task
+	Logger          *zap.Logger
+	port            int
+	stopCh          chan bool
+	cliMap          map[int32]*MigrateClient
+	taskCh          chan proto.Task
+	reSendTaskCh    chan []proto.Task
+	migratingJobMap map[string]*MigrateJob
+	completeJobMap  map[string]*MigrateJob
+	failTasks       map[string]proto.Task
+	//successTasks              map[string]proto.Task
 	routerMap                 map[string]*falconroute.Router
 	mapCliLk                  sync.RWMutex
 	mapMigratingJobLk         sync.RWMutex
@@ -56,15 +56,15 @@ type MigrateServer struct {
 
 func NewMigrateServer(cfg *config.Config) *MigrateServer {
 	svr := &MigrateServer{
-		port:                      cfg.Port,
-		stopCh:                    make(chan bool),
-		cliMap:                    make(map[int32]*MigrateClient),
-		taskCh:                    make(chan proto.Task, 4096),
-		reSendTaskCh:              make(chan []proto.Task, 128),
-		migratingJobMap:           make(map[string]*MigrateJob),
-		completeJobMap:            make(map[string]*MigrateJob),
-		failTasks:                 make(map[string]proto.Task),
-		successTasks:              make(map[string]proto.Task),
+		port:            cfg.Port,
+		stopCh:          make(chan bool),
+		cliMap:          make(map[int32]*MigrateClient),
+		taskCh:          make(chan proto.Task, 4096),
+		reSendTaskCh:    make(chan []proto.Task, 128),
+		migratingJobMap: make(map[string]*MigrateJob),
+		completeJobMap:  make(map[string]*MigrateJob),
+		failTasks:       make(map[string]proto.Task),
+		//successTasks:              make(map[string]proto.Task),
 		routerMap:                 make(map[string]*falconroute.Router),
 		taskRetryLimit:            cfg.TaskRetryLimit,
 		sdkLogDir:                 cfg.SdkLogCfg.LogDir,
@@ -295,17 +295,17 @@ func (svr *MigrateServer) updateFailedTask(failTasks []proto.Task, succTasks []p
 			logger.Debug("task success after retry", zap.String("task", t.String()))
 			delete(svr.failTasks, t.Key())
 		}
-		svr.successTasks[t.Key()] = t
+		//		svr.successTasks[t.Key()] = t
 	}
 	//如果达到最大重试次数还是败了，则保存
 	for _, t := range failTasks {
 		if t.Retry == svr.taskRetryLimit {
 			svr.failTasks[t.Key()] = t
 			logger.Warn("task reach retry limit,failed", zap.String("task", t.String()))
-			if _, ok := svr.successTasks[t.Key()]; ok {
-				logger.Debug("remove failed task from success cache", zap.String("task", t.String()))
-				delete(svr.successTasks, t.Key())
-			}
+			//if _, ok := svr.successTasks[t.Key()]; ok {
+			//	logger.Debug("remove failed task from success cache", zap.String("task", t.String()))
+			//	delete(svr.successTasks, t.Key())
+			//}
 		}
 	}
 }
@@ -375,7 +375,7 @@ func (svr *MigrateServer) removeCompleteMigrateJob(job *MigrateJob) {
 	svr.Logger.Info("Delete job process from cache", zap.Any("job", job))
 	tasks := job.GetFailedMigratingTask()
 	svr.removeFailedTask(tasks)
-	svr.removeSuccessTask(job)
+	//	svr.removeSuccessTask(job)
 	svr.removeOldJobRelationship(job.JobId)
 }
 
@@ -387,24 +387,24 @@ func (svr *MigrateServer) removeFailedTask(tasks []proto.Task) {
 	}
 }
 
-func (svr *MigrateServer) removeSuccessTask(job *MigrateJob) {
-	svr.mapTaskCacheLk.RLock()
-	defer svr.mapTaskCacheLk.RUnlock()
-	oldId := svr.findOldJobId(job.JobId)
-	for _, task := range svr.successTasks {
-		//MigrateServer 当前启动后的task删除
-		if task.JobId == job.JobId {
-			svr.Logger.Warn("task is new migrate success", zap.Any("task", task), zap.Any("cacheTask", task))
-			delete(svr.successTasks, task.Key())
-		}
-		//MigrateServer 当前启动前的task删除
-		if task.JobId == oldId {
-			svr.Logger.Warn("task is migrate success before", zap.Any("task", task), zap.Any("cacheTask", task))
-			delete(svr.successTasks, task.Key())
-		}
-
-	}
-}
+//	func (svr *MigrateServer) removeSuccessTask(job *MigrateJob) {
+//		svr.mapTaskCacheLk.RLock()
+//		defer svr.mapTaskCacheLk.RUnlock()
+//		oldId := svr.findOldJobId(job.JobId)
+//		for _, task := range svr.successTasks {
+//			//MigrateServer 当前启动后的task删除
+//			if task.JobId == job.JobId {
+//				svr.Logger.Warn("task is new migrate success", zap.Any("task", task), zap.Any("cacheTask", task))
+//				delete(svr.successTasks, task.Key())
+//			}
+//			//MigrateServer 当前启动前的task删除
+//			if task.JobId == oldId {
+//				svr.Logger.Warn("task is migrate success before", zap.Any("task", task), zap.Any("cacheTask", task))
+//				delete(svr.successTasks, task.Key())
+//			}
+//
+//		}
+//	}
 func (svr *MigrateServer) findOldJobId(newId string) string {
 	svr.mapOldJobsLk.Lock()
 	defer svr.mapOldJobsLk.Unlock()
@@ -416,15 +416,15 @@ func (svr *MigrateServer) findOldJobId(newId string) string {
 	return ""
 }
 
-func (svr *MigrateServer) alreadySuccess(taskKey string) (bool, proto.Task) {
-	svr.mapTaskCacheLk.RLock()
-	defer svr.mapTaskCacheLk.RUnlock()
-	if cacheTask, ok := svr.successTasks[taskKey]; ok {
-		return true, cacheTask
-	} else {
-		return false, proto.Task{}
-	}
-}
+//func (svr *MigrateServer) alreadySuccess(taskKey string) (bool, proto.Task) {
+//	svr.mapTaskCacheLk.RLock()
+//	defer svr.mapTaskCacheLk.RUnlock()
+//	if cacheTask, ok := svr.successTasks[taskKey]; ok {
+//		return true, cacheTask
+//	} else {
+//		return false, proto.Task{}
+//	}
+//}
 
 func (svr *MigrateServer) persistMeta() {
 	//发布前修改：请调整大小
@@ -439,7 +439,7 @@ func (svr *MigrateServer) persistMeta() {
 			//			svr.Logger.Warn("persist.....")
 			svr.persistWorkerMap()
 			svr.persistMigratingJobMap()
-			svr.persistSuccessTask()
+			//svr.persistSuccessTask()
 		}
 	}
 }
@@ -599,10 +599,10 @@ func (svr *MigrateServer) loadMetadata() (err error) {
 	if err != nil {
 		return
 	}
-	err = svr.loadSuccessTasksMeta()
-	if err != nil {
-		return
-	}
+	//err = svr.loadSuccessTasksMeta()
+	//if err != nil {
+	//	return
+	//}
 	err = svr.loadMigrateJobMeta()
 	if err != nil {
 		return
@@ -610,67 +610,67 @@ func (svr *MigrateServer) loadMetadata() (err error) {
 	return nil
 }
 
-func (svr *MigrateServer) persistSuccessTask() {
-	//start := time.Now()
-	logger := svr.Logger.With()
-	tasks := make([]proto.Task, 0)
-	svr.mapTaskCacheLk.RLock()
-	for _, task := range svr.successTasks {
-		tasks = append(tasks, task)
-	}
-	svr.mapTaskCacheLk.RUnlock()
-	//persist to meta file
-	metaFile := path.Join(svr.metaDir, TaskMeta)
-	tmpFile := path.Join(svr.metaDir, fmt.Sprintf("%s.tmp", TaskMeta))
-	data, err := json.Marshal(tasks)
-	if err != nil {
-		logger.Error("Marshal success tasks error", zap.Any("err", err))
-		return
-	}
-
-	err = os.WriteFile(tmpFile, data, 0777)
-	if err != nil {
-		logger.Error("Persist success tasks meta failed", zap.Any("err", err))
-		return
-	}
-
-	err = os.Rename(tmpFile, metaFile)
-	if err != nil {
-		logger.Error("Rename success tasks meta failed", zap.Any("err", err))
-		return
-	}
-
-	//logger.Debug("Persist tasks meta success", zap.String("cost", time.Since(start).String()),
-	//	zap.Int("tasksCnt", len(tasks)))
-}
-
-func (svr *MigrateServer) loadSuccessTasksMeta() (err error) {
-	logger := svr.Logger.With()
-	metaFile := path.Join(svr.metaDir, TaskMeta)
-	data, err := os.ReadFile(metaFile)
-	if err != nil {
-		//可能之前不存在
-		if os.IsNotExist(err) {
-			logger.Warn("Success tasks meta not exist")
-			return nil
-		}
-	}
-	if len(data) == 0 {
-		logger.Warn("Success tasks is empty")
-		return errors.NewErrorf("Worker meta is empty")
-	}
-	tasks := make([]proto.Task, 0)
-	err = json.Unmarshal(data, &tasks)
-	if err != nil {
-		logger.Warn("Unmarshal success tasks meta failed", zap.Any("err", err))
-		return errors.NewErrorf(fmt.Sprintf("Unmarshal success tasks meta failed %v", err.Error()))
-	}
-	for _, task := range tasks {
-		svr.successTasks[task.Key()] = task
-	}
-	logger.Info("Read task meta success")
-	return nil
-}
+//func (svr *MigrateServer) persistSuccessTask() {
+//	//start := time.Now()
+//	logger := svr.Logger.With()
+//	tasks := make([]proto.Task, 0)
+//	svr.mapTaskCacheLk.RLock()
+//	for _, task := range svr.successTasks {
+//		tasks = append(tasks, task)
+//	}
+//	svr.mapTaskCacheLk.RUnlock()
+//	//persist to meta file
+//	metaFile := path.Join(svr.metaDir, TaskMeta)
+//	tmpFile := path.Join(svr.metaDir, fmt.Sprintf("%s.tmp", TaskMeta))
+//	data, err := json.Marshal(tasks)
+//	if err != nil {
+//		logger.Error("Marshal success tasks error", zap.Any("err", err))
+//		return
+//	}
+//
+//	err = os.WriteFile(tmpFile, data, 0777)
+//	if err != nil {
+//		logger.Error("Persist success tasks meta failed", zap.Any("err", err))
+//		return
+//	}
+//
+//	err = os.Rename(tmpFile, metaFile)
+//	if err != nil {
+//		logger.Error("Rename success tasks meta failed", zap.Any("err", err))
+//		return
+//	}
+//
+//	//logger.Debug("Persist tasks meta success", zap.String("cost", time.Since(start).String()),
+//	//	zap.Int("tasksCnt", len(tasks)))
+//}
+//
+//func (svr *MigrateServer) loadSuccessTasksMeta() (err error) {
+//	logger := svr.Logger.With()
+//	metaFile := path.Join(svr.metaDir, TaskMeta)
+//	data, err := os.ReadFile(metaFile)
+//	if err != nil {
+//		//可能之前不存在
+//		if os.IsNotExist(err) {
+//			logger.Warn("Success tasks meta not exist")
+//			return nil
+//		}
+//	}
+//	if len(data) == 0 {
+//		logger.Warn("Success tasks is empty")
+//		return errors.NewErrorf("Worker meta is empty")
+//	}
+//	tasks := make([]proto.Task, 0)
+//	err = json.Unmarshal(data, &tasks)
+//	if err != nil {
+//		logger.Warn("Unmarshal success tasks meta failed", zap.Any("err", err))
+//		return errors.NewErrorf(fmt.Sprintf("Unmarshal success tasks meta failed %v", err.Error()))
+//	}
+//	for _, task := range tasks {
+//		svr.successTasks[task.Key()] = task
+//	}
+//	logger.Info("Read task meta success")
+//	return nil
+//}
 
 func (svr *MigrateServer) findMigrateJob(jobId string) *MigrateJob {
 	//	logger := svr.Logger.With()

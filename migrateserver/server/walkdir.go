@@ -24,6 +24,7 @@ func (job *MigrateJob) walkDir(srcDir, dstDir string, svr *MigrateServer) {
 			return
 		}
 	}()
+	//理论上这里是否就应该判断是否为已经成功的
 
 	//创建目标目录,目标的根目录应该存在，所以不用创建
 	err = job.createDestDir(srcDir, dstDir)
@@ -77,16 +78,16 @@ func (job *MigrateJob) walkDir(srcDir, dstDir string, svr *MigrateServer) {
 	//if totalSize != 0 && fileCnt != 0 && totalSize/fileCnt <= migrateProto.TinyFile {
 	//	taskType = migrateProto.TinyTask
 	//}
-	task := job.newTask(srcDir, dstDir, 0, taskType)
-	ok, successTask := svr.alreadySuccess(task.TaskId)
-	//如果不存在或者开启overWrite则覆盖
-	if !ok || job.overWrite {
-		job.sendTask(task, svr)
-	} else {
-		job.updateCompleteSize(successTask)
-		job.addTotalSize(successTask.MigrateSize)
-	}
-
+	task := job.newTask(srcDir, dstDir, 0, taskType, job.overWrite)
+	//ok, successTask := svr.alreadySuccess(task.TaskId)
+	////如果不存在或者开启overWrite则覆盖
+	//if !ok || job.overWrite {
+	//	job.sendTask(task, svr)
+	//} else {
+	//	job.updateCompleteSize(successTask)
+	//	job.addTotalSize(successTask.MigrateSize)
+	//}
+	job.sendTask(task, svr)
 }
 
 // 传入的是绝对路径，因为需要对应目录权限
@@ -122,7 +123,7 @@ func (job *MigrateJob) createDestDir(srcDir, dstDir string) (err error) {
 }
 
 func (job *MigrateJob) saveWalkFailedTask(srcPath, dstPath string, err error) {
-	task := job.newTask(srcPath, dstPath, 0, migrateProto.NormalTask)
+	task := job.newTask(srcPath, dstPath, 0, migrateProto.NormalTask, job.overWrite)
 	task.ErrorMsg = fmt.Sprintf("create dst dir failed:%v", err.Error())
 	job.logger.Debug("saveWalkFailedTask", zap.Any("task", task))
 	job.saveFailedMigratingTask(task)

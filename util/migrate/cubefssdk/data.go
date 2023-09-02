@@ -72,7 +72,8 @@ func extractNumberFromFileName(fileName string) (int, error) {
 	return number, nil
 }
 
-func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, taskId string, debugFunc EnableDebugMsg) (err error) {
+func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, taskId string,
+	debugFunc EnableDebugMsg, copyLogger *zap.Logger, overWrite bool, address string) (err error) {
 	var (
 		srcEC  = sdk.ecApi.ec
 		srcMW  = sdk.mwApi.mw
@@ -81,6 +82,10 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 		logger = sdk.logger
 		eks    []proto.ExtentKey
 	)
+	//tmpName := gopath.Base(srcPath)
+	//if tmpName == "123.jpg" {
+	//	return errors.New(fmt.Sprintf("chi test errors "))
+	//}
 	//tmpName := gopath.Base(srcPath)
 	//index, _ := extractNumberFromFileName(tmpName)
 	//if index%10 == 0 {
@@ -114,20 +119,35 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	//如果目标文件已经存在，则要删除
 	if ino, isExist := dstSdk.PathIsExistWithIno(dstParentInfo.Inode, gopath.Join(dstRoot, fileName)); isExist {
 		//logger.Debug("CopyFileToDir open exist", zap.Any("TaskId", taskId))
+		//如果目标文件已经存在，则判断modifyTime是否一致，一致则忽略，不一致则告警
 		dstInfo, err = dstSdk.getInodeInfo(ino)
 		if err != nil {
 			logger.Error("Open target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 			return errors.New(fmt.Sprintf("Open exist target failed, dstRoot %s vol %s [%s]", dstRoot, dstSdk.volName, err.Error()))
 		}
-		dstEC.OpenStream(dstInfo.Inode)
-		//logger.Debug("CopyFileToDir DeleteFile", zap.Any("TaskId", taskId))
-		if err = dstSdk.Truncate(dstParentInfo.Inode, ino); err != nil {
-			logger.Error("Delete exist target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName),
-				zap.Any("dstFile", gopath.Join(dstRoot, fileName)), zap.Any("err", err),
-				zap.Any("dstParentInfo.Inode", dstParentInfo.Inode), zap.Any("ino", ino))
-			return err
+		if overWrite == false {
+			if dstInfo.ModifyTime == srcInfo.ModifyTime {
+				return nil
+			} else {
+				//记录到task的日志
+				if copyLogger != nil {
+					copyLogger.Debug("modify time not the same,please check", zap.Any("fileName", fileName))
+				}
+
+				return errors.New(fmt.Sprintf("modify time not the same,please check file list %v on %v",
+					taskId, address))
+			}
+		} else {
+			dstEC.OpenStream(dstInfo.Inode)
+			//logger.Debug("CopyFileToDir DeleteFile", zap.Any("TaskId", taskId))
+			if err = dstSdk.Truncate(dstParentInfo.Inode, ino); err != nil {
+				logger.Error("Delete exist target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName),
+					zap.Any("dstFile", gopath.Join(dstRoot, fileName)), zap.Any("err", err),
+					zap.Any("dstParentInfo.Inode", dstParentInfo.Inode), zap.Any("ino", ino))
+				return err
+			}
+			//logger.Error("delete old file success", zap.Any("file", gopath.Join(dstRoot, fileName)))
 		}
-		//logger.Error("delete old file success", zap.Any("file", gopath.Join(dstRoot, fileName)))
 	} else {
 		//创建目标文件
 		dstInfo, err = dstSdk.CreateFile(dstParentInfo.Inode, fileName, srcInfo.Mode, srcInfo.Uid, srcInfo.Gid)
