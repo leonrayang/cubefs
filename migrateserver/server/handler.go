@@ -58,6 +58,7 @@ func (svr *MigrateServer) migrateDetailsHandler(w http.ResponseWriter, r *http.R
 		MigratingJobs:     jobInfos,
 		MigrateClients:    svr.getAllMigrateClientInfo(),
 		MigratingTasksNum: taskTotal, //单独接口获取
+		TaskChanPending:   len(svr.taskCh),
 	}
 	writeResp(w, detail, logger)
 }
@@ -94,28 +95,34 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	//获取注册的work信息
+	//logger.Debug("action[fetchTasksHandler] is called")
 	cli := svr.getMigrateClient(req.NodeId)
-	if cli == nil || time.Now().Sub(cli.ReporterTime) > 3*proto.FetchTaskInterval {
+	//logger.Debug("action[fetchTasksHandler] is called by", zap.Any("client", req.NodeId))
+	if cli == nil {
 		logger.Error("MigrateClient maybe already deleted", zap.Any("client", req.NodeId))
 		writeErr(w, proto.ParmErr, "MigrateClient not exist", logger)
 		return
 	}
 	//更新worker的时间以及空闲个数
 	cli.updateStatics(req.IdleCnt)
+	//失败任务处理时间过长导致reportime超时
+	cli.markHandling(IsHandling)
+	//logger.Debug("action[fetchTasksHandler]updateStatics", zap.Any("client", req.NodeId))
 	//更新失败task的列表
 	svr.updateFailedTask(req.FailTasks, req.SuccTasks)
-
+	//	logger.Debug("action[fetchTasksHandler]updateFailedTask", zap.Any("client", req.NodeId))
 	resp := &proto.FetchTasksResp{}
 
 	returnTasks := make([]proto.Task, 0)
 	//ExtraTasks为忙不过来的map,分配其他空闲client
 	if len(req.ExtraTasks) > 0 {
 		returnTasks = svr.allocateExtraTask(req.ExtraTasks, cli)
+		logger.Debug("action[fetchTasksHandler]allocateExtraTask", zap.Any("client", req.NodeId))
 	}
 	//处理不了，给其他空闲worker
 	if req.IdleCnt < 2 {
 		cli.updateRunningTasksStatus(req.SuccTasks, req.FailTasks, make([]proto.Task, 0))
-		logger.Debug("worker is busy, no new tasks, only update task map", zap.Any("extra", cli.String()))
+		logger.Debug("action[fetchTasksHandler]worker is busy, no new tasks, only update task map", zap.Any("client", req.NodeId), zap.Any("extra", cli.String()))
 		resp.Tasks = returnTasks
 		writeResp(w, resp, logger)
 		return
@@ -125,6 +132,8 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 	returnTasks = append(tasks, returnTasks...)
 	//返回要做的任务
 	resp.Tasks = returnTasks
+	logger.Debug("action[fetchTasksHandler]get tasks", zap.Any("num", len(resp.Tasks)), zap.Any("client", req.NodeId))
+	cli.markHandling(NotHandling)
 	writeResp(w, resp, logger)
 }
 
@@ -467,8 +476,10 @@ func (svr *MigrateServer) queryJobsProgressHandler(w http.ResponseWriter, r *htt
 		}
 		job := svr.findMigrateJob(jobId)
 		if job == nil {
-			writeErr(w, proto.ParmErr, "JobId is invalid ", logger)
-			return
+			res.Status = proto.JobIdInvalid
+			res.ErrorMsg = "JobId is invalid"
+			resp.Resp = append(resp.Resp, res)
+			continue
 		}
 		process, status := job.getProgress()
 		if status == proto.JobFailed {

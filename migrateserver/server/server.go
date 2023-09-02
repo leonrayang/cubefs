@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -59,7 +60,7 @@ func NewMigrateServer(cfg *config.Config) *MigrateServer {
 		port:            cfg.Port,
 		stopCh:          make(chan bool),
 		cliMap:          make(map[int32]*MigrateClient),
-		taskCh:          make(chan proto.Task, 4096),
+		taskCh:          make(chan proto.Task, 40960),
 		reSendTaskCh:    make(chan []proto.Task, 128),
 		migratingJobMap: make(map[string]*MigrateJob),
 		completeJobMap:  make(map[string]*MigrateJob),
@@ -132,7 +133,8 @@ func (svr *MigrateServer) Run() {
 }
 
 func (svr *MigrateServer) scheduleToCheckMigrateClients() {
-	ticker := time.NewTicker(time.Minute)
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-svr.stopCh:
@@ -161,7 +163,7 @@ func (svr *MigrateServer) getAllMigrateClientInfo() []proto.MigrateClientInfo {
 			NodeId:       cli.NodeId,
 			Addr:         cli.Addr,
 			JobCnt:       cli.jobCnt,
-			IdleCnt:      cli.idleCnt,
+			IdleCnt:      int(atomic.LoadInt32(&cli.idleCnt)),
 			ReporterTime: cli.ReporterTime.Format("2006-01-02 15:04:05"),
 		})
 	}
@@ -181,18 +183,24 @@ func (svr *MigrateServer) removeInactiveMigrateClient() {
 	defer svr.mapCliLk.Unlock()
 	logger := svr.Logger
 	for _, cli := range svr.cliMap {
-		if time.Now().Sub(cli.ReporterTime) > MigrateClientTimeout {
-			//将client正在处理的任务重新分配
-			cli.close()
-			delete(svr.cliMap, cli.NodeId)
-			logger.Error("MigrateClient is inactive, remove", zap.String("client", cli.String()))
+		//更新上报时间
+		if cli.isHandling() {
+			cli.ReporterTime = time.Now()
+		} else {
+			if time.Now().Sub(cli.ReporterTime) > MigrateClientTimeout {
+				//将client正在处理的任务重新分配
+				cli.close()
+				delete(svr.cliMap, cli.NodeId)
+				logger.Error("MigrateClient is inactive, remove", zap.String("client", cli.String()))
+			}
 		}
+
 	}
 }
 
 func (svr *MigrateServer) stopAllMigrateClients() {
-	svr.mapCliLk.RLock()
-	defer svr.mapCliLk.RUnlock()
+	svr.mapCliLk.Lock()
+	defer svr.mapCliLk.Unlock()
 
 	for _, cli := range svr.cliMap {
 		cli.close()
@@ -343,6 +351,7 @@ func GenerateUUID() string {
 func (svr *MigrateServer) clearCompleteMigrateJob() {
 	logger := svr.Logger.With(zap.String("timer", "clearCompleteMigrateJob"))
 	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
@@ -429,7 +438,7 @@ func (svr *MigrateServer) findOldJobId(newId string) string {
 func (svr *MigrateServer) persistMeta() {
 	//发布前修改：请调整大小
 	ticker := time.NewTicker(2 * time.Minute)
-
+	defer ticker.Stop()
 	for {
 		select {
 		case <-svr.stopCh:

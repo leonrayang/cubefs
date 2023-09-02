@@ -7,6 +7,7 @@ import (
 	"github.com/cubefs/cubefs/util/migrate/falconroute"
 	"github.com/cubefs/cubefs/util/migrate/proto"
 	"go.uber.org/zap"
+	"hash/crc32"
 	"path"
 )
 
@@ -49,9 +50,10 @@ func (cli *MigrateClient) doMigrateDirOperation(task proto.Task) (error, uint64)
 		logger.Error("get route failed", zap.Any("virDstPath", virDstPath), zap.Error(err))
 		return errors.New(fmt.Sprintf("get route %s failed:%s ", virDstPath, err.Error())), 0
 	}
+
 	cfg := &liblog.Config{
 		ScreenOutput: false,
-		LogFile:      path.Join(path.Dir(cli.logCfg.LogFile), "tasks", fmt.Sprintf("%v.list", task.TaskId)),
+		LogFile:      path.Join(buildTaskCachePath(task.TaskId, path.Dir(cli.logCfg.LogFile)), fmt.Sprintf("%v.list", task.TaskId)),
 		LogLevel:     "debug",
 		MaxSizeMB:    1024,
 		MaxBackups:   5, //保留的日志文件个数
@@ -65,6 +67,12 @@ func (cli *MigrateClient) doMigrateDirOperation(task proto.Task) (error, uint64)
 		task.TaskId, cli.tinyFactor, cli.CheckDebugEnable, copyLogger, task.OverWrite, cli.localAddr); err == nil {
 		return nil, totalSize
 	} else {
-		return errors.New(fmt.Sprintf("Execute copy single file operation failed: %s", err.Error())), totalSize
+		return errors.New(fmt.Sprintf("Execute copy dir operation failed: %s", err.Error())), totalSize
 	}
+}
+func buildTaskCachePath(taskid string, dir string) string {
+	return fmt.Sprintf("%s/tasks/%d/%d/%s", dir, hashKey(taskid)&0xFFF%512, hashKey(taskid)%512, taskid)
+}
+func hashKey(key string) uint32 {
+	return crc32.ChecksumIEEE([]byte(key))
 }

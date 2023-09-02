@@ -325,6 +325,7 @@ func (job *MigrateJob) sendEmail(svr *MigrateServer) {
 
 func (job *MigrateJob) waitUtilTaskDone(svr *MigrateServer) {
 	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 	logger := job.logger
 	for {
 		select {
@@ -359,8 +360,8 @@ func (job *MigrateJob) sendTask(task proto.Task, svr *MigrateServer) {
 	if job.taskIsMigrating(task) {
 		return
 	}
-	job.logger.Debug("sendTask", zap.String("task", task.String()))
 	svr.taskCh <- task
+	//job.logger.Debug("sendTask", zap.String("task", task.String()))
 	//重传的不参与计数
 	if task.IsRetrying == false {
 		job.migratingTaskCnt.Add(1)

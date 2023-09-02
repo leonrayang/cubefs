@@ -116,9 +116,9 @@ func (job *MigrateJob) createDestDir(srcDir, dstDir string) (err error) {
 			logger.Error("Create target dir failed", zap.Any("dstDir", dstDir), zap.Any("err", err))
 			return errors.New(fmt.Sprintf("Create target failed, dstDir %s[%s]", dstDir, err.Error()))
 		}
-		logger.Debug("Target dir is already exist", zap.Any("dstDir", dstDir))
+		//logger.Debug("Target dir is already exist", zap.Any("dstDir", dstDir))
 	}
-	logger.Debug("CreateDestDir success", zap.Any("dstDir", dstDir))
+	//	logger.Debug("CreateDestDir success", zap.Any("dstDir", dstDir))
 	return nil
 }
 

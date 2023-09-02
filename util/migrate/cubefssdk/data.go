@@ -206,8 +206,13 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 		util.Free(buf)
 	}
 	//logger.Debug("CopyFileToDir lookup src", zap.Any("TaskId", taskId))
+	//close traverse 不然会定时器泄漏
 	dstEC.CloseStream(dstInfo.Inode)
+	dstEC.EvictStream(dstInfo.Inode)
+
 	srcEC.CloseStream(srcInfo.Inode)
+	srcEC.EvictStream(srcInfo.Inode)
+
 	//检查文件大小是否一致,这里不能用缓存
 	srcInfo2, err := sdk.LookupFileWithParentCache(srcPath)
 	if err != nil {

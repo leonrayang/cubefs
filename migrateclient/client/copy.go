@@ -107,7 +107,7 @@ func (cli *MigrateClient) doCopyDirOperation(task proto.Task) (error, uint64) {
 	}
 	cfg := &liblog.Config{
 		ScreenOutput: false,
-		LogFile:      gopath.Join(gopath.Dir(cli.logCfg.LogFile), "tasks", fmt.Sprintf("%v.list", task.TaskId)),
+		LogFile:      gopath.Join(buildTaskCachePath(task.TaskId, gopath.Dir(cli.logCfg.LogFile)), fmt.Sprintf("%v.list", task.TaskId)),
 		LogLevel:     "debug",
 		MaxSizeMB:    1024,
 		MaxBackups:   5, //保留的日志文件个数
@@ -165,8 +165,11 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var errMsg string
+	var modifyTimeErrCached int32
+	atomic.StoreInt32(&modifyTimeErrCached, 0)
 
 	copyTaskFunc := func() {
+
 		//logger.Debug("execCopyDirCommand new goroutine", zap.Any("TaskId", taskId))
 		defer func() {
 			wg.Done()
@@ -183,31 +186,31 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 				copyLogger, overWrite, addr)
 			if taskErr != nil {
 				if strings.Contains(taskErr.Error(), "modify time") {
-					if !strings.Contains(errMsg, "modify time") {
-						errMsg += fmt.Sprintf("%v;", taskErr.Error())
-						logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
+					if atomic.LoadInt32(&modifyTimeErrCached) == 0 {
+						atomic.StoreInt32(&modifyTimeErrCached, 1)
+						select {
+						case errCh <- taskErr:
+							logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
+						default:
+							//logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
+						}
+						//logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
 					}
 				} else {
 					select {
 					case errCh <- taskErr:
 						logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
-						errMsg += fmt.Sprintf("%v;", taskErr.Error())
 					default:
 						//logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
-						if !strings.Contains(errMsg, "[to many errors]") {
-							errMsg = fmt.Sprintf("[to many errors]%v", errMsg)
-						}
 					}
 				}
 			} else {
 				atomic.AddInt32(&succCnt, 1)
 				atomic.AddUint64(&copySuccess, task.size)
 			}
-
 		}
 	}
 	//目前无法启用
-	logger.Warn("len(children)", zap.Any("len(children)", len(children)))
 	if len(children) >= TinyCopyFileLimit {
 		goroutineLimit = tinyFactor * goroutineLimit
 		//发布前删除
@@ -240,6 +243,19 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 
 	close(taskCh)
 	wg.Wait()
+	close(errCh)
+	//这里遍历error chan即可
+	count := 0
+	for subErr := range errCh {
+		errMsg += fmt.Sprintf("%v;", subErr.Error())
+		count++
+	}
+	if count == 10 {
+		errMsg = fmt.Sprintf("[to many errors]%v", errMsg)
+	}
+	//logger.Debug("execCopyDirCommand #3", zap.Any("errMsg", errMsg))
+	//errMsg2 := RemoveDuplicateSubstrings(errMsg)
+	//logger.Debug("execCopyDirCommand ", zap.Any("errMsg", errMsg))
 	//logger.Debug("execCopyDirCommand  ", zap.Any("avergeSize", avergeSize),
 	//	zap.Any("total", totalSize), zap.Any("fileCnt", fileCnt), zap.Any("succCnt", succCnt),
 	//	zap.Any("copySuccess", copySuccess))
@@ -249,6 +265,21 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	} else {
 		return errors.New(fmt.Sprintf("%v", errMsg)), copySuccess
 	}
+}
+func RemoveDuplicateSubstrings(input string) string {
+	substrings := strings.Split(input, ";")
+	uniqueSubstrings := make(map[string]bool)
+	var result string
+
+	for _, substr := range substrings {
+		if !uniqueSubstrings[substr] {
+			uniqueSubstrings[substr] = true
+			result += substr
+			result += ";"
+		}
+	}
+
+	return result
 }
 
 type CopySubTask struct {

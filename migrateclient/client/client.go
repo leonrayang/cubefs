@@ -111,12 +111,14 @@ func (cli *MigrateClient) addMigrateTask(task proto.Task) {
 	cli.mapMigratingTaskLk.Lock()
 	defer cli.mapMigratingTaskLk.Unlock()
 	cli.migratingTaskMap[task.TaskId] = task
+	atomic.StoreInt32(&cli.curJobCnt, int32(len(cli.migratingTaskMap)))
 }
 
 func (cli *MigrateClient) deleteMigrateTask(task proto.Task) {
 	cli.mapMigratingTaskLk.Lock()
 	defer cli.mapMigratingTaskLk.Unlock()
 	delete(cli.migratingTaskMap, task.TaskId)
+	atomic.StoreInt32(&cli.curJobCnt, int32(len(cli.migratingTaskMap)))
 }
 
 func (cli *MigrateClient) getAllMigrateTask() (tasks []proto.Task) {
@@ -171,6 +173,7 @@ func (cli *MigrateClient) Run() {
 
 func (cli *MigrateClient) execute() {
 	exitTimer := time.NewTimer(time.Minute * 10)
+	defer exitTimer.Stop()
 	go cli.scheduleFetchTasks()
 	busyRetry := 0 //无法处理时进行重试
 	logger := cli.Logger
@@ -187,9 +190,10 @@ func (cli *MigrateClient) execute() {
 		case task := <-cli.pendingTaskCh:
 			for {
 				//处理分配的任务,curJobCnt跟map数目对齐
-				if atomic.AddInt32(&cli.curJobCnt, 1) <= cli.maxJobCnt {
+				if atomic.LoadInt32(&cli.curJobCnt) <= cli.maxJobCnt {
+					logger.Debug("addMigrateTask ", zap.Any("task", task))
+					cli.addMigrateTask(task)
 					go func(t proto.Task) {
-						defer atomic.AddInt32(&cli.curJobCnt, -1)
 						cli.executeTask(t)
 						cli.lastTaskExecuteTime = time.Now()
 					}(task)
@@ -197,7 +201,6 @@ func (cli *MigrateClient) execute() {
 					break
 				}
 				//阻塞太久的任务就处理,让master重新选择一个worker处理
-				atomic.AddInt32(&cli.curJobCnt, -1)
 				busyRetry++
 				time.Sleep(time.Second)
 				if busyRetry > 10 {
@@ -218,6 +221,7 @@ func (cli *MigrateClient) execute() {
 
 func (cli *MigrateClient) scheduleFetchTasks() {
 	ticker := time.NewTicker(proto.FetchTaskInterval)
+	defer ticker.Stop()
 	logger := cli.Logger
 	for {
 		select {
@@ -233,6 +237,13 @@ func (cli *MigrateClient) scheduleFetchTasks() {
 		//	idleCnt = 0
 		//}
 		idleCnt := cli.maxJobCnt - atomic.LoadInt32(&cli.curJobCnt)
+		if idleCnt < 0 {
+			idleCnt = 0
+		}
+		if cli.CheckDebugEnable() {
+			logger.Warn("scheduleFetchTasks", zap.Any("maxJobCnt", cli.maxJobCnt),
+				zap.Any("curJobCnt", atomic.LoadInt32(&cli.curJobCnt)), zap.Any("idleCnt", idleCnt), zap.Any("pending", len(cli.pendingTaskCh)))
+		}
 		successTasks := cli.getSuccessTasks()
 		failedTasks := cli.getFailedTasks()
 		extraTasks := cli.getExtraTasks()
@@ -318,16 +329,15 @@ func (cli *MigrateClient) executeTask(task proto.Task) {
 	defer func() {
 		cli.deleteMigrateTask(task)
 		task.ConsumeTime = time.Now().Sub(start).String()
-		logger.Debug("Task complete", zap.Any("task", task))
 		if err == nil {
 			cli.successTaskCh <- task
 		} else {
 			task.ErrorMsg = err.Error()
 			cli.failedTaskCh <- task
 		}
+		logger.Debug("Task complete", zap.Any("task", task))
 	}()
-	logger.Debug("addMigrateTask ", zap.Any("task", task))
-	cli.addMigrateTask(task)
+
 	if task.WorkMode == proto.JobMove {
 		err = cli.doMoveOperation(task)
 	}
