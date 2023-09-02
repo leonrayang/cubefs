@@ -97,14 +97,14 @@ func (job *MigrateJob) createDestDir(srcDir, dstDir string) (err error) {
 	}
 	logger := job.logger
 	//获取源目录的信息
-	srcDirInfo, err := job.srcSDK.LookupPath(gopath.Clean(srcDir))
+	srcDirInfo, err := job.srcSDK.LookupPathWithCache(gopath.Clean(srcDir))
 	if err != nil {
 		logger.Error("LookupPath src failed", zap.Any("err", err))
 		return err
 	}
 	//获取目录路径的父目录信息
 	dstParentDir, dirName := gopath.Split(gopath.Clean(dstDir))
-	dstParentInfo, err := job.dstSDK.LookupPath(gopath.Clean(dstParentDir))
+	dstParentInfo, err := job.dstSDK.LookupPathWithCache(gopath.Clean(dstParentDir))
 	if err != nil {
 		logger.Error("LookupPath dstParentDir failed", zap.Any("err", err))
 		return err
