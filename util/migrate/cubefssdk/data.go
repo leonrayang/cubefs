@@ -103,7 +103,7 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	//logger.Debug("CopyFileToDir IsSymlink", zap.Any("TaskId", taskId))
 	//如果是软连接
 	if proto.IsSymlink(srcInfo.Mode) {
-		return sdk.CopySymlinkToDir(srcPath, dstRoot, dstSdk)
+		return sdk.CopySymlinkToDir(srcPath, dstRoot, dstSdk, debugFunc)
 	}
 	//获取源文件名
 	_, fileName := gopath.Split(gopath.Clean(srcPath))
@@ -238,7 +238,7 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	return nil
 }
 
-func (sdk *CubeFSSdk) CopySymlinkToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk) (err error) {
+func (sdk *CubeFSSdk) CopySymlinkToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, debugFunc EnableDebugMsg) (err error) {
 	logger := sdk.logger
 	//获取源文件的inode信息。
 	srcInfo, err := sdk.LookupPath(srcPath)
@@ -273,8 +273,11 @@ func (sdk *CubeFSSdk) CopySymlinkToDir(srcPath, dstRoot string, dstSdk *CubeFSSd
 		logger.Error("target not equal", zap.Any("err", err))
 		return
 	}
-	logger.Debug("Copy Symlink success", zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName),
-		zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstVol", dstSdk.volName))
+	if debugFunc() {
+		logger.Debug("Copy Symlink success", zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName),
+			zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstVol", dstSdk.volName))
+	}
+
 	return nil
 }
 func (sdk *CubeFSSdk) read(ino uint64, offset int, data []byte) (n int, err error) {

@@ -182,6 +182,7 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 			default: // Default is must to avoid blocking
 			}
 			var taskErr error
+			//logger.Warn("Try copy", zap.Any("source", task.source))
 			taskErr = srcCli.CopyFileToDir(task.source, task.target, dstCli, taskId, debugFunc,
 				copyLogger, overWrite, addr)
 			if taskErr != nil {
@@ -226,8 +227,14 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 		}
 		childSize, err := srcCli.GetFileSize(gopath.Join(source, child.Name))
 		if err != nil {
-			logger.Warn("Failed to get file size", zap.Any("child", gopath.Join(source, child.Name)), zap.Any("err", err))
-			break
+			sizeErr := errors.New(fmt.Sprintf("Failed to get %v size:%v", gopath.Join(source, child.Name), err.Error()))
+			select {
+			case errCh <- sizeErr:
+				logger.Warn("Failed to get file size", zap.Any("child", gopath.Join(source, child.Name)), zap.Any("err", err))
+			default:
+				//logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
+			}
+			continue
 		}
 		totalSize += childSize
 		fileCnt++
@@ -235,11 +242,6 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 		//	zap.Any("source", gopath.Join(source, child.Name)), zap.Any("target", target))
 		taskCh <- CopySubTask{source: gopath.Join(source, child.Name), target: target, size: childSize}
 	}
-	//	logger.Debug("execCopyDirCommand  ", zap.Any("total", totalSize), zap.Any("fileCnt", fileCnt))
-
-	//if totalSize != 0 && fileCnt != 0 && totalSize/fileCnt <= migrateProto.TinyFile {
-	//	taskType = migrateProto.TinyTask
-	//}
 
 	close(taskCh)
 	wg.Wait()
@@ -253,13 +255,7 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	if count == 10 {
 		errMsg = fmt.Sprintf("[to many errors]%v", errMsg)
 	}
-	//logger.Debug("execCopyDirCommand #3", zap.Any("errMsg", errMsg))
-	//errMsg2 := RemoveDuplicateSubstrings(errMsg)
-	//logger.Debug("execCopyDirCommand ", zap.Any("errMsg", errMsg))
-	//logger.Debug("execCopyDirCommand  ", zap.Any("avergeSize", avergeSize),
-	//	zap.Any("total", totalSize), zap.Any("fileCnt", fileCnt), zap.Any("succCnt", succCnt),
-	//	zap.Any("copySuccess", copySuccess))
-	//logger.Debug("execCopyDirCommand all goroutine is done", zap.Any("TaskId", taskId))
+
 	if len(errMsg) == 0 {
 		return nil, copySuccess
 	} else {
