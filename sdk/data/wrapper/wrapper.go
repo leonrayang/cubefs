@@ -202,6 +202,7 @@ func (w *Wrapper) GetSimpleVolView() (err error) {
 
 func (w *Wrapper) uploadFlowInfoByTick(clientInfo SimpleClientInfo) {
 	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
@@ -216,6 +217,7 @@ func (w *Wrapper) uploadFlowInfoByTick(clientInfo SimpleClientInfo) {
 // use 1 minute is fine
 func (w *Wrapper) updateSimpleVolViewByTick() {
 	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
 	var tickCnt uint16
 	for {
 		select {
@@ -234,6 +236,7 @@ func (w *Wrapper) updateSimpleVolViewByTick() {
 
 func (w *Wrapper) update() {
 	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:

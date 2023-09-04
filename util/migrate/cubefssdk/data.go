@@ -164,7 +164,9 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	_, _, eks, err = srcMW.GetExtents(srcInfo.Inode)
 	if err != nil {
 		dstEC.CloseStream(dstInfo.Inode)
+		dstEC.EvictStream(dstInfo.Inode)
 		srcEC.CloseStream(srcInfo.Inode)
+		srcEC.EvictStream(srcInfo.Inode)
 		logger.Error("GetExtents for source failed", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return errors.New(fmt.Sprintf("GetExtents for source failed %s vol %s[%s]", srcPath, sdk.volName, err.Error()))
 	}
@@ -179,7 +181,9 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 				zap.Any("FileOffset", ek.FileOffset), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 			util.Free(buf)
 			dstEC.CloseStream(dstInfo.Inode)
+			dstEC.EvictStream(dstInfo.Inode)
 			srcEC.CloseStream(srcInfo.Inode)
+			srcEC.EvictStream(srcInfo.Inode)
 			return errors.New(fmt.Sprintf("Read FileOffset %d from source %s vol %s [%s]",
 				ek.FileOffset, srcPath, sdk.volName, err.Error()))
 		}
@@ -189,7 +193,9 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 				zap.Any("actual size", n))
 			util.Free(buf)
 			dstEC.CloseStream(dstInfo.Inode)
+			dstEC.EvictStream(dstInfo.Inode)
 			srcEC.CloseStream(srcInfo.Inode)
+			srcEC.EvictStream(srcInfo.Inode)
 			return errors.New(fmt.Sprintf("Read wrong size from source %s, %d[expect %d]",
 				srcPath, n, size))
 		}
@@ -197,7 +203,9 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 		if err != nil {
 			util.Free(buf)
 			dstEC.CloseStream(dstInfo.Inode)
+			dstEC.EvictStream(dstInfo.Inode)
 			srcEC.CloseStream(srcInfo.Inode)
+			srcEC.EvictStream(srcInfo.Inode)
 			logger.Error("Write extent failed", zap.Any("TaskId", taskId),
 				zap.Any("FileOffset", ek.FileOffset), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 			return errors.New(fmt.Sprintf("Write FileOffset %d to  dst %s vol %s [%s]",

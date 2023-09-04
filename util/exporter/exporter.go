@@ -228,6 +228,7 @@ func autoPush(pushAddr, role, cluster, ip, mountPoint string) {
 		ip, pushAddr, role, cluster, mountPoint, hostname)
 
 	ticker := time.NewTicker(time.Second * 15)
+	defer ticker.Stop()
 	go func() {
 		for {
 			select {

@@ -390,7 +390,7 @@ func StopAudit() {
 
 func (a *Audit) flushAuditLog() {
 	cleanTimer := time.NewTimer(DefaultCleanInterval)
-
+	defer cleanTimer.Stop()
 	for {
 		select {
 		case <-a.stopC:

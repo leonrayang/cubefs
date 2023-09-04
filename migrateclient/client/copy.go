@@ -136,9 +136,7 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 		zap.Any("dst", target), zap.Any("to vol", dstVol), zap.Any("TaskId", taskId))
 	copySuccess = 0
 	var (
-		fileCnt   uint64 = 0
-		succCnt   int32
-		totalSize uint64 = 0
+		succCnt int32
 	)
 	//start := time.Now()
 	//defer logger.Debug("execCopyDirCommand completed", zap.Any("TaskId", taskId),
@@ -236,8 +234,6 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 			}
 			continue
 		}
-		totalSize += childSize
-		fileCnt++
 		//logger.Debug("execCopyDirCommand  new copy task ", zap.Any("TaskId", taskId),
 		//	zap.Any("source", gopath.Join(source, child.Name)), zap.Any("target", target))
 		taskCh <- CopySubTask{source: gopath.Join(source, child.Name), target: target, size: childSize}
@@ -255,7 +251,7 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	if count == 10 {
 		errMsg = fmt.Sprintf("[to many errors]%v", errMsg)
 	}
-
+	logger.Debug("execCopyDirCommand  copy  ", zap.Any("succCnt", succCnt), zap.Any("copySuccess", copySuccess))
 	if len(errMsg) == 0 {
 		return nil, copySuccess
 	} else {

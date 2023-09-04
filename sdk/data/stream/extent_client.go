@@ -200,6 +200,7 @@ func (client *ExtentClient) batchEvictStramer(batchCnt int) {
 
 func (client *ExtentClient) backgroundEvictStream() {
 	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
 	for range t.C {
 		start := time.Now()
 		streamerSize := client.streamerList.Len()
