@@ -2,6 +2,7 @@ package cubefssdk
 
 import (
 	"fmt"
+	"github.com/cubefs/cubefs/util/migrate/proto"
 	"go.uber.org/zap"
 	"sync"
 )
@@ -36,6 +37,19 @@ func (manager *SdkManager) GetCubeFSSdk(volName, endpoint string) (sdk *CubeFSSd
 	manager.sdkCache[generateCubeFSSdkKey(volName, endpoint)] = sdk
 	manager.sdkCacheLk.Unlock()
 	return sdk, nil
+}
+
+func (manager *SdkManager) GetStreamerLen() (infos []proto.StreamerInfo, total int) {
+	manager.sdkCacheLk.RLock()
+	defer manager.sdkCacheLk.RUnlock()
+
+	for key, sdk := range manager.sdkCache {
+		array, cnt := sdk.GetStreamerLen()
+		total += cnt
+		info := proto.StreamerInfo{Info: key, Count: cnt, Inodes: array}
+		infos = append(infos, info)
+	}
+	return
 }
 
 func generateCubeFSSdkKey(volName, endpoint string) string {

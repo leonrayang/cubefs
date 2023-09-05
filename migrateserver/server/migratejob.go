@@ -88,11 +88,10 @@ func (job *MigrateJob) GetMigratingTasks() (tasks []proto.Task) {
 		return job.getMigratingTasksBySubJobs()
 	}
 	job.mapMigratingLk.RLock()
-	cache := job.migratingTask
-	job.mapMigratingLk.RUnlock()
-	for _, task := range cache {
+	for _, task := range job.migratingTask {
 		tasks = append(tasks, task)
 	}
+	job.mapMigratingLk.RUnlock()
 	return
 }
 

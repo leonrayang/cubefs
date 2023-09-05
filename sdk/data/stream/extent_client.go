@@ -381,6 +381,7 @@ func (client *ExtentClient) EvictStream(inode uint64) error {
 	} else {
 		delete(s.client.streamers, s.inode)
 		s.client.streamerLock.Unlock()
+		s.done <- struct{}{}
 	}
 
 	return nil
@@ -616,6 +617,27 @@ func (client *ExtentClient) GetStreamer(inode uint64) *Streamer {
 		go s.asyncBlockCache()
 	}
 	return s
+}
+
+func (client *ExtentClient) OnlyGetStreamer(inode uint64) *Streamer {
+	client.streamerLock.Lock()
+	defer client.streamerLock.Unlock()
+	s, ok := client.streamers[inode]
+	if !ok {
+		return nil
+	}
+
+	return s
+}
+
+func (client *ExtentClient) GetStreamerLen() (inoArray []uint64, total int) {
+	client.streamerLock.Lock()
+	defer client.streamerLock.Unlock()
+	for ino, _ := range client.streamers {
+		inoArray = append(inoArray, ino)
+	}
+
+	return inoArray, len(client.streamers)
 }
 
 func (client *ExtentClient) GetRate() string {

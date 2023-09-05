@@ -25,6 +25,7 @@ const (
 	QueryClientMigratingTaskUrl = "/queryClientMigratingTask"
 	EnableClientDebugUrl        = "/enableClientDebug"
 	DisableClientDebugUrl       = "/disableClientDebug"
+	QueryStreamerLenUrl         = "/queryStreamerLen"
 )
 
 type HttpReply struct {
@@ -246,6 +247,18 @@ type MigrateUserReq struct {
 type MigratingTasksResp struct {
 	MigratingTaskCnt int    `json:"taskCnt"`
 	MigratingTasks   []Task `json:"migratingTasks"`
+	PendingTaskCnt   int    `json:"pendingTaskCnt"`
+}
+
+type StreamerInfo struct {
+	Info   string   `json:"info"`
+	Count  int      `json:"count"`
+	Inodes []uint64 `json:"inodes"`
+}
+
+type StreamerLenResp struct {
+	Total int            `json:"total"`
+	Infos []StreamerInfo `json:"infos"`
 }
 
 type StopMigratingJobReq struct {

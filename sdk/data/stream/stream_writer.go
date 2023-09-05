@@ -190,6 +190,9 @@ func (s *Streamer) server() {
 			log.LogDebugf("done server: evict, ino(%v)", s.inode)
 			return
 		case <-t.C:
+			if s.client.OnlyGetStreamer(s.inode) == nil {
+				return
+			}
 			s.traverse()
 			if s.refcnt <= 0 {
 

@@ -125,7 +125,7 @@ func (cli *MigrateClient) doCopyDirOperation(task proto.Task) (error, uint64) {
 	}
 }
 
-const TinyCopyFileLimit = 10000
+const TinyCopyFileLimit = 1000
 
 // 增加耗时
 func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, srcEndpoint, dstVol, dstEndpoint string,

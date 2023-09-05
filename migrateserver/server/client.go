@@ -122,7 +122,7 @@ func (mc *MigrateClient) start() {
 
 // 如果阻塞太多就重新发送
 func (mc *MigrateClient) tasksFetchLimit() int {
-	return int(atomic.LoadInt32(&mc.idleCnt)) * 5
+	return int(atomic.LoadInt32(&mc.idleCnt)) * 10
 }
 func (mc *MigrateClient) putSendCh(tasks []proto.Task) {
 	if len(tasks) == 0 {

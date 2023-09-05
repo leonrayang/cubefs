@@ -75,12 +75,14 @@ func extractNumberFromFileName(fileName string) (int, error) {
 func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, taskId string,
 	debugFunc EnableDebugMsg, copyLogger *zap.Logger, overWrite bool, address string) (err error) {
 	var (
-		srcEC  = sdk.ecApi.ec
-		srcMW  = sdk.mwApi.mw
-		dstEC  = dstSdk.ecApi.ec
-		start  = time.Now()
-		logger = sdk.logger
-		eks    []proto.ExtentKey
+		srcEC              = sdk.ecApi.ec
+		srcMW              = sdk.mwApi.mw
+		dstEC              = dstSdk.ecApi.ec
+		start              = time.Now()
+		logger             = sdk.logger
+		eks                []proto.ExtentKey
+		srcStreamHasClosed = false
+		dstStreamHasClosed = false
 	)
 	//tmpName := gopath.Base(srcPath)
 	//if tmpName == "123.jpg" {
@@ -94,17 +96,30 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	//获取源文件的inode信息。
 	//logger.Debug("CopyFileToDir lookup src", zap.Any("TaskId", taskId))
 	//这里查找文件应该缓存父目录的元数据
+	stepStart := time.Now()
 	srcInfo, err := sdk.LookupFileWithParentCache(srcPath)
 	if err != nil {
 		logger.Warn("LookupPath source failed", zap.Any("TaskId", taskId), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return err
 	}
+
 	srcEC.OpenStream(srcInfo.Inode)
+	defer func() {
+		if !srcStreamHasClosed {
+			srcEC.CloseStream(srcInfo.Inode)
+			srcEC.EvictStream(srcInfo.Inode)
+		}
+	}()
+	if debugFunc() {
+		logger.Debug("OpenStream src", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
+			zap.Any("cost", time.Now().Sub(stepStart).String()))
+	}
 	//logger.Debug("CopyFileToDir IsSymlink", zap.Any("TaskId", taskId))
 	//如果是软连接
 	if proto.IsSymlink(srcInfo.Mode) {
 		return sdk.CopySymlinkToDir(srcPath, dstRoot, dstSdk, debugFunc)
 	}
+	stepStart = time.Now()
 	//获取源文件名
 	_, fileName := gopath.Split(gopath.Clean(srcPath))
 	//获取目标路径信息
@@ -117,6 +132,7 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	//logger.Debug("CopyFileToDir PathIsExist", zap.Any("TaskId", taskId))
 	var dstInfo *proto.InodeInfo
 	//如果目标文件已经存在，则要删除
+
 	if ino, isExist := dstSdk.PathIsExistWithIno(dstParentInfo.Inode, gopath.Join(dstRoot, fileName)); isExist {
 		//logger.Debug("CopyFileToDir open exist", zap.Any("TaskId", taskId))
 		//如果目标文件已经存在，则判断modifyTime是否一致，一致则忽略，不一致则告警
@@ -139,6 +155,12 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 			}
 		} else {
 			dstEC.OpenStream(dstInfo.Inode)
+			defer func() {
+				if !dstStreamHasClosed {
+					dstEC.CloseStream(dstInfo.Inode)
+					dstEC.EvictStream(dstInfo.Inode)
+				}
+			}()
 			//logger.Debug("CopyFileToDir DeleteFile", zap.Any("TaskId", taskId))
 			if err = dstSdk.Truncate(dstParentInfo.Inode, ino); err != nil {
 				logger.Error("Delete exist target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName),
@@ -156,20 +178,31 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 			return errors.New(fmt.Sprintf("Create target failed, dstRoot %s vol %s[%s]", dstRoot, dstSdk.volName, err.Error()))
 		}
 		dstEC.OpenStream(dstInfo.Inode)
+		defer func() {
+			if !dstStreamHasClosed {
+				dstEC.CloseStream(dstInfo.Inode)
+				dstEC.EvictStream(dstInfo.Inode)
+			}
+		}()
 		//logger.Error("create new file success", zap.Any("file", gopath.Join(dstRoot, fileName)))
 	}
 	//logger.Debug("CopyFileToDir GetExtents", zap.Any("TaskId", taskId))
 	//
-
+	if debugFunc() {
+		logger.Debug("OpenStream dst", zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstIno", dstInfo.Inode),
+			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	}
+	stepStart = time.Now()
 	_, _, eks, err = srcMW.GetExtents(srcInfo.Inode)
+	if debugFunc() {
+		logger.Debug("GetExtents", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
+			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	}
 	if err != nil {
-		dstEC.CloseStream(dstInfo.Inode)
-		dstEC.EvictStream(dstInfo.Inode)
-		srcEC.CloseStream(srcInfo.Inode)
-		srcEC.EvictStream(srcInfo.Inode)
 		logger.Error("GetExtents for source failed", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return errors.New(fmt.Sprintf("GetExtents for source failed %s vol %s[%s]", srcPath, sdk.volName, err.Error()))
 	}
+	stepStart = time.Now()
 	//logger.Debug("CopyFileToDir copy extents", zap.Any("TaskId", taskId))
 	for _, ek := range eks {
 		size := ek.Size
@@ -180,10 +213,6 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 			logger.Error("Read extent failed", zap.Any("TaskId", taskId),
 				zap.Any("FileOffset", ek.FileOffset), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 			util.Free(buf)
-			dstEC.CloseStream(dstInfo.Inode)
-			dstEC.EvictStream(dstInfo.Inode)
-			srcEC.CloseStream(srcInfo.Inode)
-			srcEC.EvictStream(srcInfo.Inode)
 			return errors.New(fmt.Sprintf("Read FileOffset %d from source %s vol %s [%s]",
 				ek.FileOffset, srcPath, sdk.volName, err.Error()))
 		}
@@ -192,20 +221,12 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 			logger.Error("Read wrong size", zap.Any("TaskId", taskId), zap.Any("FileOffset", ek.FileOffset), zap.Any("expect size", size),
 				zap.Any("actual size", n))
 			util.Free(buf)
-			dstEC.CloseStream(dstInfo.Inode)
-			dstEC.EvictStream(dstInfo.Inode)
-			srcEC.CloseStream(srcInfo.Inode)
-			srcEC.EvictStream(srcInfo.Inode)
 			return errors.New(fmt.Sprintf("Read wrong size from source %s, %d[expect %d]",
 				srcPath, n, size))
 		}
 		_, err = dstSdk.write(dstInfo.Inode, dstParentInfo.Inode, int(ek.FileOffset), buf, 0)
 		if err != nil {
 			util.Free(buf)
-			dstEC.CloseStream(dstInfo.Inode)
-			dstEC.EvictStream(dstInfo.Inode)
-			srcEC.CloseStream(srcInfo.Inode)
-			srcEC.EvictStream(srcInfo.Inode)
 			logger.Error("Write extent failed", zap.Any("TaskId", taskId),
 				zap.Any("FileOffset", ek.FileOffset), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 			return errors.New(fmt.Sprintf("Write FileOffset %d to  dst %s vol %s [%s]",
@@ -213,25 +234,46 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 		}
 		util.Free(buf)
 	}
+	if debugFunc() {
+		logger.Debug("CopyEks", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
+			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	}
+	stepStart = time.Now()
 	//logger.Debug("CopyFileToDir lookup src", zap.Any("TaskId", taskId))
 	//close traverse 不然会定时器泄漏
 	dstEC.CloseStream(dstInfo.Inode)
 	dstEC.EvictStream(dstInfo.Inode)
-
 	srcEC.CloseStream(srcInfo.Inode)
 	srcEC.EvictStream(srcInfo.Inode)
-
+	srcStreamHasClosed = true
+	dstStreamHasClosed = true
+	if debugFunc() {
+		logger.Debug("CloseStream", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
+			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+		logger.Debug("CloseStream", zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstIno", dstInfo.Inode),
+			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	}
+	stepStart = time.Now()
 	//检查文件大小是否一致,这里不能用缓存
 	srcInfo2, err := sdk.LookupFileWithParentCache(srcPath)
 	if err != nil {
 		logger.Warn("LookupPath source to check failed", zap.Any("TaskId", taskId), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return err
 	}
+	if debugFunc() {
+		logger.Debug("LookupFileWithParentCache src", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo2.Inode),
+			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	}
+	stepStart = time.Now()
 	//logger.Debug("CopyFileToDir lookup dst", zap.Any("TaskId", taskId))
 	dstInfo2, err := dstSdk.LookupFileWithParentCache(gopath.Join(dstRoot, fileName))
 	if err != nil {
 		logger.Warn("LookupPath dst to check failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 		return err
+	}
+	if debugFunc() {
+		logger.Debug("LookupFileWithParentCache dst", zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstIno", dstInfo2.Inode),
+			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
 	}
 	if srcInfo2.Size != dstInfo2.Size {
 		return errors.New(fmt.Sprintf("Copy size not the same src[%s:%v]   dst[%s:%v]", srcPath, srcInfo2.Size,
@@ -299,7 +341,12 @@ func (sdk *CubeFSSdk) read(ino uint64, offset int, data []byte) (n int, err erro
 
 func (sdk *CubeFSSdk) write(ino, pino uint64, offset int, data []byte, flags int) (n int, err error) {
 	ec := sdk.ecApi.ec
-	ec.GetStreamer(ino).SetParentInode(pino)
+	streamer := ec.GetStreamer(ino)
+	if streamer == nil {
+		return 0, errors.New(fmt.Sprintf("Streamer for ino %v is nil", ino))
+	} else {
+		streamer.SetParentInode(pino)
+	}
 	checkFunc := func() error {
 		if !sdk.mwApi.mw.EnableQuota {
 			return nil
@@ -319,4 +366,8 @@ func (sdk *CubeFSSdk) write(ino, pino uint64, offset int, data []byte, flags int
 		return 0, err
 	}
 	return n, nil
+}
+
+func (sdk *CubeFSSdk) GetStreamerLen() (inoArray []uint64, total int) {
+	return sdk.ecApi.ec.GetStreamerLen()
 }

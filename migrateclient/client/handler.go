@@ -12,6 +12,7 @@ func (cli *MigrateClient) registerRouter() {
 	http.HandleFunc(proto.QueryClientMigratingTaskUrl, cli.queryClientMigratingTask)
 	http.HandleFunc(proto.EnableClientDebugUrl, cli.enableClientDebug)
 	http.HandleFunc(proto.DisableClientDebugUrl, cli.disableClientDebug)
+	http.HandleFunc(proto.QueryStreamerLenUrl, cli.queryStreamerLen)
 
 }
 
@@ -27,12 +28,20 @@ func (cli *MigrateClient) enableClientDebug(w http.ResponseWriter, r *http.Reque
 	writeResp(w, "worker enable debug mode", logger)
 }
 
+func (cli *MigrateClient) queryStreamerLen(w http.ResponseWriter, r *http.Request) {
+	logger := cli.Logger.With()
+	rsp := &proto.StreamerLenResp{}
+	rsp.Infos, rsp.Total = cli.getStreamerLen()
+	writeResp(w, rsp, logger)
+}
+
 func (cli *MigrateClient) queryClientMigratingTask(w http.ResponseWriter, r *http.Request) {
 	logger := cli.Logger.With()
 	tasks := cli.getAllMigrateTask()
 	rsp := &proto.MigratingTasksResp{}
 	rsp.MigratingTaskCnt = len(tasks)
 	rsp.MigratingTasks = tasks
+	rsp.PendingTaskCnt = len(cli.pendingTaskCh)
 	writeResp(w, rsp, logger)
 }
 

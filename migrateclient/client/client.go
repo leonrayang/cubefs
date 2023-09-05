@@ -130,6 +130,10 @@ func (cli *MigrateClient) getAllMigrateTask() (tasks []proto.Task) {
 	return
 }
 
+func (cli *MigrateClient) getStreamerLen() (infos []proto.StreamerInfo, total int) {
+	return cli.sdkManager.GetStreamerLen()
+}
+
 func (cli *MigrateClient) Register() error {
 	url := fmt.Sprintf("http://%s%s", cli.severAddr, proto.RegisterUrl)
 
@@ -390,4 +394,5 @@ func strToLevel(s string) (level sdkLog.Level) {
 
 func (cli *MigrateClient) CheckDebugEnable() bool {
 	return cli.enableDebug
+	//return true
 }
