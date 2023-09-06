@@ -60,8 +60,8 @@ func NewMigrateServer(cfg *config.Config) *MigrateServer {
 		port:            cfg.Port,
 		stopCh:          make(chan bool),
 		cliMap:          make(map[int32]*MigrateClient),
-		taskCh:          make(chan proto.Task, 819200),
-		reSendTaskCh:    make(chan []proto.Task, 12800),
+		taskCh:          make(chan proto.Task, 8192000),
+		reSendTaskCh:    make(chan []proto.Task, 128000),
 		migratingJobMap: make(map[string]*MigrateJob),
 		completeJobMap:  make(map[string]*MigrateJob),
 		failTasks:       make(map[string]proto.Task),
@@ -209,15 +209,14 @@ func (svr *MigrateServer) stopAllMigrateClients() {
 
 func (svr *MigrateServer) getMigratingTasks() (tasks []proto.Task) {
 	svr.mapMigratingJobLk.RLock()
-	cache := svr.migratingJobMap
-	svr.mapMigratingJobLk.RUnlock()
-	for _, job := range cache {
+	for _, job := range svr.migratingJobMap {
 		//避免重复统计，复合任务统计了，子任务就不应该被统计
 		if !job.hasSubMigrateJobs() && job.owner != nil {
 			continue
 		}
 		tasks = append(tasks, job.GetMigratingTasks()...)
 	}
+	svr.mapMigratingJobLk.RUnlock()
 	return
 }
 

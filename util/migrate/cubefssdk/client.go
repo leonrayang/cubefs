@@ -27,6 +27,10 @@ func newCubeFSSdk(volName, endpoint string, enableSummary bool, logger *zap.Logg
 		endpoint = "cfs.dg-test.wanyol.com"
 	}
 
+	if endpoint == "10.224.52.159:17010,10.48.82.229:17010,10.51.164.13:17010" {
+		endpoint = "cfs-bhw-starfire-ssd2.oppo.local"
+	}
+
 	sdk.mwApi, err = NewMetaApi(volName, endpoint, enableSummary, logger)
 	if err != nil {
 		return nil, err

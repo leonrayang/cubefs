@@ -104,12 +104,11 @@ func (job *MigrateJob) ResetCreateTime(time int64) {
 }
 
 func (job *MigrateJob) getMigratingTasksBySubJobs() (tasks []proto.Task) {
-	job.mapSubMigratingJobLk.Lock()
-	cache := job.subMigratingJob
-	job.mapSubMigratingJobLk.Unlock()
-	for _, sub := range cache {
+	job.mapSubMigratingJobLk.RLock()
+	for _, sub := range job.subMigratingJob {
 		tasks = append(tasks, sub.GetMigratingTasks()...)
 	}
+	job.mapSubMigratingJobLk.RUnlock()
 	return
 }
 
@@ -405,22 +404,20 @@ func (job *MigrateJob) getSubJobsId() (total, running, completed []string) {
 	if !job.hasSubMigrateJobs() {
 		return
 	}
-	job.mapSubCompleteJobLk.Lock()
-	cache := job.subCompleteMigrateJob
-	job.mapSubCompleteJobLk.Unlock()
-
-	for _, sub := range cache {
+	job.mapSubCompleteJobLk.RLock()
+	for _, sub := range job.subCompleteMigrateJob {
 		total = append(total, sub.JobId)
 		completed = append(completed, sub.JobId)
 	}
+	job.mapSubCompleteJobLk.RUnlock()
 
-	job.mapSubMigratingJobLk.Lock()
-	cache = job.subMigratingJob
-	job.mapSubMigratingJobLk.Unlock()
-	for _, sub := range cache {
+	job.mapSubMigratingJobLk.RLock()
+	for _, sub := range job.subMigratingJob {
 		total = append(total, sub.JobId)
 		running = append(running, sub.JobId)
 	}
+	job.mapSubMigratingJobLk.RUnlock()
+
 	return
 }
 func (job *MigrateJob) getProgress() (float64, int32) {
@@ -538,14 +535,13 @@ func (job *MigrateJob) hasFailSubMigrateStatus() bool {
 		return false
 	}
 	var failNum = 0
-	job.mapSubCompleteJobLk.Lock()
-	cache := job.subCompleteMigrateJob
-	job.mapSubCompleteJobLk.Unlock()
-	for _, sub := range cache {
+	job.mapSubCompleteJobLk.RLock()
+	for _, sub := range job.subCompleteMigrateJob {
 		if sub.GetJobStatus() == proto.JobFailed {
 			failNum += 1
 		}
 	}
+	job.mapSubCompleteJobLk.RUnlock()
 	return failNum > 0
 }
 
@@ -559,10 +555,9 @@ func (job *MigrateJob) getProgressBySubJobs() (float64, int32) {
 		initialNum int
 	)
 	//先看完成的
-	job.mapSubCompleteJobLk.Lock()
-	cache := job.subCompleteMigrateJob
-	job.mapSubCompleteJobLk.Unlock()
-	for _, sub := range cache {
+	job.mapSubCompleteJobLk.RLock()
+
+	for _, sub := range job.subCompleteMigrateJob {
 		subProgress, _ := sub.getProgress()
 		progress += subProgress
 		if sub.GetJobStatus() == proto.JobSuccess {
@@ -574,15 +569,14 @@ func (job *MigrateJob) getProgressBySubJobs() (float64, int32) {
 		//job.logger.Debug("getProgressBySubJobs is called", zap.Any("progress", subProgress), zap.Any("sub", sub.JobId),
 		//	zap.Any("SrcPath", sub.SrcPath), zap.Any("DstPath", sub.DstPath))
 	}
+	job.mapSubCompleteJobLk.RUnlock()
 	//再看正在进行迁移的
-	job.mapSubMigratingJobLk.Lock()
-	cache = job.subMigratingJob
-	job.mapSubMigratingJobLk.Unlock()
-	runningNum = len(cache)
+	job.mapSubMigratingJobLk.RLock()
+	runningNum = len(job.subMigratingJob)
 
 	total := float64(successNum + failNum + runningNum)
 
-	for _, sub := range cache {
+	for _, sub := range job.subMigratingJob {
 		subProgress, subStatus := sub.getProgress()
 		if subStatus == proto.JobInitial {
 			initialNum++
@@ -592,6 +586,7 @@ func (job *MigrateJob) getProgressBySubJobs() (float64, int32) {
 		//	zap.Any("SrcPath", sub.SrcPath), zap.Any("DstPath", sub.DstPath))
 		progress += subProgress
 	}
+	job.mapSubMigratingJobLk.RUnlock()
 	if initialNum > 0 {
 		return 0, proto.JobInitial
 	}
@@ -614,21 +609,21 @@ func (job *MigrateJob) getErrorMsg(failTaskReportLimit int) (errorMsg string) {
 		return job.ErrorMsg
 	}
 	if job.hasSubMigrateJobs() {
-		job.mapSubCompleteJobLk.Lock()
-		cache := job.subCompleteMigrateJob
-		job.mapSubCompleteJobLk.Unlock()
 		var count = 0
-		for _, sub := range cache {
+		job.mapSubCompleteJobLk.RLock()
+		for _, sub := range job.subCompleteMigrateJob {
 			failTasks := sub.GetFailedMigratingTask()
 			for index, task := range failTasks {
 				errorMsg += fmt.Sprintf("[%v]%v;", index, task.StringToReport())
 				count++
 				if count > failTaskReportLimit {
 					errorMsg += "too many errors!"
+					job.mapSubCompleteJobLk.RUnlock()
 					return
 				}
 			}
 		}
+		job.mapSubCompleteJobLk.RUnlock()
 
 	}
 	failTasks := job.GetFailedMigratingTask()

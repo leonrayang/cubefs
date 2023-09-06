@@ -96,7 +96,7 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	//获取源文件的inode信息。
 	//logger.Debug("CopyFileToDir lookup src", zap.Any("TaskId", taskId))
 	//这里查找文件应该缓存父目录的元数据
-	stepStart := time.Now()
+	//	stepStart := time.Now()
 	srcInfo, err := sdk.LookupFileWithParentCache(srcPath)
 	if err != nil {
 		logger.Warn("LookupPath source failed", zap.Any("TaskId", taskId), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
@@ -110,18 +110,19 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 			srcEC.EvictStream(srcInfo.Inode)
 		}
 	}()
-	if debugFunc() {
-		logger.Debug("OpenStream src", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
-			zap.Any("cost", time.Now().Sub(stepStart).String()))
-	}
+	//if debugFunc() {
+	//	logger.Debug("OpenStream src", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
+	//		zap.Any("cost", time.Now().Sub(stepStart).String()))
+	//}
 	//logger.Debug("CopyFileToDir IsSymlink", zap.Any("TaskId", taskId))
-	//如果是软连接
-	if proto.IsSymlink(srcInfo.Mode) {
-		return sdk.CopySymlinkToDir(srcPath, dstRoot, dstSdk, debugFunc)
-	}
-	stepStart = time.Now()
 	//获取源文件名
 	_, fileName := gopath.Split(gopath.Clean(srcPath))
+	//如果是软连接
+	if proto.IsSymlink(srcInfo.Mode) {
+		return sdk.CopySymlinkToDir(srcInfo, srcPath, dstRoot, dstSdk, debugFunc, taskId, copyLogger, overWrite, address)
+	}
+	//	stepStart = time.Now()
+
 	//获取目标路径信息
 	//logger.Debug("CopyFileToDir lookup dst", zap.Any("TaskId", taskId))
 	dstParentInfo, err := dstSdk.LookupPathWithCache(dstRoot)
@@ -188,21 +189,21 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	}
 	//logger.Debug("CopyFileToDir GetExtents", zap.Any("TaskId", taskId))
 	//
-	if debugFunc() {
-		logger.Debug("OpenStream dst", zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstIno", dstInfo.Inode),
-			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
-	}
-	stepStart = time.Now()
+	//if debugFunc() {
+	//	logger.Debug("OpenStream dst", zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstIno", dstInfo.Inode),
+	//		zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	//}
+	//stepStart = time.Now()
 	_, _, eks, err = srcMW.GetExtents(srcInfo.Inode)
-	if debugFunc() {
-		logger.Debug("GetExtents", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
-			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
-	}
+	//if debugFunc() {
+	//	logger.Debug("GetExtents", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
+	//		zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	//}
 	if err != nil {
 		logger.Error("GetExtents for source failed", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return errors.New(fmt.Sprintf("GetExtents for source failed %s vol %s[%s]", srcPath, sdk.volName, err.Error()))
 	}
-	stepStart = time.Now()
+	//stepStart = time.Now()
 	//logger.Debug("CopyFileToDir copy extents", zap.Any("TaskId", taskId))
 	for _, ek := range eks {
 		size := ek.Size
@@ -234,11 +235,11 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 		}
 		util.Free(buf)
 	}
-	if debugFunc() {
-		logger.Debug("CopyEks", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
-			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
-	}
-	stepStart = time.Now()
+	//if debugFunc() {
+	//	logger.Debug("CopyEks", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
+	//		zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	//}
+	//stepStart = time.Now()
 	//logger.Debug("CopyFileToDir lookup src", zap.Any("TaskId", taskId))
 	//close traverse 不然会定时器泄漏
 	dstEC.CloseStream(dstInfo.Inode)
@@ -247,34 +248,34 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	srcEC.EvictStream(srcInfo.Inode)
 	srcStreamHasClosed = true
 	dstStreamHasClosed = true
-	if debugFunc() {
-		logger.Debug("CloseStream", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
-			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
-		logger.Debug("CloseStream", zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstIno", dstInfo.Inode),
-			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
-	}
-	stepStart = time.Now()
+	//if debugFunc() {
+	//	logger.Debug("CloseStream", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo.Inode),
+	//		zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	//	logger.Debug("CloseStream", zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstIno", dstInfo.Inode),
+	//		zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	//}
+	//stepStart = time.Now()
 	//检查文件大小是否一致,这里不能用缓存
 	srcInfo2, err := sdk.LookupFileWithParentCache(srcPath)
 	if err != nil {
 		logger.Warn("LookupPath source to check failed", zap.Any("TaskId", taskId), zap.Any("srcVol", sdk.volName), zap.Any("err", err))
 		return err
 	}
-	if debugFunc() {
-		logger.Debug("LookupFileWithParentCache src", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo2.Inode),
-			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
-	}
-	stepStart = time.Now()
+	//if debugFunc() {
+	//	logger.Debug("LookupFileWithParentCache src", zap.Any("srcPath", srcPath), zap.Any("srcIno", srcInfo2.Inode),
+	//		zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	//}
+	//stepStart = time.Now()
 	//logger.Debug("CopyFileToDir lookup dst", zap.Any("TaskId", taskId))
 	dstInfo2, err := dstSdk.LookupFileWithParentCache(gopath.Join(dstRoot, fileName))
 	if err != nil {
 		logger.Warn("LookupPath dst to check failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 		return err
 	}
-	if debugFunc() {
-		logger.Debug("LookupFileWithParentCache dst", zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstIno", dstInfo2.Inode),
-			zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
-	}
+	//if debugFunc() {
+	//	logger.Debug("LookupFileWithParentCache dst", zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstIno", dstInfo2.Inode),
+	//		zap.Any("cost", time.Now().Sub(stepStart).String()), zap.Any("from start", time.Now().Sub(start).String()))
+	//}
 	if srcInfo2.Size != dstInfo2.Size {
 		return errors.New(fmt.Sprintf("Copy size not the same src[%s:%v]   dst[%s:%v]", srcPath, srcInfo2.Size,
 			gopath.Join(dstRoot, fileName), dstInfo2.Size))
@@ -288,34 +289,77 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	return nil
 }
 
-func (sdk *CubeFSSdk) CopySymlinkToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, debugFunc EnableDebugMsg) (err error) {
+func (sdk *CubeFSSdk) CopySymlinkToDir(srcInfo *proto.InodeInfo, srcPath, dstRoot string, dstSdk *CubeFSSdk,
+	debugFunc EnableDebugMsg, taskId string, copyLogger *zap.Logger, overWrite bool, address string) (err error) {
 	logger := sdk.logger
-	//获取源文件的inode信息。
-	srcInfo, err := sdk.LookupPath(srcPath)
-	if err != nil {
-		logger.Warn("LookupPath source failed", zap.Any("err", err))
-		return err
-	}
-	//获取源文件名
+	var (
+		dstInfo *proto.InodeInfo
+		start   = time.Now()
+		//stepStart = time.Now()
+	)
 	_, fileName := gopath.Split(gopath.Clean(srcPath))
-	//获取目标路径信息
-	dstParentInfo, err := dstSdk.LookupPath(dstRoot)
+	//setpStart = time.Now()
+	dstParentInfo, err := dstSdk.LookupPathWithCache(dstRoot)
 	if err != nil {
-		logger.Error("LookupPath target failed", zap.Any("err", err))
+		logger.Error("LookupPathWithCache target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
 		return err
 	}
-	//创建目标文件
-	dstInfo, err := dstSdk.CreateSymlink(dstParentInfo.Inode, fileName, srcInfo.Mode, srcInfo.Uid, srcInfo.Gid, srcInfo.Target)
-	if err != nil {
-		if err != syscall.EEXIST {
-			logger.Error("Create target failed", zap.Any("dstRoot", dstRoot), zap.Any("err", err))
-			return errors.New(fmt.Sprintf("Create target failed, dstRoot %s[%s]", dstRoot, err.Error()))
-		}
-		dstInfo, err = dstSdk.LookupPath(gopath.Join(dstRoot, fileName))
+	//logger.Error("CopySymlinkToDir LookupPathWithCache ", zap.Any("cost", zap.Any("cost", time.Now().Sub(setpStart).String())))
+	//logger.Debug("CopySymlinkToDir", zap.Any("srcPath", srcPath))
+
+	//如果目标文件已经存在，则要删除
+	if ino, isExist := dstSdk.PathIsExistWithIno(dstParentInfo.Inode, gopath.Join(dstRoot, fileName)); isExist {
+		//logger.Debug("CopyFileToDir open exist", zap.Any("TaskId", taskId))
+		//如果目标文件已经存在，则判断modifyTime是否一致，一致则忽略，不一致则告警
+		dstInfo, err = dstSdk.getInodeInfo(ino)
 		if err != nil {
-			logger.Error("Open target failed", zap.Any("err", err))
-			return errors.New(fmt.Sprintf("Open exist target failed, dstRoot %s[%s]", dstRoot, err.Error()))
+			logger.Error("Open target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName), zap.Any("err", err))
+			return errors.New(fmt.Sprintf("Open exist target failed, dstRoot %s vol %s [%s]", dstRoot, dstSdk.volName, err.Error()))
 		}
+		if overWrite == false {
+			if dstInfo.ModifyTime == srcInfo.ModifyTime {
+				return nil
+			} else {
+				//记录到task的日志
+				if copyLogger != nil {
+					copyLogger.Debug("modify time not the same,please check", zap.Any("fileName", fileName))
+				}
+
+				return errors.New(fmt.Sprintf("modify time not the same,please check file list %v on %v",
+					taskId, address))
+			}
+		} else {
+			//setpStart = time.Now()
+			if err = dstSdk.DeleteFile(dstParentInfo.Inode, fileName); err != nil {
+				logger.Error("Delete exist target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName),
+					zap.Any("dstFile", gopath.Join(dstRoot, fileName)), zap.Any("err", err),
+					zap.Any("dstParentInfo.Inode", dstParentInfo.Inode), zap.Any("ino", ino))
+				return err
+			}
+			//logger.Error("CopySymlinkToDir DeleteFile ", zap.Any("cost", zap.Any("cost", time.Now().Sub(setpStart).String())))
+			//dstEC.OpenStream(dstInfo.Inode)
+			//defer func() {
+			//	dstEC.CloseStream(dstInfo.Inode)
+			//	dstEC.EvictStream(dstInfo.Inode)
+			//}()
+			////logger.Debug("CopyFileToDir DeleteFile", zap.Any("TaskId", taskId))
+			//if err = dstSdk.Truncate(dstParentInfo.Inode, ino); err != nil {
+			//	logger.Error("Delete exist target failed", zap.Any("TaskId", taskId), zap.Any("dstVol", dstSdk.volName),
+			//		zap.Any("dstFile", gopath.Join(dstRoot, fileName)), zap.Any("err", err),
+			//		zap.Any("dstParentInfo.Inode", dstParentInfo.Inode), zap.Any("ino", ino))
+			//	return err
+			//}
+			//logger.Error("delete old file success", zap.Any("file", gopath.Join(dstRoot, fileName)))
+		}
+	}
+
+	//创建目标文件
+	//setpStart = time.Now()
+	dstInfo, err = dstSdk.CreateSymlink(dstParentInfo.Inode, fileName, srcInfo.Mode, srcInfo.Uid, srcInfo.Gid, srcInfo.Target)
+	//logger.Error("CopySymlinkToDir CreateSymlink ", zap.Any("cost", zap.Any("cost", time.Now().Sub(setpStart).String())))
+	if err != nil {
+		logger.Error("CreateSymlink failed", zap.Any("err", err))
+		return errors.New(fmt.Sprintf("CreateSymlink failed, dstRoot %s[%s]", dstRoot, err.Error()))
 	}
 	if string(dstInfo.Target) != string(srcInfo.Target) {
 		err = errors.New(fmt.Sprintf("Src[%v]target[%v]not equal dst[%v]target[%v]",
@@ -325,7 +369,8 @@ func (sdk *CubeFSSdk) CopySymlinkToDir(srcPath, dstRoot string, dstSdk *CubeFSSd
 	}
 	if debugFunc() {
 		logger.Debug("Copy Symlink success", zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName),
-			zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstVol", dstSdk.volName))
+			zap.Any("dstPath", gopath.Join(dstRoot, fileName)), zap.Any("dstVol", dstSdk.volName),
+			zap.Any("cost", time.Now().Sub(start).String()))
 	}
 
 	return nil
