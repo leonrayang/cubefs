@@ -30,15 +30,15 @@ type MigrateServer struct {
 	Logger          *zap.Logger
 	port            int
 	stopCh          chan bool
-	cliMap          map[int32]*MigrateClient
+	cliMap          sync.Map
 	taskCh          chan proto.Task
 	reSendTaskCh    chan []proto.Task
 	migratingJobMap map[string]*MigrateJob
 	completeJobMap  map[string]*MigrateJob
 	failTasks       map[string]proto.Task
 	//successTasks              map[string]proto.Task
-	routerMap                 map[string]*falconroute.Router
-	mapCliLk                  sync.RWMutex
+	routerMap map[string]*falconroute.Router
+	//mapCliLk                  sync.RWMutex
 	mapMigratingJobLk         sync.RWMutex
 	mapCompleteJobLk          sync.RWMutex
 	mapTaskCacheLk            sync.RWMutex
@@ -57,9 +57,9 @@ type MigrateServer struct {
 
 func NewMigrateServer(cfg *config.Config) *MigrateServer {
 	svr := &MigrateServer{
-		port:            cfg.Port,
-		stopCh:          make(chan bool),
-		cliMap:          make(map[int32]*MigrateClient),
+		port:   cfg.Port,
+		stopCh: make(chan bool),
+		//cliMap:          make(map[int32]*MigrateClient),
 		taskCh:          make(chan proto.Task, 8192000),
 		reSendTaskCh:    make(chan []proto.Task, 128000),
 		migratingJobMap: make(map[string]*MigrateJob),
@@ -149,62 +149,100 @@ func (svr *MigrateServer) scheduleToCheckMigrateClients() {
 }
 
 func (svr *MigrateServer) getMigrateClient(nodeId int32) *MigrateClient {
-	svr.mapCliLk.RLock()
-	defer svr.mapCliLk.RUnlock()
-	return svr.cliMap[nodeId]
+	//svr.mapCliLk.RLock()
+	//defer svr.mapCliLk.RUnlock()
+	value, ok := svr.cliMap.Load(nodeId)
+	if ok {
+		return value.(*MigrateClient)
+	} else {
+		return nil
+	}
 }
 
 func (svr *MigrateServer) getAllMigrateClientInfo() []proto.MigrateClientInfo {
-	svr.mapCliLk.RLock()
-	defer svr.mapCliLk.RUnlock()
+	//svr.mapCliLk.RLock()
+	//defer svr.mapCliLk.RUnlock()
 	clients := make([]proto.MigrateClientInfo, 0)
-	for _, cli := range svr.cliMap {
+	svr.cliMap.Range(func(key, value interface{}) bool {
+		cli := value.(*MigrateClient)
 		clients = append(clients, proto.MigrateClientInfo{
 			NodeId:       cli.NodeId,
 			Addr:         cli.Addr,
-			JobCnt:       cli.jobCnt,
+			JobCnt:       int(atomic.LoadInt32(&cli.jobCnt)),
 			IdleCnt:      int(atomic.LoadInt32(&cli.idleCnt)),
 			ReporterTime: cli.ReporterTime.Format("2006-01-02 15:04:05"),
 		})
-	}
+		return true
+	})
+	//for _, cli := range svr.cliMap {
+	//	clients = append(clients, proto.MigrateClientInfo{
+	//		NodeId:       cli.NodeId,
+	//		Addr:         cli.Addr,
+	//		JobCnt:       int(atomic.LoadInt32(&cli.jobCnt)),
+	//		IdleCnt:      int(atomic.LoadInt32(&cli.idleCnt)),
+	//		ReporterTime: cli.ReporterTime.Format("2006-01-02 15:04:05"),
+	//	})
+	//}
 	return clients
 }
 
 func (svr *MigrateServer) addMigrateClient(mc *MigrateClient) {
-	svr.mapCliLk.Lock()
-	defer svr.mapCliLk.Unlock()
-	svr.cliMap[mc.NodeId] = mc
+	logger := svr.Logger
+	logger.Debug("addMigrateClient start", zap.Any("worker", mc.NodeId))
+	//svr.mapCliLk.Lock()
+	//defer svr.mapCliLk.Unlock()
+	//svr.cliMap[mc.NodeId] = mc
+	svr.cliMap.Store(mc.NodeId, mc)
+	logger.Debug("addMigrateClient end", zap.Any("worker", mc.NodeId))
 }
 
 const MigrateClientTimeout = proto.FetchTaskInterval * 40
 
 func (svr *MigrateServer) removeInactiveMigrateClient() {
-	svr.mapCliLk.Lock()
-	defer svr.mapCliLk.Unlock()
 	logger := svr.Logger
-	for _, cli := range svr.cliMap {
+	logger.Debug("removeInactiveMigrateClient start")
+
+	svr.cliMap.Range(func(key, value interface{}) bool {
+		cli := value.(*MigrateClient)
 		//更新上报时间
+		logger.Debug("removeInactiveMigrateClient check", zap.String("client", cli.String()))
 		if cli.isHandling() {
 			cli.ReporterTime = time.Now()
 		} else {
 			if time.Now().Sub(cli.ReporterTime) > MigrateClientTimeout {
 				//将client正在处理的任务重新分配
 				cli.close()
-				delete(svr.cliMap, cli.NodeId)
+				svr.cliMap.Delete(cli.NodeId)
 				logger.Error("MigrateClient is inactive, remove", zap.String("client", cli.String()))
 			}
 		}
+		return true
+	})
 
-	}
+	//for _, cli := range svr.cliMap {
+	//	//更新上报时间
+	//	logger.Debug("removeInactiveMigrateClient check", zap.String("client", cli.String()))
+	//	if cli.isHandling() {
+	//		cli.ReporterTime = time.Now()
+	//	} else {
+	//		if time.Now().Sub(cli.ReporterTime) > MigrateClientTimeout {
+	//			//将client正在处理的任务重新分配
+	//			cli.close()
+	//			delete(svr.cliMap, cli.NodeId)
+	//			logger.Error("MigrateClient is inactive, remove", zap.String("client", cli.String()))
+	//		}
+	//	}
+	//
+	//}
+	logger.Debug("removeInactiveMigrateClient complete")
 }
 
 func (svr *MigrateServer) stopAllMigrateClients() {
-	svr.mapCliLk.Lock()
-	defer svr.mapCliLk.Unlock()
-
-	for _, cli := range svr.cliMap {
+	svr.cliMap.Range(func(key, value interface{}) bool {
+		cli := value.(*MigrateClient)
 		cli.close()
-	}
+		return true
+	})
 }
 
 func (svr *MigrateServer) getMigratingTasks() (tasks []proto.Task) {
@@ -502,11 +540,11 @@ func (svr *MigrateServer) persistWorkerMap() {
 	//start := time.Now()
 	logger := svr.Logger.With()
 	clients := make([]proto.WorkerMeta, 0)
-	svr.mapCliLk.RLock()
-	for _, cli := range svr.cliMap {
+	svr.cliMap.Range(func(key, value interface{}) bool {
+		cli := value.(*MigrateClient)
 		clients = append(clients, cli.dump())
-	}
-	svr.mapCliLk.RUnlock()
+		return true
+	})
 	//persist to meta file
 	metaFile := path.Join(svr.metaDir, WorkerMeta)
 	tmpFile := path.Join(svr.metaDir, fmt.Sprintf("%s.tmp", WorkerMeta))

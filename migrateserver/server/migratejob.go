@@ -15,20 +15,20 @@ import (
 )
 
 type MigrateJob struct {
-	SrcPath               string
-	DstPath               string
-	JobId                 string
-	logger                *zap.Logger
-	CreateTime            int64
-	failedTask            map[string]proto.Task //失败的任务，用户定位
-	migratingTaskCnt      atomic.Int64
-	migratingTask         map[string]proto.Task //job的正在进行的迁移任务缓存
-	mapMigratingLk        sync.RWMutex
+	SrcPath          string
+	DstPath          string
+	JobId            string
+	logger           *zap.Logger
+	CreateTime       int64
+	failedTask       map[string]proto.Task //失败的任务，用户定位
+	migratingTaskCnt atomic.Int64
+	migratingTask    sync.Map //job的正在进行的迁移任务缓存
+	//mapMigratingLk        sync.RWMutex
 	mapFailedLk           sync.RWMutex
 	completeSize          atomic.Uint64
 	completeTaskNum       atomic.Uint64
 	totalTaskNum          atomic.Uint64
-	TotalSize             atomic.Uint64
+	TotalSize             atomic.Uint64 //遗留代码，目前没用
 	retryCh               chan proto.Task
 	WorkMode              int
 	SrcCluster            string
@@ -52,14 +52,14 @@ type MigrateJob struct {
 func NewMigrateJob(srcPath, srcCluster, dstPath, dstCluster string, workMode,
 	SummaryGoroutineLimit int, logger *zap.Logger, overWrite bool) *MigrateJob {
 	job := &MigrateJob{
-		SrcPath:               path.Clean(srcPath),
-		DstPath:               path.Clean(dstPath),
-		SrcCluster:            srcCluster,
-		DstCluster:            dstCluster,
-		JobId:                 GenerateUUID(),
-		CreateTime:            time.Now().Unix(),
-		failedTask:            make(map[string]proto.Task),
-		migratingTask:         make(map[string]proto.Task),
+		SrcPath:    path.Clean(srcPath),
+		DstPath:    path.Clean(dstPath),
+		SrcCluster: srcCluster,
+		DstCluster: dstCluster,
+		JobId:      GenerateUUID(),
+		CreateTime: time.Now().Unix(),
+		failedTask: make(map[string]proto.Task),
+		//migratingTask:         make(map[string]proto.Task),
 		retryCh:               make(chan proto.Task, 1024000),
 		WorkMode:              workMode,
 		SummaryGoroutineLimit: SummaryGoroutineLimit,
@@ -87,11 +87,11 @@ func (job *MigrateJob) GetMigratingTasks() (tasks []proto.Task) {
 	if job.hasSubMigrateJobs() {
 		return job.getMigratingTasksBySubJobs()
 	}
-	job.mapMigratingLk.RLock()
-	for _, task := range job.migratingTask {
+	job.migratingTask.Range(func(key, value interface{}) bool {
+		task := value.(proto.Task)
 		tasks = append(tasks, task)
-	}
-	job.mapMigratingLk.RUnlock()
+		return true
+	})
 	return
 }
 
@@ -113,16 +113,16 @@ func (job *MigrateJob) getMigratingTasksBySubJobs() (tasks []proto.Task) {
 }
 
 func (job *MigrateJob) addMigratingTask(task proto.Task) {
-	job.mapMigratingLk.Lock()
-	defer job.mapMigratingLk.Unlock()
-
 	job.addTotalSize(task.MigrateSize)
 	job.totalTaskNum.Add(1)
 	key := task.Key()
-	job.migratingTask[key] = task
+	job.migratingTask.Store(key, task)
 }
 
 func (job *MigrateJob) delMigratingTask(task proto.Task) {
+	if !job.taskIsMigrating(task) {
+		return
+	}
 	//重试的task不减少次数，不然任务可能提前结束，但是需要从migratingTask删除，不然
 	//再次分配到这个client可能就无法处理
 	if task.IsRetrying == false {
@@ -132,11 +132,7 @@ func (job *MigrateJob) delMigratingTask(task proto.Task) {
 			job.logger.Warn("cannot dec job cnt if cnt == 0 ", zap.Any("task", task.String()))
 		}
 	}
-	job.mapMigratingLk.Lock()
-	defer job.mapMigratingLk.Unlock()
-
-	key := task.Key()
-	delete(job.migratingTask, key)
+	job.migratingTask.Delete(task.Key())
 }
 
 func (job *MigrateJob) saveFailedMigratingTask(task proto.Task) {
@@ -172,6 +168,9 @@ func (job *MigrateJob) GetJobStatus() int32 {
 }
 
 func (job *MigrateJob) updateCompleteSize(task proto.Task) {
+	if !job.taskIsMigrating(task) {
+		return
+	}
 	job.completeSize.Add(task.MigrateSize)
 	if job.owner != nil {
 		job.owner.updateCompleteSize(task)
@@ -369,14 +368,9 @@ func (job *MigrateJob) sendTask(task proto.Task, svr *MigrateServer) {
 }
 
 func (job *MigrateJob) taskIsMigrating(task proto.Task) bool {
-	job.mapMigratingLk.Lock()
-	defer job.mapMigratingLk.Unlock()
-
-	if _, ok := job.migratingTask[task.Key()]; ok {
+	if _, ok := job.migratingTask.Load(task.Key()); ok {
 		job.logger.Debug("task is already migrating, no need send again", zap.String("task", task.String()))
-		return true
 	}
-
 	return false
 }
 
@@ -433,6 +427,14 @@ func (job *MigrateJob) getProgress() (float64, int32) {
 	//有可能是空文件夹，或者是没有统计到容量的新目录，还是可以返回job的状态
 	if job.GetJobStatus() == proto.JobInitial {
 		return float64(0), proto.JobInitial
+	}
+	//可能是重启前的
+	if job.GetJobStatus() == proto.JobFailed {
+		if job.TotalSize.Load() == 0 {
+			return float64(0), proto.JobFailed
+		} else {
+			return float64(job.completeSize.Load()) / float64(job.TotalSize.Load()), proto.JobFailed
+		}
 	}
 	//if job.TotalSize.Load() == 0 {
 	//	job.logger.Debug("totalMigrate cannot be zero")
@@ -695,6 +697,7 @@ func (svr *MigrateServer) restoreMigrateJob(jobMeta proto.MigrateJobMeta) (err e
 		if jobMeta.Status == proto.JobFailed {
 			job.ErrorMsg = jobMeta.ErrorMsg
 		}
+		svr.Logger.Info("restoreMigrateJob", zap.Any("jobMeta", jobMeta))
 		svr.saveJobProcess(job)
 		return
 	}

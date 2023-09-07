@@ -5,6 +5,7 @@ import (
 	"github.com/cubefs/cubefs/util/migrate/proto"
 	"go.uber.org/zap"
 	"net/http"
+	"sync/atomic"
 )
 
 func (cli *MigrateClient) registerRouter() {
@@ -12,7 +13,7 @@ func (cli *MigrateClient) registerRouter() {
 	http.HandleFunc(proto.QueryClientMigratingTaskUrl, cli.queryClientMigratingTask)
 	http.HandleFunc(proto.EnableClientDebugUrl, cli.enableClientDebug)
 	http.HandleFunc(proto.DisableClientDebugUrl, cli.disableClientDebug)
-	http.HandleFunc(proto.QueryStreamerLenUrl, cli.queryStreamerLen)
+	//http.HandleFunc(proto.QueryStreamerLenUrl, cli.queryStreamerLen)
 
 }
 
@@ -28,20 +29,21 @@ func (cli *MigrateClient) enableClientDebug(w http.ResponseWriter, r *http.Reque
 	writeResp(w, "worker enable debug mode", logger)
 }
 
-func (cli *MigrateClient) queryStreamerLen(w http.ResponseWriter, r *http.Request) {
-	logger := cli.Logger.With()
-	rsp := &proto.StreamerLenResp{}
-	rsp.Infos, rsp.Total = cli.getStreamerLen()
-	writeResp(w, rsp, logger)
-}
+//func (cli *MigrateClient) queryStreamerLen(w http.ResponseWriter, r *http.Request) {
+//	logger := cli.Logger.With()
+//	rsp := &proto.StreamerLenResp{}
+//	rsp.Infos, rsp.Total = cli.getStreamerLen()
+//	writeResp(w, rsp, logger)
+//}
 
 func (cli *MigrateClient) queryClientMigratingTask(w http.ResponseWriter, r *http.Request) {
 	logger := cli.Logger.With()
 	tasks := cli.getAllMigrateTask()
 	rsp := &proto.MigratingTasksResp{}
-	rsp.MigratingTaskCnt = len(tasks)
+	rsp.MigratingTaskCnt = int(atomic.LoadInt32(&cli.curJobCnt))
 	rsp.MigratingTasks = tasks
 	rsp.PendingTaskCnt = len(cli.pendingTaskCh)
+	rsp.MaxJobCnt = int(atomic.LoadInt32(&cli.maxJobCnt))
 	writeResp(w, rsp, logger)
 }
 

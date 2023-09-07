@@ -26,6 +26,7 @@ const (
 	EnableClientDebugUrl        = "/enableClientDebug"
 	DisableClientDebugUrl       = "/disableClientDebug"
 	QueryStreamerLenUrl         = "/queryStreamerLen"
+	AdjustWorkerJobCntUrl       = "/adjustWorkerJobCnt"
 )
 
 type HttpReply struct {
@@ -100,7 +101,7 @@ func (t *Task) StringToReport() string {
 }
 
 func (t *Task) Key() string {
-	return fmt.Sprintf("%s_%s", t.JobId, t.TaskId)
+	return t.TaskId
 }
 
 func (t *Task) GenerateTaskID() string {
@@ -111,7 +112,7 @@ func (t *Task) GenerateTaskID() string {
 
 type RegisterReq struct {
 	Addr   string
-	JobCnt int
+	JobCnt int32
 }
 
 func (r *RegisterReq) String() string {
@@ -137,8 +138,8 @@ type FetchTasksReq struct {
 }
 
 type FetchTasksResp struct {
-	Tasks []Task
-	//JobCnt int //todo:之后可以提供接口动态调整
+	Tasks  []Task
+	JobCnt int32
 }
 
 type MoveLocalFilesReq struct {
@@ -153,8 +154,9 @@ type MigrateDetailsResp struct {
 	FailedTasks       []Task
 	MigratingJobs     []MigratingJobInfo
 	MigrateClients    []MigrateClientInfo
-	MigratingTasksNum int64
+	MigratingTasksNum int
 	TaskChanPending   int
+	ResendChanPending int
 }
 
 type MigratingJobInfo struct {
@@ -246,9 +248,10 @@ type MigrateUserReq struct {
 }
 
 type MigratingTasksResp struct {
-	MigratingTaskCnt int    `json:"taskCnt"`
-	MigratingTasks   []Task `json:"migratingTasks"`
-	PendingTaskCnt   int    `json:"pendingTaskCnt"`
+	CurJobCnt      int    `json:"curJobCnt"`
+	MigratingTasks []Task `json:"migratingTasks"`
+	PendingTaskCnt int    `json:"pendingTaskCnt"`
+	MaxJobCnt      int    `json:"maxJobCnt"`
 }
 
 type StreamerInfo struct {
@@ -270,8 +273,12 @@ type RetryMigratingJobReq struct {
 	JobId string `json:"jobId"`
 }
 
+type AdjustWorkerCntReq struct {
+	MaxCnt int32 `json:"maxCnt"`
+}
+
 type WorkerMeta struct {
-	JobCnt  int //支持最大的任务数
+	JobCnt  int32 //支持最大的任务数
 	IdleCnt int
 	NodeId  int32  //server分配的id
 	Addr    string //client地址

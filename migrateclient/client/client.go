@@ -39,7 +39,7 @@ type MigrateClient struct {
 	copyQueueLimit      int
 	sdkManager          *cubefssdk.SdkManager
 	port                int
-	migratingTaskMap    map[string]proto.Task
+	migratingTaskMap    sync.Map
 	mapMigratingTaskLk  sync.RWMutex
 	lastTaskExecuteTime time.Time
 	enableDebug         bool
@@ -50,19 +50,19 @@ type MigrateClient struct {
 
 func NewMigrateClient(cfg *config.Config) *MigrateClient {
 	cli := &MigrateClient{
-		routerMap:           make(map[string]*falconroute.Router),
-		severAddr:           cfg.Server,
-		stopCh:              make(chan bool),
-		pendingTaskCh:       make(chan proto.Task, 102400),
-		successTaskCh:       make(chan proto.Task, 102400),
-		failedTaskCh:        make(chan proto.Task, 102400),
-		extraTaskCh:         make(chan proto.Task, 102400),
-		maxJobCnt:           int32(cfg.JobCnt),
-		curJobCnt:           0,
-		copyGoroutineLimit:  cfg.CopyGoroutineLimit,
-		copyQueueLimit:      cfg.CopyQueueLimit,
-		port:                cfg.Port,
-		migratingTaskMap:    make(map[string]proto.Task),
+		routerMap:          make(map[string]*falconroute.Router),
+		severAddr:          cfg.Server,
+		stopCh:             make(chan bool),
+		pendingTaskCh:      make(chan proto.Task, 102400),
+		successTaskCh:      make(chan proto.Task, 102400),
+		failedTaskCh:       make(chan proto.Task, 102400),
+		extraTaskCh:        make(chan proto.Task, 102400),
+		maxJobCnt:          int32(cfg.JobCnt),
+		curJobCnt:          0,
+		copyGoroutineLimit: cfg.CopyGoroutineLimit,
+		copyQueueLimit:     cfg.CopyQueueLimit,
+		port:               cfg.Port,
+		//migratingTaskMap:    make(map[string]proto.Task),
 		lastTaskExecuteTime: time.Now(),
 		enableDebug:         false,
 		tinyFactor:          cfg.TinyFactor,
@@ -109,37 +109,42 @@ func NewMigrateClient(cfg *config.Config) *MigrateClient {
 	return cli
 }
 func (cli *MigrateClient) addMigrateTask(task proto.Task) {
-	cli.mapMigratingTaskLk.Lock()
-	defer cli.mapMigratingTaskLk.Unlock()
-	cli.migratingTaskMap[task.TaskId] = task
-	atomic.StoreInt32(&cli.curJobCnt, int32(len(cli.migratingTaskMap)))
+	cli.migratingTaskMap.Store(task.TaskId, task)
+	atomic.StoreInt32(&cli.curJobCnt, cli.getMigratingTaskCnt())
+}
+
+func (cli *MigrateClient) getMigratingTaskCnt() int32 {
+	var cnt int32 = 0
+	cli.migratingTaskMap.Range(func(key, value interface{}) bool {
+		cnt++
+		return true
+	})
+	return cnt
 }
 
 func (cli *MigrateClient) deleteMigrateTask(task proto.Task) {
-	cli.mapMigratingTaskLk.Lock()
-	defer cli.mapMigratingTaskLk.Unlock()
-	delete(cli.migratingTaskMap, task.TaskId)
-	atomic.StoreInt32(&cli.curJobCnt, int32(len(cli.migratingTaskMap)))
+	cli.migratingTaskMap.Delete(task.TaskId)
+	atomic.StoreInt32(&cli.curJobCnt, cli.getMigratingTaskCnt())
 }
 
 func (cli *MigrateClient) getAllMigrateTask() (tasks []proto.Task) {
-	cli.mapMigratingTaskLk.Lock()
-	defer cli.mapMigratingTaskLk.Unlock()
-	for _, task := range cli.migratingTaskMap {
+	cli.migratingTaskMap.Range(func(key, value interface{}) bool {
+		task := value.(proto.Task)
 		tasks = append(tasks, task)
-	}
+		return true
+	})
 	return
 }
 
-func (cli *MigrateClient) getStreamerLen() (infos []proto.StreamerInfo, total int) {
-	return cli.sdkManager.GetStreamerLen()
-}
+//func (cli *MigrateClient) getStreamerLen() (infos []proto.StreamerInfo, total int) {
+//	return cli.sdkManager.GetStreamerLen()
+//}
 
 func (cli *MigrateClient) Register() error {
 	url := fmt.Sprintf("http://%s%s", cli.severAddr, proto.RegisterUrl)
 
 	logger := cli.Logger
-	req := &proto.RegisterReq{JobCnt: int(cli.maxJobCnt)}
+	req := &proto.RegisterReq{JobCnt: atomic.LoadInt32(&cli.maxJobCnt)}
 	logger.Debug("register req", zap.String("url", url), zap.Any("req", req))
 	resp := &proto.RegisterResp{}
 	err := util.DoPostWithJson(url, req, resp, logger)
@@ -195,7 +200,7 @@ func (cli *MigrateClient) execute() {
 		case task := <-cli.pendingTaskCh:
 			for {
 				//处理分配的任务,curJobCnt跟map数目对齐
-				if atomic.LoadInt32(&cli.curJobCnt) <= cli.maxJobCnt {
+				if atomic.LoadInt32(&cli.curJobCnt) <= atomic.LoadInt32(&cli.maxJobCnt) {
 					logger.Debug("addMigrateTask ", zap.Any("task", task))
 					cli.addMigrateTask(task)
 					go func(t proto.Task) {
@@ -241,12 +246,12 @@ func (cli *MigrateClient) scheduleFetchTasks() {
 		//if idleCnt < 0 {
 		//	idleCnt = 0
 		//}
-		idleCnt := cli.maxJobCnt - atomic.LoadInt32(&cli.curJobCnt)
+		idleCnt := atomic.LoadInt32(&cli.maxJobCnt) - atomic.LoadInt32(&cli.curJobCnt)
 		if idleCnt < 0 {
 			idleCnt = 0
 		}
 		if cli.CheckDebugEnable() {
-			logger.Warn("scheduleFetchTasks", zap.Any("maxJobCnt", cli.maxJobCnt),
+			logger.Warn("scheduleFetchTasks", zap.Any("maxJobCnt", atomic.LoadInt32(&cli.maxJobCnt)),
 				zap.Any("curJobCnt", atomic.LoadInt32(&cli.curJobCnt)), zap.Any("idleCnt", idleCnt), zap.Any("pending", len(cli.pendingTaskCh)))
 		}
 		successTasks := cli.getSuccessTasks()
@@ -258,6 +263,7 @@ func (cli *MigrateClient) scheduleFetchTasks() {
 		if len(resp.Tasks) > 0 {
 			cli.handleTasks(resp.Tasks)
 		}
+		atomic.StoreInt32(&cli.maxJobCnt, resp.JobCnt)
 	}
 }
 
@@ -319,8 +325,9 @@ func (cli *MigrateClient) fetchTasks(idleCnt int, succTasks, failTasks, extraTas
 
 	resp := &proto.FetchTasksResp{}
 	start := time.Now()
+	logger.Warn("scheduleFetchTasks start", zap.Any("RequestID", req.RequestID))
 	err := util.DoPostWithJson(url, req, resp, logger)
-	logger.Warn("fetchTasks", zap.Any("RequestID", req.RequestID), zap.Any("SuccTasks", len(succTasks)),
+	logger.Warn("scheduleFetchTasks end", zap.Any("RequestID", req.RequestID), zap.Any("idleCnt", idleCnt), zap.Any("SuccTasks", len(succTasks)),
 		zap.Any("FailTasks", len(failTasks)), zap.Any("ExtraTasks", len(extraTasks)),
 		zap.Any("cost", time.Now().Sub(start).String()))
 	if err != nil {

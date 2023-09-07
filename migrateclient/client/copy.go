@@ -223,6 +223,7 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 		wg.Add(1)
 		go copyTaskFunc()
 	}
+	logger.Debug("execCopyDirCommand traverse dir ", zap.Any("TaskId", taskId))
 	for _, child := range children {
 		if srcCli.IsDirByDentry(child) {
 			continue

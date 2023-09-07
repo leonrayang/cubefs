@@ -11,6 +11,7 @@ import (
 	gopath "path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,15 +44,28 @@ func (svr *MigrateServer) registerRouter() {
 	http.HandleFunc(proto.StopMigratingJobUrl, svr.stopMigratingJobHandler)
 	//重试迁移（暂时没定位出为啥有的任务没分配）
 	http.HandleFunc(proto.RetryMigratingJobUrl, svr.retryMigratingJobHandler)
+	//调整worker的max job
+	http.HandleFunc(proto.AdjustWorkerJobCntUrl, svr.adjustWorkerJobCnt)
 }
 
 func (svr *MigrateServer) migrateDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	logger := svr.Logger.With()
+	start := time.Now()
 	jobCnt, jobInfos := svr.getMigratingJobsInfo()
-	var taskTotal int64 = 0
-	for _, info := range jobInfos {
-		taskTotal += info.MigratingTaskCnt
-	}
+	logger.Info("migrateDetailsHandler getMigratingJobsInfo", zap.String("cost", time.Since(start).String()))
+	var taskTotal = 0
+	//svr.mapCliLk.Lock()
+	start = time.Now()
+	svr.cliMap.Range(func(key, value interface{}) bool {
+		cli := value.(*MigrateClient)
+		taskTotal += len(cli.getRunningTasks())
+		return true
+	})
+	//for _, cli := range svr.cliMap {
+	//	taskTotal += len(cli.getRunningTasks())
+	//}
+	//svr.mapCliLk.Unlock()
+	logger.Info("migrateDetailsHandler getMigratingJobsInfo", zap.String("cost", time.Since(start).String()))
 	detail := &proto.MigrateDetailsResp{
 		FailedTasks:       svr.getFailedTasks(),
 		MigratingJobCnt:   jobCnt,
@@ -59,6 +73,7 @@ func (svr *MigrateServer) migrateDetailsHandler(w http.ResponseWriter, r *http.R
 		MigrateClients:    svr.getAllMigrateClientInfo(),
 		MigratingTasksNum: taskTotal, //单独接口获取
 		TaskChanPending:   len(svr.taskCh),
+		ResendChanPending: len(svr.reSendTaskCh),
 	}
 	writeResp(w, detail, logger)
 }
@@ -95,11 +110,13 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	start := time.Now()
+	start2 := time.Now()
 	//获取注册的work信息
 	logger.Debug("action[fetchTasksHandler] is called", zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId))
 	cli := svr.getMigrateClient(req.NodeId)
 	logger.Debug("action[fetchTasksHandler] getMigrateClient",
-		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
+		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("RequestID", req.RequestID),
+		zap.Any("cost", time.Now().Sub(start).String()))
 	//logger.Debug("action[fetchTasksHandler] is called by", zap.Any("client", req.NodeId))
 	if cli == nil {
 		logger.Error("MigrateClient maybe already deleted", zap.Any("client", req.NodeId))
@@ -118,7 +135,7 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
 	//	logger.Debug("action[fetchTasksHandler]updateFailedTask", zap.Any("client", req.NodeId))
 	resp := &proto.FetchTasksResp{}
-
+	resp.JobCnt = atomic.LoadInt32(&cli.jobCnt)
 	returnTasks := make([]proto.Task, 0)
 	//ExtraTasks为忙不过来的map,分配其他空闲client
 	start = time.Now()
@@ -147,7 +164,8 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 	returnTasks = append(tasks, returnTasks...)
 	//返回要做的任务
 	resp.Tasks = returnTasks
-	logger.Debug("action[fetchTasksHandler]get tasks", zap.Any("num", len(resp.Tasks)), zap.Any("client", req.NodeId))
+	logger.Debug("action[fetchTasksHandler]finish", zap.Any("cost", time.Now().Sub(start2).String()),
+		zap.Any("RequestID", req.RequestID), zap.Any("JobCnt", resp.JobCnt), zap.Any("num", len(resp.Tasks)), zap.Any("client", req.NodeId))
 	cli.markHandling(NotHandling)
 	writeResp(w, resp, logger)
 }
@@ -433,7 +451,7 @@ func (svr *MigrateServer) queryJobProgressHandler(w http.ResponseWriter, r *http
 		return
 	}
 	logger = logger.With(zap.String("JobId", req.JobId))
-	//logger.Debug("queryJobProcessHandler is called")
+	logger.Debug("queryJobProcessHandler is called")
 	if len(req.JobId) == 0 {
 		writeErr(w, proto.ParmErr, "JobId can't be empty ", logger)
 		return
@@ -441,6 +459,7 @@ func (svr *MigrateServer) queryJobProgressHandler(w http.ResponseWriter, r *http
 
 	job := svr.findMigrateJob(req.JobId)
 	if job == nil {
+		logger.Debug("queryJobProcessHandler JobId is invalid")
 		writeErr(w, proto.ParmErr, "JobId is invalid ", logger)
 		return
 	}
@@ -463,7 +482,7 @@ func (svr *MigrateServer) queryJobProgressHandler(w http.ResponseWriter, r *http
 		rsp.ConsumeTime = "Invalid"
 		rsp.SizeGB = 0
 	}
-
+	logger.Debug("queryJobProcessHandler done", zap.Any("rsp", rsp))
 	writeResp(w, rsp, logger)
 }
 
@@ -598,6 +617,29 @@ func (svr *MigrateServer) retryMigratingJobHandler(w http.ResponseWriter, r *htt
 		svr.taskCh <- task
 	}
 	rsp := fmt.Sprintf("Retry job %v success", req.JobId)
+	writeResp(w, rsp, logger)
+}
+
+func (svr *MigrateServer) adjustWorkerJobCnt(w http.ResponseWriter, r *http.Request) {
+	logger := svr.Logger
+	req := &proto.AdjustWorkerCntReq{}
+	err := decodeReq(r, req, logger)
+	if err != nil {
+		return
+	}
+	logger.Debug("adjustWorkerJobCntUrl is called")
+	//svr.mapCliLk.Lock()
+	svr.cliMap.Range(func(key, value interface{}) bool {
+		cli := value.(*MigrateClient)
+		atomic.StoreInt32(&cli.jobCnt, req.MaxCnt)
+		return true
+	})
+	//for _, mc := range svr.cliMap {
+	//	atomic.StoreInt32(&mc.jobCnt, req.MaxCnt)
+	//}
+	//svr.mapCliLk.Unlock()
+
+	rsp := fmt.Sprintf("Adjust worker max job count  to %v success", req.MaxCnt)
 	writeResp(w, rsp, logger)
 }
 

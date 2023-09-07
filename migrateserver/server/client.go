@@ -12,17 +12,17 @@ import (
 
 type MigrateClient struct {
 	ReporterTime time.Time //上报时间
-	jobCnt       int       //支持最大的任务数
+	jobCnt       int32     //支持最大的任务数
 	idleCnt      int32
 	NodeId       int32  //server分配的id
 	Addr         string //client地址
 	svr          *MigrateServer
 	stopCh       chan bool
 	logger       *zap.Logger
-	taskMap      map[string]proto.Task //正在处理的任务
-	rwLk         sync.RWMutex
-	sendCh       chan []proto.Task //分配给client的任务
-	handling     int32
+	taskMap      sync.Map //正在处理的任务
+	//rwLk         sync.RWMutex
+	sendCh   chan []proto.Task //分配给client的任务
+	handling int32
 }
 
 const (
@@ -30,7 +30,7 @@ const (
 	NotHandling = 0
 )
 
-func newMigrateClient(addr string, jobCnt int, nodeId int32, svr *MigrateServer) *MigrateClient {
+func newMigrateClient(addr string, jobCnt int32, nodeId int32, svr *MigrateServer) *MigrateClient {
 	mc := &MigrateClient{
 		ReporterTime: time.Now(),
 		jobCnt:       jobCnt,
@@ -39,7 +39,7 @@ func newMigrateClient(addr string, jobCnt int, nodeId int32, svr *MigrateServer)
 		stopCh:       make(chan bool),
 		NodeId:       nodeId,
 		sendCh:       make(chan []proto.Task), //没有缓存，没人消费就无法放置。
-		taskMap:      make(map[string]proto.Task),
+		//taskMap:      make(map[string]proto.Task),
 	}
 	atomic.StoreInt32(&mc.handling, 0)
 	mc.logger = svr.Logger.With(zap.String("work", mc.String()))
@@ -70,8 +70,6 @@ func (mc *MigrateClient) getReSendCh() chan []proto.Task {
 }
 
 func (mc *MigrateClient) start() {
-	logger := mc.logger
-
 	lastSendTime := time.Now()
 	tasks := make([]proto.Task, 0) //client将获取的任务列表
 	ticker := time.NewTicker(2 * time.Second)
@@ -83,6 +81,7 @@ func (mc *MigrateClient) start() {
 		//长时间没法送或者当前Server已经堆积了很多任务
 		if len(tasks) >= fetchLimit || time.Since(lastSendTime) > 2*time.Second {
 			if len(tasks) > fetchLimit {
+				mc.logger.Warn("putReSendCh for fetch more", zap.Any("taskLen", len(tasks[fetchLimit:])))
 				mc.putReSendCh(tasks[fetchLimit:])
 				mc.putSendCh(tasks[0:fetchLimit])
 			} else {
@@ -95,16 +94,17 @@ func (mc *MigrateClient) start() {
 		select {
 		case <-mc.stopCh:
 			//worker如果退出，则将work之前的任务发给master重新分配
+			mc.logger.Warn("putReSendCh for already  get", zap.Any("taskLen", len(tasks)))
 			mc.putReSendCh(tasks)
 			backupTasks := mc.getRunningTasks()
+			mc.logger.Warn("putReSendCh for running tasks", zap.Any("taskLen", len(backupTasks)))
 			mc.putReSendCh(backupTasks)
-			logger.Warn("receive worker stop signal, hand out task", zap.Any("task", tasks), zap.Any("backupTasks", backupTasks))
 			return
 		default:
 		}
 		//重试的迁移任务
 		select {
-		case reTasks := <-reSendCh: //数组?
+		case reTasks := <-reSendCh:
 			tasks = append(tasks, reTasks...)
 			continue
 		default:
@@ -148,31 +148,37 @@ func (mc *MigrateClient) putReSendCh(tasks []proto.Task) {
 	if len(tasks) == 0 {
 		return
 	}
+	mc.logger.Warn("putReSendCh", zap.Any("taskLen", len(tasks)))
 	mc.svr.reSendTaskCh <- tasks
 }
 
 func (mc *MigrateClient) getRunningTasks() []proto.Task {
-	mc.rwLk.RLock()
-	defer mc.rwLk.RUnlock()
+	//mc.rwLk.RLock()
+	//defer mc.rwLk.RUnlock()
 
 	tasks := make([]proto.Task, 0)
-	for _, task := range mc.taskMap {
+	mc.taskMap.Range(func(key, value interface{}) bool {
+		task := value.(proto.Task)
 		tasks = append(tasks, task)
-	}
+		return true
+	})
+	//for _, task := range mc.taskMap {
+	//	tasks = append(tasks, task)
+	//}
 	return tasks
 }
 
 func (mc *MigrateClient) updateRunningTasksStatus(succTasks, failTasks, newTasks []proto.Task, req proto.FetchTasksReq) {
-	mc.rwLk.Lock()
-	defer mc.rwLk.Unlock()
+	//mc.rwLk.Lock()
+	//defer mc.rwLk.Unlock()
 
 	logger := mc.logger
 	//新任务记录到worker的task缓存中
 	start := time.Now()
 	for _, task := range newTasks {
 		key := task.Key()
-		mc.taskMap[key] = task
-		logger.Debug("add new task", zap.String("task", task.String()))
+		mc.taskMap.Store(key, task)
+		logger.Debug("add new task", zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.String("task", task.String()))
 	}
 	logger.Debug("action[fetchTasksHandler] newTasks",
 		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
@@ -180,30 +186,31 @@ func (mc *MigrateClient) updateRunningTasksStatus(succTasks, failTasks, newTasks
 	start = time.Now()
 	for _, task := range succTasks {
 		key := task.Key()
-		if _, ok := mc.taskMap[key]; !ok {
-			logger.Warn("receive success task, but not found", zap.String("task", task.String()))
+		if _, ok := mc.taskMap.Load(key); !ok {
+			logger.Warn("receive success task, but not found", zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.String("task", task.String()))
 			//直接丢弃
-			continue
+			//continue
 		} else {
-			delete(mc.taskMap, key)
+			mc.taskMap.Delete(key)
 		}
 		//更新task所属dir的状态
 		mc.updateMigratingDirState(task, true, req)
-		logger.Debug("receive success task", zap.String("task", task.String()))
+		logger.Debug("receive success task", zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.String("task", task.String()))
 	}
 	logger.Debug("action[fetchTasksHandler] succTasks",
 		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
 	start = time.Now()
 	for _, task := range failTasks {
 		key := task.Key()
-		if _, ok := mc.taskMap[key]; !ok {
-			logger.Info("receive fail task false, already been deleted", zap.String("task", task.String()))
-			continue
+		if _, ok := mc.taskMap.Load(key); !ok {
+			logger.Info("receive fail task false, already been deleted", zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.String("task", task.String()))
+			//continue
 		} else {
 			//因为要换个worker，所以从当前worker删除
-			delete(mc.taskMap, key)
+			mc.taskMap.Delete(key)
 		}
 		mc.updateMigratingDirState(task, false, req)
+		logger.Debug("receive fail task", zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.String("task", task.String()))
 	}
 	logger.Debug("action[fetchTasksHandler] failTasks",
 		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
@@ -232,7 +239,6 @@ func (mc *MigrateClient) updateMigratingDirState(task proto.Task, succ bool, req
 		if mc.taskNeedRetry(task) {
 			//if task.Retry <= 1 {
 			task.IsRetrying = true
-			task.ErrorMsg = ""
 			select {
 			case job.retryCh <- task:
 				logger.Debug("fail task retry again", zap.String("task", task.String()))
@@ -272,11 +278,11 @@ func (mc *MigrateClient) taskNeedRetry(task proto.Task) bool {
 }
 
 func (mc *MigrateClient) removeTaskMap(task proto.Task) {
-	mc.rwLk.Lock()
-	defer mc.rwLk.Unlock()
+	//mc.rwLk.Lock()
+	//defer mc.rwLk.Unlock()
 
 	key := task.Key()
-	delete(mc.taskMap, key)
+	mc.taskMap.Delete(key)
 }
 
 func (mc *MigrateClient) fetchTasks(succTasks, failTasks []proto.Task, req proto.FetchTasksReq) (newTasks []proto.Task) {
@@ -308,7 +314,7 @@ func (mc *MigrateClient) fetchTasks(succTasks, failTasks []proto.Task, req proto
 
 func (mc *MigrateClient) dump() proto.WorkerMeta {
 	return proto.WorkerMeta{
-		JobCnt: mc.jobCnt,
+		JobCnt: atomic.LoadInt32(&mc.jobCnt),
 		NodeId: mc.NodeId,
 		Addr:   mc.Addr,
 	}
