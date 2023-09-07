@@ -142,21 +142,25 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	//defer logger.Debug("execCopyDirCommand completed", zap.Any("TaskId", taskId),
 	//	zap.Any("consumeTime", time.Now().Sub(start).String()))
 	//logger.Debug("execCopyDirCommand get src SDK", zap.Any("TaskId", taskId))
+	logger.Debug("execCopyDirCommand get src sdk", zap.Any("TaskId", taskId))
 	srcCli, err := manager.GetCubeFSSdk(srcVol, srcEndpoint)
 	if err != nil {
 		return err, 0
 	}
 	//logger.Debug("execCopyDirCommand get dst SDK", zap.Any("TaskId", taskId))
+	logger.Debug("execCopyDirCommand  get dst sdk", zap.Any("TaskId", taskId))
 	dstCli, err := manager.GetCubeFSSdk(dstVol, dstEndpoint)
 	if err != nil {
 		return err, 0
 	}
 	//这里可以判断文件数目了
+	logger.Debug("execCopyDirCommand ReadDir start", zap.Any("TaskId", taskId))
 	children, err := srcCli.ReadDir(source)
 	if err != nil {
 		logger.Debug("ReadDir failed", zap.Any("TaskId", taskId), zap.Any("source", source), zap.Any("err", err))
 		return errors.New(fmt.Sprintf("ReadDir failed, dir %s[%s]", source, err.Error())), 0
 	}
+	logger.Debug("execCopyDirCommand ReadDir finish", zap.Any("TaskId", taskId))
 	errCh := make(chan error, 10)
 	taskCh := make(chan CopySubTask, taskLimit)
 	wg := sync.WaitGroup{}
@@ -213,7 +217,7 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	if len(children) >= TinyCopyFileLimit {
 		goroutineLimit = tinyFactor * goroutineLimit
 		//发布前删除
-		logger.Warn("work as tiny")
+		logger.Warn("work as tiny", zap.Any("TaskId", taskId))
 	}
 	for i := 0; i < goroutineLimit; i++ {
 		wg.Add(1)
@@ -238,10 +242,11 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 		//	zap.Any("source", gopath.Join(source, child.Name)), zap.Any("target", target))
 		taskCh <- CopySubTask{source: gopath.Join(source, child.Name), target: target, size: childSize}
 	}
-
+	logger.Debug("execCopyDirCommand all file is send", zap.Any("TaskId", taskId))
 	close(taskCh)
 	wg.Wait()
 	close(errCh)
+	logger.Debug("execCopyDirCommand all groutine is closed", zap.Any("TaskId", taskId))
 	//这里遍历error chan即可
 	count := 0
 	for subErr := range errCh {
@@ -251,7 +256,7 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	if count == 10 {
 		errMsg = fmt.Sprintf("[to many errors]%v", errMsg)
 	}
-	logger.Debug("execCopyDirCommand  copy  ", zap.Any("succCnt", succCnt), zap.Any("copySuccess", copySuccess))
+	logger.Debug("execCopyDirCommand  copy  ", zap.Any("succCnt", succCnt), zap.Any("copySuccess", copySuccess), zap.Any("TaskId", taskId))
 	if len(errMsg) == 0 {
 		return nil, copySuccess
 	} else {

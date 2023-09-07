@@ -11,6 +11,7 @@ import (
 	"github.com/cubefs/cubefs/util/migrate/falconroute"
 	"github.com/cubefs/cubefs/util/migrate/proto"
 	"github.com/cubefs/cubefs/util/migrate/util"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"net"
 	"net/http"
@@ -253,6 +254,7 @@ func (cli *MigrateClient) scheduleFetchTasks() {
 		extraTasks := cli.getExtraTasks()
 		//上报成功，和失败的任务，获取新的任务
 		resp := cli.fetchTasks(int(idleCnt), successTasks, failedTasks, extraTasks)
+
 		if len(resp.Tasks) > 0 {
 			cli.handleTasks(resp.Tasks)
 		}
@@ -305,6 +307,7 @@ func (cli *MigrateClient) fetchTasks(idleCnt int, succTasks, failTasks, extraTas
 	url := fmt.Sprintf("http://%s%s", cli.severAddr, proto.FetchTasksUrl)
 
 	req := &proto.FetchTasksReq{
+		RequestID:  uuid.New().String(),
 		NodeId:     cli.NodeId,
 		IdleCnt:    idleCnt,
 		SuccTasks:  succTasks,
@@ -315,7 +318,11 @@ func (cli *MigrateClient) fetchTasks(idleCnt int, succTasks, failTasks, extraTas
 	logger := cli.Logger.With()
 
 	resp := &proto.FetchTasksResp{}
+	start := time.Now()
 	err := util.DoPostWithJson(url, req, resp, logger)
+	logger.Warn("fetchTasks", zap.Any("RequestID", req.RequestID), zap.Any("SuccTasks", len(succTasks)),
+		zap.Any("FailTasks", len(failTasks)), zap.Any("ExtraTasks", len(extraTasks)),
+		zap.Any("cost", time.Now().Sub(start).String()))
 	if err != nil {
 		if strings.Contains(err.Error(), "MigrateClient not exist") {
 			logger.Fatal("please restart")

@@ -162,18 +162,22 @@ func (mc *MigrateClient) getRunningTasks() []proto.Task {
 	return tasks
 }
 
-func (mc *MigrateClient) updateRunningTasksStatus(succTasks, failTasks, newTasks []proto.Task) {
+func (mc *MigrateClient) updateRunningTasksStatus(succTasks, failTasks, newTasks []proto.Task, req proto.FetchTasksReq) {
 	mc.rwLk.Lock()
 	defer mc.rwLk.Unlock()
 
 	logger := mc.logger
 	//新任务记录到worker的task缓存中
+	start := time.Now()
 	for _, task := range newTasks {
 		key := task.Key()
 		mc.taskMap[key] = task
 		logger.Debug("add new task", zap.String("task", task.String()))
 	}
+	logger.Debug("action[fetchTasksHandler] newTasks",
+		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
 	//
+	start = time.Now()
 	for _, task := range succTasks {
 		key := task.Key()
 		if _, ok := mc.taskMap[key]; !ok {
@@ -184,10 +188,12 @@ func (mc *MigrateClient) updateRunningTasksStatus(succTasks, failTasks, newTasks
 			delete(mc.taskMap, key)
 		}
 		//更新task所属dir的状态
-		mc.updateMigratingDirState(task, true)
+		mc.updateMigratingDirState(task, true, req)
 		logger.Debug("receive success task", zap.String("task", task.String()))
 	}
-
+	logger.Debug("action[fetchTasksHandler] succTasks",
+		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
+	start = time.Now()
 	for _, task := range failTasks {
 		key := task.Key()
 		if _, ok := mc.taskMap[key]; !ok {
@@ -197,18 +203,19 @@ func (mc *MigrateClient) updateRunningTasksStatus(succTasks, failTasks, newTasks
 			//因为要换个worker，所以从当前worker删除
 			delete(mc.taskMap, key)
 		}
-		mc.updateMigratingDirState(task, false)
-		logger.Debug("receive fail task", zap.String("task", task.String()), zap.String("error", task.ErrorMsg))
+		mc.updateMigratingDirState(task, false, req)
 	}
+	logger.Debug("action[fetchTasksHandler] failTasks",
+		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
 }
 
-func (mc *MigrateClient) updateMigratingDirState(task proto.Task, succ bool) {
+func (mc *MigrateClient) updateMigratingDirState(task proto.Task, succ bool, req proto.FetchTasksReq) {
 	job := mc.svr.getMigratingJob(task.JobId)
-	logger := job.logger
 	if job == nil {
-		logger.Warn("updateJobState cannot find job", zap.Any("JobId", task.JobId))
+		//logger.Warn("updateJobState cannot find job", zap.Any("JobId", task.JobId))
 		return
 	}
+	logger := job.logger
 	if succ {
 		//server重启可能会导致重复计算
 		job.updateCompleteSize(task)
@@ -225,6 +232,7 @@ func (mc *MigrateClient) updateMigratingDirState(task proto.Task, succ bool) {
 		if mc.taskNeedRetry(task) {
 			//if task.Retry <= 1 {
 			task.IsRetrying = true
+			task.ErrorMsg = ""
 			select {
 			case job.retryCh <- task:
 				logger.Debug("fail task retry again", zap.String("task", task.String()))
@@ -271,13 +279,14 @@ func (mc *MigrateClient) removeTaskMap(task proto.Task) {
 	delete(mc.taskMap, key)
 }
 
-func (mc *MigrateClient) fetchTasks(succTasks, failTasks []proto.Task) (newTasks []proto.Task) {
+func (mc *MigrateClient) fetchTasks(succTasks, failTasks []proto.Task, req proto.FetchTasksReq) (newTasks []proto.Task) {
+	start := time.Now()
 	tasks := make([]proto.Task, 0)
 	select {
 	case tasks = <-mc.sendCh:
 	default:
 		//发布前修改注释掉
-		//		mc.logger.Debug("no new tasks")
+		//mc.logger.Debug("no new tasks")
 	}
 	//更改owner
 	mc.svr.mapMigratingJobLk.Lock()
@@ -289,10 +298,11 @@ func (mc *MigrateClient) fetchTasks(succTasks, failTasks []proto.Task) (newTasks
 		task.Owner = mc.Addr
 		newTasks = append(newTasks, task)
 	}
-	//mc.logger.Debug("get new tasks", zap.Any("num", len(newTasks)))
 	mc.svr.mapMigratingJobLk.Unlock()
+	mc.logger.Debug("action[fetchTasksHandler] get new tasks", zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()),
+		zap.Any("num", len(newTasks)))
 	//更新client的task列表，追加新任务，移除失败和成功的任务
-	mc.updateRunningTasksStatus(succTasks, failTasks, newTasks)
+	go mc.updateRunningTasksStatus(succTasks, failTasks, newTasks, req)
 	return
 }
 

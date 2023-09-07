@@ -128,6 +128,7 @@ func (regResp *RegisterResp) String() string {
 }
 
 type FetchTasksReq struct {
+	RequestID  string
 	NodeId     int32
 	IdleCnt    int
 	SuccTasks  []Task

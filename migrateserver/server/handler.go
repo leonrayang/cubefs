@@ -94,9 +94,12 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 		writeErr(w, proto.ParmErr, err.Error(), logger)
 		return
 	}
+	start := time.Now()
 	//获取注册的work信息
-	//logger.Debug("action[fetchTasksHandler] is called")
+	logger.Debug("action[fetchTasksHandler] is called", zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId))
 	cli := svr.getMigrateClient(req.NodeId)
+	logger.Debug("action[fetchTasksHandler] getMigrateClient",
+		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
 	//logger.Debug("action[fetchTasksHandler] is called by", zap.Any("client", req.NodeId))
 	if cli == nil {
 		logger.Error("MigrateClient maybe already deleted", zap.Any("client", req.NodeId))
@@ -109,26 +112,38 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 	cli.markHandling(IsHandling)
 	//logger.Debug("action[fetchTasksHandler]updateStatics", zap.Any("client", req.NodeId))
 	//更新失败task的列表
+	start = time.Now()
 	svr.updateFailedTask(req.FailTasks, req.SuccTasks)
+	logger.Debug("action[fetchTasksHandler] updateFailedTask",
+		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
 	//	logger.Debug("action[fetchTasksHandler]updateFailedTask", zap.Any("client", req.NodeId))
 	resp := &proto.FetchTasksResp{}
 
 	returnTasks := make([]proto.Task, 0)
 	//ExtraTasks为忙不过来的map,分配其他空闲client
+	start = time.Now()
 	if len(req.ExtraTasks) > 0 {
 		returnTasks = svr.allocateExtraTask(req.ExtraTasks, cli)
 		logger.Debug("action[fetchTasksHandler]allocateExtraTask", zap.Any("client", req.NodeId))
 	}
+	logger.Debug("action[fetchTasksHandler] allocateExtraTask",
+		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
 	//处理不了，给其他空闲worker
+	start = time.Now()
 	if req.IdleCnt < 2 {
-		cli.updateRunningTasksStatus(req.SuccTasks, req.FailTasks, make([]proto.Task, 0))
+		cli.updateRunningTasksStatus(req.SuccTasks, req.FailTasks, make([]proto.Task, 0), *req)
 		logger.Debug("action[fetchTasksHandler]worker is busy, no new tasks, only update task map", zap.Any("client", req.NodeId), zap.Any("extra", cli.String()))
 		resp.Tasks = returnTasks
 		writeResp(w, resp, logger)
 		return
 	}
+	logger.Debug("action[fetchTasksHandler] updateRunningTasksStatus",
+		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
 	//master待处理的任务。并更新worker的状态
-	tasks := cli.fetchTasks(req.SuccTasks, req.FailTasks)
+	start = time.Now()
+	tasks := cli.fetchTasks(req.SuccTasks, req.FailTasks, *req)
+	logger.Debug("action[fetchTasksHandler] fetchTasks",
+		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
 	returnTasks = append(tasks, returnTasks...)
 	//返回要做的任务
 	resp.Tasks = returnTasks
