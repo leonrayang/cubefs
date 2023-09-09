@@ -24,23 +24,23 @@ import (
 )
 
 type MigrateClient struct {
-	severAddr           string
-	Logger              *zap.Logger
-	NodeId              int32
-	routerMap           map[string]*falconroute.Router
-	stopCh              chan bool
-	pendingTaskCh       chan proto.Task //待处理任务
-	successTaskCh       chan proto.Task //成功的任务
-	failedTaskCh        chan proto.Task //失败的任务
-	extraTaskCh         chan proto.Task //无法处理的
-	maxJobCnt           int32
-	curJobCnt           int32
-	copyGoroutineLimit  int
-	copyQueueLimit      int
-	sdkManager          *cubefssdk.SdkManager
-	port                int
-	migratingTaskMap    sync.Map
-	mapMigratingTaskLk  sync.RWMutex
+	severAddr          string
+	Logger             *zap.Logger
+	NodeId             string
+	routerMap          map[string]*falconroute.Router
+	stopCh             chan bool
+	pendingTaskCh      chan proto.Task //待处理任务
+	successTaskCh      chan proto.Task //成功的任务
+	failedTaskCh       chan proto.Task //失败的任务
+	extraTaskCh        chan proto.Task //无法处理的
+	maxJobCnt          int32
+	curJobCnt          int32
+	copyGoroutineLimit int
+	copyQueueLimit     int
+	sdkManager         *cubefssdk.SdkManager
+	port               int
+	migratingTaskMap   sync.Map //worker有哪些任务执行，由master提供
+	//mapMigratingTaskLk  sync.RWMutex
 	lastTaskExecuteTime time.Time
 	enableDebug         bool
 	tinyFactor          int
@@ -53,10 +53,10 @@ func NewMigrateClient(cfg *config.Config) *MigrateClient {
 		routerMap:          make(map[string]*falconroute.Router),
 		severAddr:          cfg.Server,
 		stopCh:             make(chan bool),
-		pendingTaskCh:      make(chan proto.Task, 102400),
-		successTaskCh:      make(chan proto.Task, 102400),
-		failedTaskCh:       make(chan proto.Task, 102400),
-		extraTaskCh:        make(chan proto.Task, 102400),
+		pendingTaskCh:      make(chan proto.Task, 1024),
+		successTaskCh:      make(chan proto.Task, 1024),
+		failedTaskCh:       make(chan proto.Task, 1024),
+		extraTaskCh:        make(chan proto.Task, 1024),
 		maxJobCnt:          int32(cfg.JobCnt),
 		curJobCnt:          0,
 		copyGoroutineLimit: cfg.CopyGoroutineLimit,
@@ -108,29 +108,36 @@ func NewMigrateClient(cfg *config.Config) *MigrateClient {
 	cli.sdkManager = cubefssdk.NewCubeFSSdkManager(cli.Logger)
 	return cli
 }
-func (cli *MigrateClient) addMigrateTask(task proto.Task) {
+func (cli *MigrateClient) addMigrateTask(task *proto.Task) {
+	//实测差别不大，可以放入map
+	cli.Logger.Debug("addMigrateTask add #1", zap.Any("task", task.TaskId))
 	cli.migratingTaskMap.Store(task.TaskId, task)
-	atomic.StoreInt32(&cli.curJobCnt, cli.getMigratingTaskCnt())
+	cli.Logger.Debug("addMigrateTask add #2", zap.Any("task", task.TaskId))
+	atomic.AddInt32(&cli.curJobCnt, 1)
+	cli.Logger.Debug("addMigrateTask add #3", zap.Any("task", task.TaskId))
 }
 
 func (cli *MigrateClient) getMigratingTaskCnt() int32 {
-	var cnt int32 = 0
-	cli.migratingTaskMap.Range(func(key, value interface{}) bool {
-		cnt++
-		return true
-	})
-	return cnt
+	//var cnt int32 = 0
+	//cli.migratingTaskMap.Range(func(key, value interface{}) bool {
+	//	cnt++
+	//	return true
+	//})
+	return atomic.LoadInt32(&cli.curJobCnt)
 }
 
-func (cli *MigrateClient) deleteMigrateTask(task proto.Task) {
+func (cli *MigrateClient) deleteMigrateTask(task *proto.Task) {
+	cli.Logger.Debug("deleteMigrateTask del #1", zap.Any("task", task.TaskId))
 	cli.migratingTaskMap.Delete(task.TaskId)
-	atomic.StoreInt32(&cli.curJobCnt, cli.getMigratingTaskCnt())
+	cli.Logger.Debug("deleteMigrateTask del #2", zap.Any("task", task.TaskId))
+	atomic.AddInt32(&cli.curJobCnt, -1)
+	cli.Logger.Debug("deleteMigrateTask del #3", zap.Any("task", task.TaskId))
 }
 
 func (cli *MigrateClient) getAllMigrateTask() (tasks []proto.Task) {
 	cli.migratingTaskMap.Range(func(key, value interface{}) bool {
-		task := value.(proto.Task)
-		tasks = append(tasks, task)
+		task := value.(*proto.Task)
+		tasks = append(tasks, *task)
 		return true
 	})
 	return
@@ -153,9 +160,9 @@ func (cli *MigrateClient) Register() error {
 		return err
 	}
 
-	if resp.NodeId <= 0 {
-		logger.Fatal("register resp illegal", zap.Int32("nodeId", resp.NodeId))
-		return errors.New(fmt.Sprintf("register failed, illegal nodeID %v", resp.NodeId))
+	if resp.NodeId == "" {
+		logger.Fatal("register resp illegal empty")
+		return errors.New(fmt.Sprintf("register failed, illegal nodeID empty"))
 	}
 
 	logger.Info("register resp", zap.Any("resp", resp))
@@ -200,26 +207,30 @@ func (cli *MigrateClient) execute() {
 		case task := <-cli.pendingTaskCh:
 			for {
 				//处理分配的任务,curJobCnt跟map数目对齐
+				logger.Debug("addMigrateTask try", zap.Any("task", task.TaskId),
+					zap.Any("pendingTaskCh", len(cli.pendingTaskCh)), zap.Any("curJobCnt", atomic.LoadInt32(&cli.curJobCnt)),
+					zap.Any("maxJobCnt", atomic.LoadInt32(&cli.maxJobCnt)))
 				if atomic.LoadInt32(&cli.curJobCnt) <= atomic.LoadInt32(&cli.maxJobCnt) {
-					logger.Debug("addMigrateTask ", zap.Any("task", task))
-					cli.addMigrateTask(task)
-					go func(t proto.Task) {
+					cli.addMigrateTask(&task)
+					go func(t *proto.Task) {
 						cli.executeTask(t)
 						cli.lastTaskExecuteTime = time.Now()
-					}(task)
+					}(&task)
 					busyRetry = 0
+					logger.Debug("addMigrateTask done", zap.Any("task", task.TaskId))
 					break
 				}
 				//阻塞太久的任务就处理,让master重新选择一个worker处理
 				busyRetry++
 				time.Sleep(time.Second)
+				logger.Debug("addMigrateTask sleep", zap.Any("task", task.TaskId))
 				if busyRetry > 10 {
 					busyRetry = 0
 					select {
 					case cli.extraTaskCh <- task:
-						logger.Warn("no consume after 10s, send back to server", zap.String("task", task.String()))
+						logger.Warn("addMigrateTask no consume after 10s, send back to server", zap.String("task", task.String()))
 					default:
-						logger.Error("extraTaskCh is full, discard it", zap.String("task", task.String()))
+						logger.Error("addMigrateTask extraTaskCh is full, discard it", zap.String("task", task.String()))
 					}
 					cli.extraTaskCh <- task
 					break
@@ -241,29 +252,34 @@ func (cli *MigrateClient) scheduleFetchTasks() {
 			logger.Warn("ScheduleGetTasks exit with stop signal")
 			return
 		}
-		//可用拷贝数目
-		////idleCnt := cli.maxJobCnt - int32(len(cli.pendingTaskCh))
-		//if idleCnt < 0 {
-		//	idleCnt = 0
-		//}
-		idleCnt := atomic.LoadInt32(&cli.maxJobCnt) - atomic.LoadInt32(&cli.curJobCnt)
-		if idleCnt < 0 {
-			idleCnt = 0
-		}
-		if cli.CheckDebugEnable() {
-			logger.Warn("scheduleFetchTasks", zap.Any("maxJobCnt", atomic.LoadInt32(&cli.maxJobCnt)),
-				zap.Any("curJobCnt", atomic.LoadInt32(&cli.curJobCnt)), zap.Any("idleCnt", idleCnt), zap.Any("pending", len(cli.pendingTaskCh)))
-		}
+		logger.Warn("scheduleFetchTasks #1")
 		successTasks := cli.getSuccessTasks()
 		failedTasks := cli.getFailedTasks()
 		extraTasks := cli.getExtraTasks()
+		pendingTasksNum := len(cli.pendingTaskCh)
+		extraTasksNum := len(extraTasks)
+		//可用拷贝数目:pengding可以没消费完，curJobCnt也可能不为0(被其他协程切走)，那么会导致越来越满
+		idleCnt := atomic.LoadInt32(&cli.maxJobCnt) - atomic.LoadInt32(&cli.curJobCnt) - int32(pendingTasksNum) - int32(extraTasksNum)
+		if idleCnt < 0 {
+			idleCnt = 0
+		}
 		//上报成功，和失败的任务，获取新的任务
 		resp := cli.fetchTasks(int(idleCnt), successTasks, failedTasks, extraTasks)
-
+		logger.Warn("scheduleFetchTasks #2", zap.Any("maxJobCnt", atomic.LoadInt32(&cli.maxJobCnt)),
+			zap.Any("curJobCnt", atomic.LoadInt32(&cli.curJobCnt)), zap.Any("idleCnt", idleCnt),
+			zap.Any("pending", pendingTasksNum), zap.Any("extraTasksNum", extraTasksNum), zap.Any("fetchTask", len(resp.Tasks)))
+		//先更新最大任务数
+		atomic.StoreInt32(&cli.maxJobCnt, resp.JobCnt)
+		logger.Warn("scheduleFetchTasks #3")
+		//这里不应该阻塞，应该放进extraTaskCh
 		if len(resp.Tasks) > 0 {
 			cli.handleTasks(resp.Tasks)
 		}
-		atomic.StoreInt32(&cli.maxJobCnt, resp.JobCnt)
+		logger.Warn("scheduleFetchTasks #3")
+		if len(extraTasks) > 0 {
+			cli.handleTasks(extraTasks)
+		}
+		logger.Warn("scheduleFetchTasks #5")
 	}
 }
 
@@ -340,7 +356,7 @@ func (cli *MigrateClient) fetchTasks(idleCnt int, succTasks, failTasks, extraTas
 	return resp
 }
 
-func (cli *MigrateClient) executeTask(task proto.Task) {
+func (cli *MigrateClient) executeTask(task *proto.Task) {
 	var err error
 	logger := cli.Logger.With()
 	start := time.Now()
@@ -348,10 +364,10 @@ func (cli *MigrateClient) executeTask(task proto.Task) {
 		cli.deleteMigrateTask(task)
 		task.ConsumeTime = time.Now().Sub(start).String()
 		if err == nil {
-			cli.successTaskCh <- task
+			cli.successTaskCh <- *task
 		} else {
 			task.ErrorMsg = err.Error()
-			cli.failedTaskCh <- task
+			cli.failedTaskCh <- *task
 		}
 		logger.Debug("Task complete", zap.Any("task", task))
 	}()

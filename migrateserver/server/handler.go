@@ -51,8 +51,9 @@ func (svr *MigrateServer) registerRouter() {
 func (svr *MigrateServer) migrateDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	logger := svr.Logger.With()
 	start := time.Now()
+	logger.Info("migrateDetailsHandler enter")
 	jobCnt, jobInfos := svr.getMigratingJobsInfo()
-	logger.Info("migrateDetailsHandler getMigratingJobsInfo", zap.String("cost", time.Since(start).String()))
+	logger.Info("migrateDetailsHandler #1", zap.String("cost", time.Since(start).String()))
 	var taskTotal = 0
 	//svr.mapCliLk.Lock()
 	start = time.Now()
@@ -61,11 +62,12 @@ func (svr *MigrateServer) migrateDetailsHandler(w http.ResponseWriter, r *http.R
 		taskTotal += len(cli.getRunningTasks())
 		return true
 	})
+	logger.Info("migrateDetailsHandler #3", zap.String("cost", time.Since(start).String()))
 	//for _, cli := range svr.cliMap {
 	//	taskTotal += len(cli.getRunningTasks())
 	//}
 	//svr.mapCliLk.Unlock()
-	logger.Info("migrateDetailsHandler getMigratingJobsInfo", zap.String("cost", time.Since(start).String()))
+	start = time.Now()
 	detail := &proto.MigrateDetailsResp{
 		FailedTasks:       svr.getFailedTasks(),
 		MigratingJobCnt:   jobCnt,
@@ -75,6 +77,7 @@ func (svr *MigrateServer) migrateDetailsHandler(w http.ResponseWriter, r *http.R
 		TaskChanPending:   len(svr.taskCh),
 		ResendChanPending: len(svr.reSendTaskCh),
 	}
+	logger.Info("migrateDetailsHandler #4", zap.String("cost", time.Since(start).String()))
 	writeResp(w, detail, logger)
 }
 
@@ -90,12 +93,18 @@ func (svr *MigrateServer) registerHandler(w http.ResponseWriter, r *http.Request
 		req.Addr = strings.Split(r.RemoteAddr, ":")[0]
 	}
 	//分配nodeid
-	nodeId := int32(time.Now().Unix())
-	cli := newMigrateClient(req.Addr, req.JobCnt, nodeId, svr)
-	svr.addMigrateClient(cli)
+	nodeId := int32(time.Now().Unix()) //只是兼容保留
+	cli := svr.getMigrateClient(req.Addr)
+	if cli != nil {
+		logger.Info("Already register")
+
+	} else {
+		cli = newMigrateClient(req.Addr, req.JobCnt, nodeId, svr)
+		svr.addMigrateClient(cli)
+	}
 	resp := &proto.RegisterResp{
 		Addr:   req.Addr,
-		NodeId: nodeId,
+		NodeId: req.Addr,
 	}
 	writeResp(w, resp, logger)
 	logger.Info("register success", zap.String("resp", resp.String()))
@@ -127,6 +136,7 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 	cli.updateStatics(req.IdleCnt)
 	//失败任务处理时间过长导致reportime超时
 	cli.markHandling(IsHandling)
+	defer cli.markHandling(NotHandling)
 	//logger.Debug("action[fetchTasksHandler]updateStatics", zap.Any("client", req.NodeId))
 	//更新失败task的列表
 	start = time.Now()
@@ -148,7 +158,7 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 	//处理不了，给其他空闲worker
 	start = time.Now()
 	if req.IdleCnt < 2 {
-		cli.updateRunningTasksStatus(req.SuccTasks, req.FailTasks, make([]proto.Task, 0), *req)
+		go cli.updateRunningTasksStatus(req.SuccTasks, req.FailTasks, make([]proto.Task, 0), *req)
 		logger.Debug("action[fetchTasksHandler]worker is busy, no new tasks, only update task map", zap.Any("client", req.NodeId), zap.Any("extra", cli.String()))
 		resp.Tasks = returnTasks
 		writeResp(w, resp, logger)
@@ -166,7 +176,6 @@ func (svr *MigrateServer) fetchTasksHandler(w http.ResponseWriter, r *http.Reque
 	resp.Tasks = returnTasks
 	logger.Debug("action[fetchTasksHandler]finish", zap.Any("cost", time.Now().Sub(start2).String()),
 		zap.Any("RequestID", req.RequestID), zap.Any("JobCnt", resp.JobCnt), zap.Any("num", len(resp.Tasks)), zap.Any("client", req.NodeId))
-	cli.markHandling(NotHandling)
 	writeResp(w, resp, logger)
 }
 
@@ -448,6 +457,7 @@ func (svr *MigrateServer) queryJobProgressHandler(w http.ResponseWriter, r *http
 	req := &proto.QueryJobProgressReq{}
 	err := decodeReq(r, req, logger)
 	if err != nil {
+		writeErr(w, proto.ParmErr, err.Error(), logger)
 		return
 	}
 	logger = logger.With(zap.String("JobId", req.JobId))
@@ -491,6 +501,7 @@ func (svr *MigrateServer) queryJobsProgressHandler(w http.ResponseWriter, r *htt
 	req := &proto.QueryJobsProgressReq{}
 	err := decodeReq(r, req, logger)
 	if err != nil {
+		writeErr(w, proto.ParmErr, err.Error(), logger)
 		return
 	}
 	logger = logger.With(zap.Any("JobId", req.JobsId))
@@ -530,19 +541,20 @@ func (svr *MigrateServer) queryJobsProgressHandler(w http.ResponseWriter, r *htt
 func (svr *MigrateServer) queryMigratingTasksByJobHandler(w http.ResponseWriter, r *http.Request) {
 	logger := svr.Logger
 	req := &proto.QueryJobProgressReq{}
+	logger.Debug("queryMigratingTasksByJobHandler is called")
 	err := decodeReq(r, req, logger)
 	if err != nil {
+		writeErr(w, proto.ParmErr, err.Error(), logger)
 		return
 	}
 	logger = logger.With(zap.String("JobId", req.JobId))
-	logger.Debug("queryJobProcessHandler is called")
 	if len(req.JobId) == 0 {
 		writeErr(w, proto.ParmErr, "JobId can't be empty ", logger)
 		return
 	}
-	svr.mapMigratingJobLk.Lock()
+	svr.mapMigratingJobLk.RLock()
 	job := svr.migratingJobMap[req.JobId]
-	svr.mapMigratingJobLk.Unlock()
+	svr.mapMigratingJobLk.RUnlock()
 
 	if job == nil {
 		writeErr(w, proto.ParmErr, "JobId is invalid ", logger)
@@ -550,7 +562,7 @@ func (svr *MigrateServer) queryMigratingTasksByJobHandler(w http.ResponseWriter,
 	}
 	tasks := job.GetMigratingTasks()
 	rsp := &proto.MigratingTasksResp{}
-	rsp.MigratingTaskCnt = int(job.GetMigratingTaskCnt())
+	rsp.MigratingTaskCnt = job.GetMigratingTaskCnt()
 	rsp.MigratingTasks = tasks
 	writeResp(w, rsp, logger)
 }
@@ -560,6 +572,7 @@ func (svr *MigrateServer) stopMigratingJobHandler(w http.ResponseWriter, r *http
 	req := &proto.StopMigratingJobReq{}
 	err := decodeReq(r, req, logger)
 	if err != nil {
+		writeErr(w, proto.ParmErr, err.Error(), logger)
 		return
 	}
 	logger = logger.With(zap.String("JobId", req.JobId))
@@ -590,6 +603,7 @@ func (svr *MigrateServer) retryMigratingJobHandler(w http.ResponseWriter, r *htt
 	req := &proto.RetryMigratingJobReq{}
 	err := decodeReq(r, req, logger)
 	if err != nil {
+		writeErr(w, proto.ParmErr, err.Error(), logger)
 		return
 	}
 	logger = logger.With(zap.String("JobId", req.JobId))
@@ -625,6 +639,7 @@ func (svr *MigrateServer) adjustWorkerJobCnt(w http.ResponseWriter, r *http.Requ
 	req := &proto.AdjustWorkerCntReq{}
 	err := decodeReq(r, req, logger)
 	if err != nil {
+		writeErr(w, proto.ParmErr, err.Error(), logger)
 		return
 	}
 	logger.Debug("adjustWorkerJobCntUrl is called")

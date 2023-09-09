@@ -11,7 +11,7 @@ import (
 	"path"
 )
 
-func (cli *MigrateClient) doMigrateDirOperation(task proto.Task) (error, uint64) {
+func (cli *MigrateClient) doMigrateDirOperation(task *proto.Task) (error, uint64) {
 	var (
 		ok            bool
 		srcClusterId  = task.SourceCluster

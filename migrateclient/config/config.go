@@ -40,8 +40,9 @@ func ParseConfig(path string) (*Config, error) {
 	if cfg.CopyQueueLimit <= 0 {
 		cfg.CopyQueueLimit = 4096
 	}
+	//协程不多不一定是好事，会多很多竞争
 	if cfg.JobCnt <= 0 {
-		cfg.JobCnt = 30
+		cfg.JobCnt = 40
 	}
 	if cfg.TinyFactor <= 0 {
 		cfg.TinyFactor = 80

@@ -140,7 +140,7 @@ func (mc *MetaConn) send(req *proto.Packet) (resp *proto.Packet, err error) {
 		return nil, errors.Trace(err, "Failed to write to conn, req(%v)", req)
 	}
 	resp = proto.NewPacket()
-	err = resp.ReadFromConn(mc.conn, proto.ReadDeadlineTime)
+	err = resp.ReadFromConn(mc.conn, 1800)
 	if err != nil {
 		return nil, errors.Trace(err, "Failed to read from conn, req(%v)", req)
 	}

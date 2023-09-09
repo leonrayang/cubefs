@@ -60,8 +60,8 @@ func NewMigrateServer(cfg *config.Config) *MigrateServer {
 		port:   cfg.Port,
 		stopCh: make(chan bool),
 		//cliMap:          make(map[int32]*MigrateClient),
-		taskCh:          make(chan proto.Task, 8192000),
-		reSendTaskCh:    make(chan []proto.Task, 128000),
+		taskCh:          make(chan proto.Task, 4096),
+		reSendTaskCh:    make(chan []proto.Task, 1024),
 		migratingJobMap: make(map[string]*MigrateJob),
 		completeJobMap:  make(map[string]*MigrateJob),
 		failTasks:       make(map[string]proto.Task),
@@ -148,7 +148,7 @@ func (svr *MigrateServer) scheduleToCheckMigrateClients() {
 	}
 }
 
-func (svr *MigrateServer) getMigrateClient(nodeId int32) *MigrateClient {
+func (svr *MigrateServer) getMigrateClient(nodeId string) *MigrateClient {
 	//svr.mapCliLk.RLock()
 	//defer svr.mapCliLk.RUnlock()
 	value, ok := svr.cliMap.Load(nodeId)
@@ -192,32 +192,37 @@ func (svr *MigrateServer) addMigrateClient(mc *MigrateClient) {
 	//svr.mapCliLk.Lock()
 	//defer svr.mapCliLk.Unlock()
 	//svr.cliMap[mc.NodeId] = mc
-	svr.cliMap.Store(mc.NodeId, mc)
+	svr.cliMap.Store(mc.Addr, mc)
 	logger.Debug("addMigrateClient end", zap.Any("worker", mc.NodeId))
 }
 
-const MigrateClientTimeout = proto.FetchTaskInterval * 40
+const MigrateClientTimeout = proto.FetchTaskInterval * 240
 
 func (svr *MigrateServer) removeInactiveMigrateClient() {
 	logger := svr.Logger
 	logger.Debug("removeInactiveMigrateClient start")
-
+	var workersToDelete []string
 	svr.cliMap.Range(func(key, value interface{}) bool {
 		cli := value.(*MigrateClient)
 		//更新上报时间
-		logger.Debug("removeInactiveMigrateClient check", zap.String("client", cli.String()))
+		logger.Debug("removeInactiveMigrateClient check", zap.String("client", cli.String()),
+			zap.String("report time", cli.ReporterTime.String()))
 		if cli.isHandling() {
 			cli.ReporterTime = time.Now()
 		} else {
 			if time.Now().Sub(cli.ReporterTime) > MigrateClientTimeout {
 				//将client正在处理的任务重新分配
 				cli.close()
-				svr.cliMap.Delete(cli.NodeId)
-				logger.Error("MigrateClient is inactive, remove", zap.String("client", cli.String()))
+				workersToDelete = append(workersToDelete, cli.Addr)
 			}
 		}
 		return true
 	})
+
+	for _, worker := range workersToDelete {
+		logger.Error("MigrateClient is inactive, remove", zap.String("client", worker))
+		svr.cliMap.Delete(worker)
+	}
 
 	//for _, cli := range svr.cliMap {
 	//	//更新上报时间
@@ -259,8 +264,8 @@ func (svr *MigrateServer) getMigratingTasks() (tasks []proto.Task) {
 }
 
 func (svr *MigrateServer) addMigratingJob(job *MigrateJob) {
-	svr.mapMigratingJobLk.RLock()
-	defer svr.mapMigratingJobLk.RUnlock()
+	svr.mapMigratingJobLk.Lock()
+	defer svr.mapMigratingJobLk.Unlock()
 	svr.migratingJobMap[job.JobId] = job
 }
 func (svr *MigrateServer) closeJob(job *MigrateJob) {
@@ -723,18 +728,18 @@ func (svr *MigrateServer) findMigrateJob(jobId string) *MigrateJob {
 	//发布前删除
 	//logger.Info("findMigrateJob", zap.Any("migratingJobMap", svr.migratingJobMap),
 	//	zap.Any("completeJobMap", svr.completeJobMap), zap.Any("oldJobs", svr.oldJobs))
-	svr.mapMigratingJobLk.Lock()
+	svr.mapMigratingJobLk.RLock()
 	job := svr.migratingJobMap[jobId]
-	svr.mapMigratingJobLk.Unlock()
+	svr.mapMigratingJobLk.RUnlock()
 
 	if job == nil {
-		svr.mapCompleteJobLk.Lock()
+		svr.mapCompleteJobLk.RLock()
 		job = svr.completeJobMap[jobId]
-		svr.mapCompleteJobLk.Unlock()
+		svr.mapCompleteJobLk.RUnlock()
 		if job == nil {
-			svr.mapOldJobsLk.Lock()
+			svr.mapOldJobsLk.RLock()
 			newJobId := svr.oldJobs[jobId]
-			svr.mapOldJobsLk.Unlock()
+			svr.mapOldJobsLk.RUnlock()
 			if newJobId == "" {
 				//发布前删除
 				//logger.Warn("cannot find migrate job", zap.Any("id", jobId))

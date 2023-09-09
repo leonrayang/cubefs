@@ -19,7 +19,7 @@ const (
 	TinyFileSize = 1024 * 1024
 )
 
-func (cli *MigrateClient) doCopySingleFileOperation(task proto.Task) error {
+func (cli *MigrateClient) doCopySingleFileOperation(task *proto.Task) error {
 	var (
 		srcRouter falconroute.RouteInfo
 		dstRouter falconroute.RouteInfo
@@ -74,7 +74,7 @@ func execCopyFileCommand(manager *cubefssdk.SdkManager, source, target, srcVol, 
 	return cli.CopyFileToDir(source, target, cliDst, taskId, debugFunc, nil, overWrite, addr)
 }
 
-func (cli *MigrateClient) doCopyDirOperation(task proto.Task) (error, uint64) {
+func (cli *MigrateClient) doCopyDirOperation(task *proto.Task) (error, uint64) {
 	var (
 		srcRouter falconroute.RouteInfo
 		dstRouter falconroute.RouteInfo

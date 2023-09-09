@@ -62,9 +62,10 @@ const (
 )
 
 const (
-	TinyFile   = 1024 * 1024
-	TinyTask   = "tiny"
-	NormalTask = "normal"
+	TinyFile           = 1024 * 1024
+	TinyTask           = "tiny"
+	NormalTask         = "normal"
+	DefaultFetchFactor = 10
 )
 
 const FetchTaskInterval = 5 * time.Second
@@ -121,16 +122,16 @@ func (r *RegisterReq) String() string {
 
 type RegisterResp struct {
 	Addr   string
-	NodeId int32 // global uniq int
+	NodeId string // global uniq int
 }
 
 func (regResp *RegisterResp) String() string {
-	return fmt.Sprintf("RegisterResp nodeId %d", regResp.NodeId)
+	return fmt.Sprintf("RegisterResp nodeId %v", regResp.NodeId)
 }
 
 type FetchTasksReq struct {
 	RequestID  string
-	NodeId     int32
+	NodeId     string
 	IdleCnt    int
 	SuccTasks  []Task
 	FailTasks  []Task
@@ -248,10 +249,17 @@ type MigrateUserReq struct {
 }
 
 type MigratingTasksResp struct {
-	CurJobCnt      int    `json:"curJobCnt"`
+	MigratingTaskCnt int64  `json:"migratingTaskCnt"`
+	MigratingTasks   []Task `json:"migratingTasks"`
+	PendingTaskCnt   int    `json:"pendingTaskCnt"`
+	MaxJobCnt        int    `json:"maxJobCnt"`
+}
+
+type MigratingWorkerInoResp struct {
+	CurJobCnt      int32  `json:"curJobCnt"`
 	MigratingTasks []Task `json:"migratingTasks"`
 	PendingTaskCnt int    `json:"pendingTaskCnt"`
-	MaxJobCnt      int    `json:"maxJobCnt"`
+	MaxJobCnt      int32  `json:"maxJobCnt"`
 }
 
 type StreamerInfo struct {

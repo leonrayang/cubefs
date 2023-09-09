@@ -282,7 +282,7 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 	}
 	//优化打开
 	//if debugFunc() {
-	if true {
+	if debugFunc() {
 		logger.Debug("Copy success", zap.Any("TaskId", taskId), zap.Any("srcPath", srcPath), zap.Any("srcVol", sdk.volName), zap.Any("dstPath", gopath.Join(dstRoot, fileName)),
 			zap.Any("dstVol", dstSdk.volName), zap.Any("size", dstInfo.Size),
 			zap.Any("cost", time.Now().Sub(start).String()))

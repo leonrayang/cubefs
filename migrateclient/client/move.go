@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (cli *MigrateClient) doMoveOperation(task proto.Task) error {
+func (cli *MigrateClient) doMoveOperation(task *proto.Task) error {
 	var (
 		srcRouter falconroute.RouteInfo
 		dstRouter falconroute.RouteInfo

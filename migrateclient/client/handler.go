@@ -38,12 +38,15 @@ func (cli *MigrateClient) enableClientDebug(w http.ResponseWriter, r *http.Reque
 
 func (cli *MigrateClient) queryClientMigratingTask(w http.ResponseWriter, r *http.Request) {
 	logger := cli.Logger.With()
+	//logger.Debug("queryClientMigratingTask #1")
 	tasks := cli.getAllMigrateTask()
-	rsp := &proto.MigratingTasksResp{}
-	rsp.MigratingTaskCnt = int(atomic.LoadInt32(&cli.curJobCnt))
+	//logger.Debug("queryClientMigratingTask #2")
+	rsp := &proto.MigratingWorkerInoResp{}
+	rsp.CurJobCnt = atomic.LoadInt32(&cli.curJobCnt)
 	rsp.MigratingTasks = tasks
 	rsp.PendingTaskCnt = len(cli.pendingTaskCh)
-	rsp.MaxJobCnt = int(atomic.LoadInt32(&cli.maxJobCnt))
+	rsp.MaxJobCnt = atomic.LoadInt32(&cli.maxJobCnt)
+	//logger.Debug("queryClientMigratingTask #3")
 	writeResp(w, rsp, logger)
 }
 

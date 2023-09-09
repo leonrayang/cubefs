@@ -48,7 +48,7 @@ func newMigrateClient(addr string, jobCnt int32, nodeId int32, svr *MigrateServe
 }
 
 func (mc *MigrateClient) String() string {
-	return fmt.Sprintf("NodeId(%d),Addr(%s)", mc.NodeId, mc.Addr)
+	return fmt.Sprintf("Addr(%s)", mc.Addr)
 }
 
 func (mc *MigrateClient) updateStatics(idleCnt int) {
@@ -58,7 +58,18 @@ func (mc *MigrateClient) updateStatics(idleCnt int) {
 
 func (mc *MigrateClient) close() {
 	mc.logger.Info("Migrate client exit")
-	close(mc.stopCh)
+	if !isClosed(mc.stopCh) {
+		close(mc.stopCh)
+	}
+}
+
+func isClosed(ch <-chan bool) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }
 
 func (mc *MigrateClient) getTaskCh() chan proto.Task {
@@ -78,10 +89,11 @@ func (mc *MigrateClient) start() {
 	reSendCh := mc.getReSendCh()
 	for {
 		fetchLimit := mc.tasksFetchLimit()
+
 		//长时间没法送或者当前Server已经堆积了很多任务
 		if len(tasks) >= fetchLimit || time.Since(lastSendTime) > 2*time.Second {
 			if len(tasks) > fetchLimit {
-				mc.logger.Warn("putReSendCh for fetch more", zap.Any("taskLen", len(tasks[fetchLimit:])))
+				//mc.logger.Warn("putReSendCh for fetch more", zap.Any("taskLen", len(tasks[fetchLimit:])))
 				mc.putReSendCh(tasks[fetchLimit:])
 				mc.putSendCh(tasks[0:fetchLimit])
 			} else {
@@ -148,7 +160,7 @@ func (mc *MigrateClient) putReSendCh(tasks []proto.Task) {
 	if len(tasks) == 0 {
 		return
 	}
-	mc.logger.Warn("putReSendCh", zap.Any("taskLen", len(tasks)))
+	//mc.logger.Warn("putReSendCh", zap.Any("taskLen", len(tasks)))
 	mc.svr.reSendTaskCh <- tasks
 }
 
@@ -292,10 +304,10 @@ func (mc *MigrateClient) fetchTasks(succTasks, failTasks []proto.Task, req proto
 	case tasks = <-mc.sendCh:
 	default:
 		//发布前修改注释掉
-		//mc.logger.Debug("no new tasks")
+		mc.logger.Debug("no new tasks", zap.Any("RequestID", req.RequestID))
 	}
 	//更改owner
-	mc.svr.mapMigratingJobLk.Lock()
+	mc.svr.mapMigratingJobLk.RLock()
 	for _, task := range tasks {
 		//如果job被停止了，这个task也就不要了
 		if job := mc.svr.migratingJobMap[task.JobId]; job == nil {
@@ -304,7 +316,7 @@ func (mc *MigrateClient) fetchTasks(succTasks, failTasks []proto.Task, req proto
 		task.Owner = mc.Addr
 		newTasks = append(newTasks, task)
 	}
-	mc.svr.mapMigratingJobLk.Unlock()
+	mc.svr.mapMigratingJobLk.RUnlock()
 	mc.logger.Debug("action[fetchTasksHandler] get new tasks", zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()),
 		zap.Any("num", len(newTasks)))
 	//更新client的task列表，追加新任务，移除失败和成功的任务

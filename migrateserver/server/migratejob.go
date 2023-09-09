@@ -60,7 +60,7 @@ func NewMigrateJob(srcPath, srcCluster, dstPath, dstCluster string, workMode,
 		CreateTime: time.Now().Unix(),
 		failedTask: make(map[string]proto.Task),
 		//migratingTask:         make(map[string]proto.Task),
-		retryCh:               make(chan proto.Task, 1024000),
+		retryCh:               make(chan proto.Task, 1024),
 		WorkMode:              workMode,
 		SummaryGoroutineLimit: SummaryGoroutineLimit,
 		stopCh:                make(chan bool),
@@ -121,6 +121,7 @@ func (job *MigrateJob) addMigratingTask(task proto.Task) {
 
 func (job *MigrateJob) delMigratingTask(task proto.Task) {
 	if !job.taskIsMigrating(task) {
+		job.logger.Warn("delMigratingTask not found ", zap.Any("task", task.String()))
 		return
 	}
 	//重试的task不减少次数，不然任务可能提前结束，但是需要从migratingTask删除，不然
@@ -133,6 +134,7 @@ func (job *MigrateJob) delMigratingTask(task proto.Task) {
 		}
 	}
 	job.migratingTask.Delete(task.Key())
+	job.logger.Warn("delete task ", zap.Any("task", task.String()))
 }
 
 func (job *MigrateJob) saveFailedMigratingTask(task proto.Task) {
@@ -253,11 +255,13 @@ func (job *MigrateJob) executeInCopyDirMode(svr *MigrateServer) {
 	logger.Debug("walk done")
 	job.waitUtilTaskDone(svr)
 	job.mapFailedLk.Lock()
+	logger.Debug("work is done")
 	if len(job.failedTask) == 0 {
 		job.SetJobStatus(proto.JobSuccess)
 	} else {
 		job.SetJobStatus(proto.JobFailed)
 	}
+	logger.Debug("work is done")
 	job.mapFailedLk.Unlock()
 }
 
@@ -355,6 +359,7 @@ func (job *MigrateJob) idle(svr *MigrateServer) bool {
 
 func (job *MigrateJob) sendTask(task proto.Task, svr *MigrateServer) {
 	if job.taskIsMigrating(task) {
+		job.logger.Debug("task is already migrating, no need send again", zap.String("task", task.String()))
 		return
 	}
 	job.logger.Debug("action[sendTask] to server", zap.String("task", task.String()))
@@ -369,7 +374,7 @@ func (job *MigrateJob) sendTask(task proto.Task, svr *MigrateServer) {
 
 func (job *MigrateJob) taskIsMigrating(task proto.Task) bool {
 	if _, ok := job.migratingTask.Load(task.Key()); ok {
-		job.logger.Debug("task is already migrating, no need send again", zap.String("task", task.String()))
+		return true
 	}
 	return false
 }
