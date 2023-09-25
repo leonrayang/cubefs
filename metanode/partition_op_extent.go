@@ -181,13 +181,16 @@ type VerOpData struct {
 	VerList []*proto.VolVersionInfo
 }
 
-func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList, sync bool) (err error) {
+func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList, sync bool, isMasterReq bool) (err error) {
 	mp.multiVersionList.RLock()
-
+	var currMasterSeq uint64
 	verMapLocal := make(map[uint64]*proto.VolVersionInfo)
 	verMapMaster := make(map[uint64]*proto.VolVersionInfo)
 	for _, ver := range masterListInfo.VerList {
 		verMapMaster[ver.Ver] = ver
+	}
+	if len(masterListInfo.VerList) > 0 {
+		currMasterSeq = masterListInfo.VerList[len(masterListInfo.VerList)-1].Ver
 	}
 
 	var (
@@ -199,14 +202,14 @@ func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList, 
 		log.LogDebugf("checkVerList. vol %v mp %v ver info %v", mp.config.VolName, mp.config.PartitionId, info2)
 		vms, exist := verMapMaster[info2.Ver]
 		if !exist {
-			// To mitigate the blocking risk caused by the confirmation of the prepare version and the master version,
-			// a version in the prepare phase is preliminarily considered as a valid version.
-			if info2.Status != proto.VersionPrepare {
-				warn := fmt.Sprintf("[checkVerList] vol %v mp %v not found %v in master list", mp.config.VolName, mp.config.PartitionId, info2.Ver)
-				exporter.Warning(warn)
-				log.LogWarn(warn)
-				needUpdate = true
-				continue
+			if isMasterReq && info2.Ver < currMasterSeq {
+				if _, ok := mp.multiVersionList.TemporaryVerMap[info2.Ver]; !ok {
+					mp.multiVersionList.TemporaryVerMap[info2.Ver] = info2
+				} else {
+					log.LogInfof("checkVerList. vol %v mp %v version info(%v) not exist in master (%v)",
+						mp.config.VolName, mp.config.PartitionId, info2, masterListInfo.VerList)
+					continue
+				}
 			}
 			log.LogWarnf("checkVerList. vol %v mp %v version info(%v) not exist in master (%v)",
 				mp.config.VolName, mp.config.PartitionId, info2, masterListInfo.VerList)
