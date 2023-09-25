@@ -148,7 +148,7 @@ func (sdk *CubeFSSdk) CopyFileToDir(srcPath, dstRoot string, dstSdk *CubeFSSdk, 
 			} else {
 				//记录到task的日志
 				if copyLogger != nil {
-					copyLogger.Debug("modify time not the same,please check", zap.Any("TaskId", taskId), zap.Any("fileName", fileName))
+					copyLogger.Debug("modify time not the same,please check", zap.Any("TaskId", taskId), zap.Any("fileName", srcPath))
 				}
 
 				return errors.New(fmt.Sprintf("modify time not the same,please check file list %v on %v",

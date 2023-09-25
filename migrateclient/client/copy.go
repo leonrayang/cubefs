@@ -197,7 +197,10 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 						default:
 							//logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
 						}
-						//logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
+						if copyLogger != nil {
+							copyLogger.Debug("Copy failed", zap.Any("TaskId", taskId), zap.Any("fileName", task.source))
+						}
+
 					}
 				} else {
 					select {
