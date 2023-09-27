@@ -181,16 +181,43 @@ type VerOpData struct {
 	VerList []*proto.VolVersionInfo
 }
 
-func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList, sync bool, isMasterReq bool) (err error) {
-	mp.multiVersionList.RLock()
-	var currMasterSeq uint64
-	verMapLocal := make(map[uint64]*proto.VolVersionInfo)
+func (mp *metaPartition) checkByMasterVerlist(mpVerList *proto.VolVersionInfoList, masterVerList *proto.VolVersionInfoList) (err error) {
+	var currMasterSeq = masterVerList.GetLastVer()
 	verMapMaster := make(map[uint64]*proto.VolVersionInfo)
-	for _, ver := range masterListInfo.VerList {
+	for _, ver := range masterVerList.VerList {
 		verMapMaster[ver.Ver] = ver
 	}
-	if len(masterListInfo.VerList) > 0 {
-		currMasterSeq = masterListInfo.VerList[len(masterListInfo.VerList)-1].Ver
+	mp.multiVersionList.Lock()
+	defer mp.multiVersionList.Unlock()
+	for _, info2 := range mpVerList.VerList {
+		log.LogDebugf("checkVerList. vol %v mp %v ver info %v", mp.config.VolName, mp.config.PartitionId, info2)
+		_, exist := verMapMaster[info2.Ver]
+		if !exist {
+			if info2.Ver < currMasterSeq {
+				if _, ok := mp.multiVersionList.TemporaryVerMap[info2.Ver]; !ok {
+					mp.multiVersionList.TemporaryVerMap[info2.Ver] = info2
+				}
+			}
+		}
+	}
+
+	for verSeq, _ := range  mp.multiVersionList.TemporaryVerMap {
+		for index, verInfo := range mp.multiVersionList.VerList {
+			if verInfo.Ver == verSeq {
+				mp.multiVersionList.VerList = append(mp.multiVersionList.VerList[:index], mp.multiVersionList.VerList[index+1:]...)
+				break
+			}
+		}
+	}
+	return
+}
+
+func (mp *metaPartition) checkVerList(reqVerListInfo *proto.VolVersionInfoList, sync bool) (err error) {
+	mp.multiVersionList.RLock()
+	verMapLocal := make(map[uint64]*proto.VolVersionInfo)
+	verMapMaster := make(map[uint64]*proto.VolVersionInfo)
+	for _, ver := range reqVerListInfo.VerList {
+		verMapMaster[ver.Ver] = ver
 	}
 
 	var (
@@ -202,17 +229,8 @@ func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList, 
 		log.LogDebugf("checkVerList. vol %v mp %v ver info %v", mp.config.VolName, mp.config.PartitionId, info2)
 		vms, exist := verMapMaster[info2.Ver]
 		if !exist {
-			if isMasterReq && info2.Ver < currMasterSeq {
-				if _, ok := mp.multiVersionList.TemporaryVerMap[info2.Ver]; !ok {
-					mp.multiVersionList.TemporaryVerMap[info2.Ver] = info2
-				} else {
-					log.LogInfof("checkVerList. vol %v mp %v version info(%v) not exist in master (%v)",
-						mp.config.VolName, mp.config.PartitionId, info2, masterListInfo.VerList)
-					continue
-				}
-			}
 			log.LogWarnf("checkVerList. vol %v mp %v version info(%v) not exist in master (%v)",
-				mp.config.VolName, mp.config.PartitionId, info2, masterListInfo.VerList)
+				mp.config.VolName, mp.config.PartitionId, info2, reqVerListInfo.VerList)
 		} else if info2.Status != proto.VersionNormal && info2.Status != vms.Status {
 			log.LogWarnf("checkVerList. vol %v mp %v ver %v status abnormal %v", mp.config.VolName, mp.config.PartitionId, info2.Ver, info2.Status)
 			info2.Status = vms.Status
@@ -224,7 +242,7 @@ func (mp *metaPartition) checkVerList(masterListInfo *proto.VolVersionInfoList, 
 	}
 	mp.multiVersionList.RUnlock()
 
-	for _, vInfo := range masterListInfo.VerList {
+	for _, vInfo := range reqVerListInfo.VerList {
 		if vInfo.Status != proto.VersionNormal {
 			log.LogDebugf("checkVerList. vol %v mp %v master info %v", mp.config.VolName, mp.config.PartitionId, vInfo)
 			continue

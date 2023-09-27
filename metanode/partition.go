@@ -212,12 +212,16 @@ type OpMultipart interface {
 
 // MultiVersion operation from master or client
 type OpMultiVersion interface {
+	GetVerSeq() uint64
+	GetVerList() []*proto.VolVersionInfo
+	GetAllVerList() []*proto.VolVersionInfo
 	HandleVersionOp(op uint8, verSeq uint64, verList []*proto.VolVersionInfo, sync bool) (err error)
 	fsmVersionOp(reqData []byte) (err error)
 	GetAllVersionInfo(req *proto.MultiVersionOpRequest, p *Packet) (err error)
 	GetSpecVersionInfo(req *proto.MultiVersionOpRequest, p *Packet) (err error)
 	GetExtentByVer(ino *Inode, req *proto.GetExtentsRequest, rsp *proto.GetExtentsResponse)
-	checkVerList(info *proto.VolVersionInfoList, sync bool, isMasterReq bool) (err error)
+	checkVerList(info *proto.VolVersionInfoList, sync bool) (err error)
+	checkByMasterVerlist(mpVerList *proto.VolVersionInfoList, masterVerList *proto.VolVersionInfoList) (err error)
 }
 
 // OpMeta defines the interface for the metadata operations.
@@ -236,8 +240,6 @@ type OpMeta interface {
 // OpPartition defines the interface for the partition operations.
 type OpPartition interface {
 	GetVolName() (volName string)
-	GetVerSeq() uint64
-	GetVerList() []*proto.VolVersionInfo
 	IsLeader() (leaderAddr string, isLeader bool)
 	LeaderTerm() (leaderID, term uint64)
 	IsFollowerRead() bool
@@ -535,6 +537,22 @@ func (mp *metaPartition) GetVerList() []*proto.VolVersionInfo {
 	mp.multiVersionList.RLock()
 	defer mp.multiVersionList.RUnlock()
 	return mp.multiVersionList.VerList
+}
+
+func (mp *metaPartition) GetAllVerList() (verList []*proto.VolVersionInfo) {
+	mp.multiVersionList.RLock()
+	defer mp.multiVersionList.RUnlock()
+	verList = mp.multiVersionList.VerList
+	for _, verInfo := mp.multiVersionList.TemporaryVerMap {
+		verList = append(verList, verInfo)
+	}
+	sort.SliceStable(verList, func(i, j int) bool {
+		if verList[i].Ver < verList[j].Ver {
+			return true
+		}
+		return false
+	})
+	return
 }
 
 func (mp *metaPartition) checkAndUpdateVerList(verSeq uint64) (err error) {

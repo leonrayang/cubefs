@@ -2285,6 +2285,15 @@ func (m *metadataManager) checkVolVerList() (err error) {
 	})
 
 	for volName := range volumeArr {
+		var mpsVerlist = make(map[uint64]*proto.VolVersionInfoList)
+		// need get first or else the mp verlist may be change in the follower process
+		m.Range(true, func(id uint64, partition MetaPartition) bool {
+			if partition.GetVolName() != volName {
+				return true
+			}
+			mpsVerlist[partition.GetBaseConfig().PartitionId] = &proto.VolVersionInfoList{VerList: partition.GetVerList()}
+			return true
+		})
 		var info *proto.VolVersionInfoList
 		if info, err = masterClient.AdminAPI().GetVerList(volName); err != nil {
 			log.LogErrorf("action[checkVolVerList] volumeName %v err %v", volName, err)
@@ -2296,7 +2305,12 @@ func (m *metadataManager) checkVolVerList() (err error) {
 			if partition.GetVolName() != volName {
 				return true
 			}
-			if err = partition.checkVerList(info, false, true); err != nil {
+			if _, exist := mpsVerlist[id]; exist {
+				if err = partition.checkByMasterVerlist(mpsVerlist[id], info); err != nil {
+					return true
+				}
+			}
+			if err = partition.checkVerList(info, false); err != nil {
 				log.LogErrorf("[checkVolVerList] volumeName %v err %v", volName, err)
 			}
 			return true

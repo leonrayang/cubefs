@@ -1463,11 +1463,18 @@ func TestDelPartitionVersion(t *testing.T) {
 	mp.manager.partitions[mp.config.PartitionId] = mp
 	mp.config.NodeId = 1
 
-	mp.CreateInode(&CreateInoReq{}, &Packet{})
+	//ino0 := testCreateInode(t, FileModeType)
+	//assert.True(t, ino0.getVer()==0)
 	mp.SetXAttr(&proto.SetXAttrRequest{}, &Packet{})
 	mp.CreateDentry(&CreateDentryReq{}, &Packet{})
 
 	err := managerVersionPrepare(&proto.MultiVersionOpRequest{VolumeID: VolNameForTest, Op: proto.CreateVersionPrepare, VerSeq: 10})
+
+	ino := testCreateInode(t, FileModeType)
+	//assert.True(t, ino0.getVer()==10)
+	mp.SetXAttr(&proto.SetXAttrRequest{Inode: ino.Inode, Key: "key1", Value: "value1"}, &Packet{})
+	mp.CreateDentry(&CreateDentryReq{Inode: ino.Inode, Name: "dentryName"}, &Packet{})
+
 	assert.True(t, err == nil)
 	masterList := &proto.VolVersionInfoList{
 		VerList: []*proto.VolVersionInfo{
@@ -1492,6 +1499,11 @@ func TestDelPartitionVersion(t *testing.T) {
 		}
 		break
 	}
+	assert.True(t, ino.getVer() == 0)
+	extend := mp.extendTree.Get(NewExtend(ino.Inode)).(*Extend)
+	assert.True(t, ino.multiSnap.verSeq == 20)
+	assert.True(t, extend.verSeq == 20)
+	assert.True(t, len(extend.multiVers) == 2)
 
 	assert.True(t, len(mp.multiVersionList.TemporaryVerMap) == 0)
 }
