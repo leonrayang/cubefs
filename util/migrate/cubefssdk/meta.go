@@ -146,7 +146,7 @@ func (sdk *CubeFSSdk) LookupPathWithCache(filePath string) (info *proto.InodeInf
 	return info, nil
 }
 
-func (sdk *CubeFSSdk) Move(srcPath, dstPath string) error {
+func (sdk *CubeFSSdk) Move(srcPath, dstPath string, taskID string) error {
 	srcPathInfo, err := sdk.LookupPath(srcPath)
 	logger := sdk.logger
 	if err != nil {
@@ -167,6 +167,8 @@ func (sdk *CubeFSSdk) Move(srcPath, dstPath string) error {
 	//如果是文件移动到目录下 或者文件夹移动到文件夹下
 	if (proto.IsRegular(srcPathInfo.Mode) && proto.IsDir(dstPathInfo.Mode)) ||
 		(proto.IsDir(srcPathInfo.Mode) && proto.IsDir(dstPathInfo.Mode)) {
+		logger.Debug("Move", zap.Any("srcDirInfo.Inode", srcDirInfo.Inode), zap.Any("srcName", srcName),
+			zap.Any("dstPathInfo.Inode", dstPathInfo.Inode), zap.Any("srcName", srcName), zap.Any("taskID", taskID))
 		err = sdk.mwApi.mw.Rename_ll(srcDirInfo.Inode, srcName, dstPathInfo.Inode, srcName, true)
 		return err
 	}

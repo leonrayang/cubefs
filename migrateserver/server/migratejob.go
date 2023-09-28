@@ -210,6 +210,7 @@ func (job *MigrateJob) executeInMoveMode(svr *MigrateServer) {
 		job.SetJobStatus(proto.JobFailed)
 	}
 	job.mapFailedLk.Unlock()
+	logger.Debug("executeInMoveMode done ", zap.Any("status", job.GetJobStatus()))
 }
 
 func (job *MigrateJob) executeInCopySingleFileMode(svr *MigrateServer) {
@@ -232,6 +233,7 @@ func (job *MigrateJob) executeInCopySingleFileMode(svr *MigrateServer) {
 		job.SetJobStatus(proto.JobFailed)
 	}
 	job.mapFailedLk.Unlock()
+	logger.Debug("executeInCopySingleFileMode done ", zap.Any("status", job.GetJobStatus()))
 }
 
 func (job *MigrateJob) executeInCopyDirMode(svr *MigrateServer) {
@@ -263,6 +265,7 @@ func (job *MigrateJob) executeInCopyDirMode(svr *MigrateServer) {
 	}
 	logger.Debug("work is done")
 	job.mapFailedLk.Unlock()
+	logger.Debug("executeInCopyDirMode done ", zap.Any("status", job.GetJobStatus()))
 }
 
 func (job *MigrateJob) executeInMigrateDirMode(svr *MigrateServer) {
@@ -290,6 +293,7 @@ func (job *MigrateJob) executeInMigrateDirMode(svr *MigrateServer) {
 		job.SetJobStatus(proto.JobFailed)
 	}
 	job.mapFailedLk.Unlock()
+	logger.Debug("executeInMigrateDirMode done ", zap.Any("status", job.GetJobStatus()))
 }
 func (job *MigrateJob) close(svr *MigrateServer) {
 	job.completeTime = time.Now()

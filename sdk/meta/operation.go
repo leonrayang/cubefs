@@ -331,17 +331,17 @@ func (mw *MetaWrapper) iunlink(mp *MetaPartition, inode uint64) (status int, inf
 	}()
 
 	//use uniq id to dedup request
-	status, uniqID, err := mw.consumeUniqID(mp)
-	if err != nil || status != statusOK {
-		err = statusToErrno(status)
-		return
-	}
+	//status, uniqID, err := mw.consumeUniqID(mp)
+	//if err != nil || status != statusOK {
+	//	err = statusToErrno(status)
+	//	return
+	//}
 
 	req := &proto.UnlinkInodeRequest{
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		Inode:       inode,
-		UniqID:      uniqID,
+		UniqID:      0,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -1384,19 +1384,17 @@ func (mw *MetaWrapper) ilink(mp *MetaPartition, inode uint64) (status int, info 
 	defer func() {
 		stat.EndStat("ilink", err, bgTime, 1)
 	}()
-
 	//use unique id to dedup request
-	status, uniqID, err := mw.consumeUniqID(mp)
-	if err != nil || status != statusOK {
-		err = statusToErrno(status)
-		return
-	}
-
+	//status, uniqID, err := mw.consumeUniqID(mp)
+	//if err != nil || status != statusOK {
+	//	err = statusToErrno(status)
+	//	return
+	//}
 	req := &proto.LinkInodeRequest{
 		VolName:     mw.volname,
 		PartitionID: mp.PartitionID,
 		Inode:       inode,
-		UniqID:      uniqID,
+		UniqID:      0,
 	}
 
 	packet := proto.NewPacketReqID()
@@ -1407,27 +1405,23 @@ func (mw *MetaWrapper) ilink(mp *MetaPartition, inode uint64) (status int, info 
 		log.LogErrorf("ilink: req(%v) err(%v)", *req, err)
 		return
 	}
-
 	log.LogDebugf("ilink enter: packet(%v) mp(%v) req(%v)", packet, mp, string(packet.Data))
 
 	metric := exporter.NewTPCnt(packet.GetOpMsg())
 	defer func() {
 		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
 	}()
-
 	packet, err = mw.sendToMetaPartitionWithTx(mp, packet)
 	if err != nil {
 		log.LogErrorf("ilink: packet(%v) mp(%v) req(%v) err(%v)", packet, mp, *req, err)
 		return
 	}
-
 	status = parseStatus(packet.ResultCode)
 	if status != statusOK {
 		err = errors.New(packet.GetResultMsg())
 		log.LogErrorf("ilink: packet(%v) mp(%v) req(%v) result(%v)", packet, mp, *req, packet.GetResultMsg())
 		return
 	}
-
 	resp := new(proto.LinkInodeResponse)
 	err = packet.UnmarshalData(resp)
 	if err != nil {
@@ -2644,7 +2638,6 @@ func (mw *MetaWrapper) getUniqID(mp *MetaPartition, num uint32) (status int, sta
 	if err != nil {
 		return
 	}
-
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
 		log.LogErrorf("getUniqID: packet(%v) mp(%v) req(%v) err(%v)", packet, mp, *req, err)

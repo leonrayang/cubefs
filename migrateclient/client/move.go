@@ -23,7 +23,7 @@ func (cli *MigrateClient) doMoveOperation(task *proto.Task) error {
 	)
 	virSrcPath := falconroute.GetVirtualPathFromAbsDir(srcPath)
 	virDstPath := falconroute.GetVirtualPathFromAbsDir(dstPath)
-
+	logger.Debug("doMoveOperation", zap.Any("task", task))
 	if router, ok = cli.routerMap[clusterId]; !ok {
 		logger.Error("route not found in config", zap.String("clusterId", clusterId))
 		return errors.New(fmt.Sprintf("route not found in config %s", clusterId))
@@ -55,19 +55,22 @@ func (cli *MigrateClient) doMoveOperation(task *proto.Task) error {
 		return errors.New(fmt.Sprintf("src and dst not in the same vol: src vol %s dst vol %s",
 			srcRouter.Pool, dstRouter.Pool))
 	}
-	if err := execMvCommand(cli.sdkManager, srcPath, dstPath, srcRouter.Pool, srcRouter.Endpoint, logger); err == nil {
+	if err := execMvCommand(cli.sdkManager, srcPath, dstPath, srcRouter.Pool, srcRouter.Endpoint, logger, task.TaskId); err == nil {
 		return nil
 	} else {
 		return errors.New(fmt.Sprintf("Execute move operation failed: %s", err.Error()))
 	}
 }
 
-func execMvCommand(manager *cubefssdk.SdkManager, source, target, vol, endpoint string, logger *zap.Logger) error {
+func execMvCommand(manager *cubefssdk.SdkManager, source, target, vol, endpoint string, logger *zap.Logger, taskId string) error {
 	//无论是否为文件或者文件夹，执行的mv操作一致
-	logger.Debug("move files", zap.Any("src", source), zap.Any("dst", target), zap.Any("vol", vol))
+	logger.Debug("move files", zap.Any("src", source), zap.Any("dst", target),
+		zap.Any("vol", vol), zap.Any("taskId", taskId))
 	cli, err := manager.GetCubeFSSdk(vol, endpoint)
 	if err != nil {
 		return err
 	}
-	return cli.Move(source, target)
+	logger.Debug("move files #2", zap.Any("src", source), zap.Any("dst", target),
+		zap.Any("vol", vol), zap.Any("taskId", taskId))
+	return cli.Move(source, target, taskId)
 }

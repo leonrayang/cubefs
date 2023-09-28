@@ -108,13 +108,20 @@ func NewMigrateClient(cfg *config.Config) *MigrateClient {
 	cli.sdkManager = cubefssdk.NewCubeFSSdkManager(cli.Logger)
 	return cli
 }
-func (cli *MigrateClient) addMigrateTask(task *proto.Task) {
+func (cli *MigrateClient) addMigrateTask(task *proto.Task) bool {
 	//实测差别不大，可以放入map
 	cli.Logger.Debug("addMigrateTask add #1", zap.Any("task", task.TaskId))
+	_, exists := cli.migratingTaskMap.Load(task.TaskId)
+	if exists {
+		cli.Logger.Debug("addMigrateTask exist", zap.Any("task", task.TaskId))
+		return false
+	}
+
 	cli.migratingTaskMap.Store(task.TaskId, task)
 	cli.Logger.Debug("addMigrateTask add #2", zap.Any("task", task.TaskId))
 	atomic.AddInt32(&cli.curJobCnt, 1)
 	cli.Logger.Debug("addMigrateTask add #3", zap.Any("task", task.TaskId))
+	return true
 }
 
 func (cli *MigrateClient) getMigratingTaskCnt() int32 {
@@ -211,11 +218,12 @@ func (cli *MigrateClient) execute() {
 					zap.Any("pendingTaskCh", len(cli.pendingTaskCh)), zap.Any("curJobCnt", atomic.LoadInt32(&cli.curJobCnt)),
 					zap.Any("maxJobCnt", atomic.LoadInt32(&cli.maxJobCnt)))
 				if atomic.LoadInt32(&cli.curJobCnt) <= atomic.LoadInt32(&cli.maxJobCnt) {
-					cli.addMigrateTask(&task)
-					go func(t *proto.Task) {
-						cli.executeTask(t)
-						cli.lastTaskExecuteTime = time.Now()
-					}(&task)
+					if cli.addMigrateTask(&task) {
+						go func(t *proto.Task) {
+							cli.executeTask(t)
+							cli.lastTaskExecuteTime = time.Now()
+						}(&task)
+					}
 					busyRetry = 0
 					logger.Debug("addMigrateTask done", zap.Any("task", task.TaskId))
 					break
@@ -252,7 +260,7 @@ func (cli *MigrateClient) scheduleFetchTasks() {
 			logger.Warn("ScheduleGetTasks exit with stop signal")
 			return
 		}
-		logger.Warn("scheduleFetchTasks #1")
+		//logger.Warn("scheduleFetchTasks #1")
 		successTasks := cli.getSuccessTasks()
 		failedTasks := cli.getFailedTasks()
 		extraTasks := cli.getExtraTasks()
@@ -265,22 +273,35 @@ func (cli *MigrateClient) scheduleFetchTasks() {
 		}
 		//上报成功，和失败的任务，获取新的任务
 		resp := cli.fetchTasks(int(idleCnt), successTasks, failedTasks, extraTasks)
-		logger.Warn("scheduleFetchTasks #2", zap.Any("maxJobCnt", atomic.LoadInt32(&cli.maxJobCnt)),
+		logger.Debug("scheduleFetchTasks ", zap.Any("maxJobCnt", atomic.LoadInt32(&cli.maxJobCnt)),
 			zap.Any("curJobCnt", atomic.LoadInt32(&cli.curJobCnt)), zap.Any("idleCnt", idleCnt),
 			zap.Any("pending", pendingTasksNum), zap.Any("extraTasksNum", extraTasksNum), zap.Any("fetchTask", len(resp.Tasks)))
 		//先更新最大任务数
 		atomic.StoreInt32(&cli.maxJobCnt, resp.JobCnt)
-		logger.Warn("scheduleFetchTasks #3")
+		//		logger.Warn("scheduleFetchTasks #3")
 		//这里不应该阻塞，应该放进extraTaskCh
 		if len(resp.Tasks) > 0 {
-			cli.handleTasks(resp.Tasks)
+			newTasks := removeDuplicateTask(resp.Tasks)
+			cli.handleTasks(newTasks)
 		}
-		logger.Warn("scheduleFetchTasks #3")
+		//logger.Warn("scheduleFetchTasks #3")
 		if len(extraTasks) > 0 {
+			extraTasks = removeDuplicateTask(extraTasks)
 			cli.handleTasks(extraTasks)
 		}
-		logger.Warn("scheduleFetchTasks #5")
+		//logger.Warn("scheduleFetchTasks #5")
 	}
+}
+func removeDuplicateTask(tasks []proto.Task) []proto.Task {
+	uniqueTasks := make(map[string]proto.Task)
+	for _, task := range tasks {
+		uniqueTasks[task.TaskId] = task
+	}
+	uniqueTaskSlice := make([]proto.Task, 0, len(uniqueTasks))
+	for _, task := range uniqueTasks {
+		uniqueTaskSlice = append(uniqueTaskSlice, task)
+	}
+	return uniqueTaskSlice
 }
 
 func (cli *MigrateClient) getSuccessTasks() []proto.Task {
@@ -371,7 +392,7 @@ func (cli *MigrateClient) executeTask(task *proto.Task) {
 		}
 		logger.Debug("Task complete", zap.Any("task", task))
 	}()
-
+	logger.Debug("executeTask", zap.Any("task", task))
 	if task.WorkMode == proto.JobMove {
 		err = cli.doMoveOperation(task)
 	}
