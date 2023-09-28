@@ -539,11 +539,12 @@ func (mp *metaPartition) GetVerList() []*proto.VolVersionInfo {
 	return mp.multiVersionList.VerList
 }
 
+// include TemporaryVerMap or else cann't recycle temporary version after restart
 func (mp *metaPartition) GetAllVerList() (verList []*proto.VolVersionInfo) {
 	mp.multiVersionList.RLock()
 	defer mp.multiVersionList.RUnlock()
 	verList = mp.multiVersionList.VerList
-	for _, verInfo := mp.multiVersionList.TemporaryVerMap {
+	for _, verInfo := range mp.multiVersionList.TemporaryVerMap {
 		verList = append(verList, verInfo)
 	}
 	sort.SliceStable(verList, func(i, j int) bool {
