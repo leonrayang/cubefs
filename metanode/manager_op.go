@@ -2414,7 +2414,7 @@ func (m *metadataManager) checkMultiVersionStatus(mp MetaPartition, p *Packet) (
 		return
 	}
 	if p.IsVersionList() {
-		return mp.checkVerList(&proto.VolVersionInfoList{VerList: p.VerList}, true, false)
+		return mp.checkVerList(&proto.VolVersionInfoList{VerList: p.VerList}, true)
 	}
 	p.Opcode = proto.OpAgainVerionList
 	// need return and tell client

@@ -1400,27 +1400,18 @@ func (mp *metaPartition) multiVersionTTLWork(dur time.Duration) {
 			}
 			mp.multiVersionList.RLock()
 			volVersionInfoList := &proto.VolVersionInfoList{
-				VerList: mp.multiVersionList.VerList,
+				VerList:         mp.multiVersionList.VerList,
 				TemporaryVerMap: mp.multiVersionList.TemporaryVerMap,
 			}
 			mp.multiVersionList.RUnlock()
-
-			for _, version := range volVersionInfoList.VerList {
-				if len(volVersionInfoList.TemporaryVerMap) > 0 {
-					if _, exist := volVersionInfoList.TemporaryVerMap[version.Ver];exist {
-						if version.Status == proto.VersionDeleting {
-							break
-						}
-						version.Status = proto.VersionDeleting
-						snapQueue <- nil
-						go func(verSeq uint64) {
-							mp.delPartitionVersion(verSeq)
-							<- snapQueue
-						}(version.Ver)
-					}
-				}
+			for _, version := range volVersionInfoList.TemporaryVerMap {
+				snapQueue <- nil
+				go func(verSeq uint64) {
+					mp.delPartitionVersion(verSeq)
+					delete(volVersionInfoList.TemporaryVerMap, verSeq)
+					<-snapQueue
+				}(version.Ver)
 			}
-			//mp.multiVersionList.RUnlock()
 
 		case <-mp.stopC:
 			log.LogWarnf("[multiVersionTTLWork] stoped, mp(%d)", mp.config.PartitionId)
@@ -1442,23 +1433,6 @@ func (mp *metaPartition) delPartitionVersion(verSeq uint64) {
 	go mp.delPartitionExtendsVersion(reqVerSeq, &wg)
 	go mp.delPartitionDentriesVersion(reqVerSeq, &wg)
 	wg.Wait()
-
-	mp.multiVersionList.Lock()
-	defer mp.multiVersionList.Unlock()
-	for id, verInfo := range mp.multiVersionList.VerList {
-		if verInfo.Ver > verSeq {
-			log.LogWarnf("action[delPartitionInodesVersion] mp %v verSeq iterator del and done but not found seq %v",
-				mp.config.PartitionId, verSeq)
-			break
-		}
-		if verInfo.Ver == verSeq {
-			mp.multiVersionList.VerList = append(mp.multiVersionList.VerList[:id], mp.multiVersionList.VerList[id+1:]...)
-			log.LogWarnf("action[delPartitionInodesVersion] mp %v verSeq iterator del and done found seq %v and delete",
-				mp.config.PartitionId, verSeq)
-			delete(mp.multiVersionList.TemporaryVerMap, verSeq)
-			return
-		}
-	}
 }
 
 func (mp *metaPartition) delPartitionDentriesVersion(verSeq uint64, wg *sync.WaitGroup) {

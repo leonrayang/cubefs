@@ -1241,7 +1241,7 @@ func TestCheckVerList(t *testing.T) {
 			{Ver: 50, Status: proto.VersionNormal}},
 	}
 
-	mp.checkVerList(masterList, false, true)
+	mp.checkVerList(masterList, false)
 	verData := <-mp.verUpdateChan
 	mp.submit(opFSMVersionOp, verData)
 
@@ -1254,7 +1254,7 @@ func TestCheckVerList(t *testing.T) {
 			{Ver: 40, Status: proto.VersionNormal}},
 	}
 
-	mp.checkVerList(masterList, false, true)
+	mp.checkVerList(masterList, false)
 	verData = <-mp.verUpdateChan
 	mp.submit(opFSMVersionOp, verData)
 
@@ -1483,10 +1483,8 @@ func TestDelPartitionVersion(t *testing.T) {
 			{Ver: 40, Status: proto.VersionNormal},
 			{Ver: 50, Status: proto.VersionNormal}},
 	}
-
-	mp.checkVerList(masterList, false, true)
-	verData := <-mp.verUpdateChan
-	mp.submit(opFSMVersionOp, verData)
+	mp.checkByMasterVerlist(mp.multiVersionList, masterList)
+	mp.checkVerList(masterList, true)
 	assert.True(t, len(mp.multiVersionList.TemporaryVerMap) == 2)
 	go mp.multiVersionTTLWork(time.Millisecond*10)
 
@@ -1499,11 +1497,12 @@ func TestDelPartitionVersion(t *testing.T) {
 		}
 		break
 	}
-	assert.True(t, ino.getVer() == 0)
+	inoNew := mp.getInode(&Inode{Inode: ino.Inode}, false).Msg
+	assert.True(t, inoNew.getVer() == 20)
 	extend := mp.extendTree.Get(NewExtend(ino.Inode)).(*Extend)
-	assert.True(t, ino.multiSnap.verSeq == 20)
-	assert.True(t, extend.verSeq == 20)
-	assert.True(t, len(extend.multiVers) == 2)
+	t.Logf("extent verseq %v, multivers %v", extend.verSeq, extend.multiVers)
+	assert.True(t, extend.verSeq == 10)
+	assert.True(t, len(extend.multiVers) == 1)
 
 	assert.True(t, len(mp.multiVersionList.TemporaryVerMap) == 0)
 }

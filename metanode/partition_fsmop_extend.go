@@ -43,22 +43,42 @@ func (mp *metaPartition) fsmSetXAttr(extend *Extend) (err error) {
 }
 
 // todo(leon chang):check snapshot delete relation with attr
-func (mp *metaPartition) fsmRemoveXAttr(extend *Extend) (err error) {
-	treeItem := mp.extendTree.CopyGet(extend)
+func (mp *metaPartition) fsmRemoveXAttr(reqExtend *Extend) (err error) {
+	treeItem := mp.extendTree.CopyGet(reqExtend)
 	if treeItem == nil {
 		return
 	}
-	e := treeItem.(*Extend)
-	if extend.verSeq < e.verSeq {
-		return fmt.Errorf("seq error assign %v but less than %v", extend.verSeq, e.verSeq)
+	if reqExtend.verSeq == 0 {
+		reqExtend.verSeq = mp.GetVerSeq()
 	}
-	// attr multi-ver copy all attr for simplify management
-	if e.verSeq > extend.verSeq {
+	e := treeItem.(*Extend)
+	if reqExtend.verSeq > e.verSeq {
 		e.multiVers = append(e.multiVers, e)
-		e.verSeq = extend.verSeq
+		e.verSeq = reqExtend.verSeq
+	} else {
+		var lastVer uint64
+		for id, ele := range e.multiVers {
+			if ele.verSeq > reqExtend.verSeq {
+				lastVer = ele.verSeq
+				continue
+			} else if ele.verSeq <= reqExtend.verSeq {
+				if id == 0 {
+					break
+				}
+				newExtend := ele.Copy().(*Extend)
+				newExtend.verSeq = lastVer
+
+				first := e.multiVers[:id+1]
+				second := e.multiVers[id+1:]
+
+				e.multiVers = append(first, append([]*Extend{newExtend}, second...)...)
+				e = newExtend
+			}
+		}
 	}
 
-	extend.Range(func(key, value []byte) bool {
+
+	reqExtend.Range(func(key, value []byte) bool {
 		e.Remove(key)
 		return true
 	})
