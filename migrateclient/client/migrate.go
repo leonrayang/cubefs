@@ -70,6 +70,67 @@ func (cli *MigrateClient) doMigrateDirOperation(task *proto.Task) (error, uint64
 		return errors.New(fmt.Sprintf("Execute copy dir operation failed: %s", err.Error())), totalSize
 	}
 }
+
+func (cli *MigrateClient) doMigrateHDDDirOperation(task *proto.Task) (error, uint64) {
+	var (
+		ok            bool
+		srcClusterId  = task.SourceCluster
+		dstClusterId  = task.TargetCluster
+		srcRouterInfo falconroute.RouteInfo
+		dstRouterInfo falconroute.RouteInfo
+		srcRouter     *falconroute.Router
+		dstRouter     *falconroute.Router
+
+		srcPath = task.Source
+		dstPath = task.Target
+		logger  = cli.Logger
+		err     error
+	)
+	virSrcPath := falconroute.GetVirtualPathFromHDDAbsDir(srcPath)
+	virDstPath := falconroute.GetVirtualPathFromHDDAbsDir(dstPath)
+	//server做了路由检测，这里可以省略大部分步骤
+	if srcRouter, ok = cli.routerMap[srcClusterId]; !ok {
+		logger.Error("route not found in config", zap.String("clusterId", srcClusterId))
+		return errors.New(fmt.Sprintf("route not found in config %s", srcClusterId)), 0
+	}
+
+	srcRouterInfo, err = srcRouter.GetRoute(virSrcPath, logger)
+	if err != nil {
+		logger.Error("get route failed", zap.Any("virSrcPath", virSrcPath), zap.Error(err))
+		return errors.New(fmt.Sprintf("get route %s failed:%s ", virSrcPath, err.Error())), 0
+	}
+
+	if dstRouter, ok = cli.routerMap[dstClusterId]; !ok {
+		logger.Error("route not found in config", zap.String("clusterId", dstClusterId))
+		return errors.New(fmt.Sprintf("route not found in config %s", dstClusterId)), 0
+	}
+
+	dstRouterInfo, err = dstRouter.GetRoute(virDstPath, logger)
+	if err != nil {
+		logger.Error("get route failed", zap.Any("virDstPath", virDstPath), zap.Error(err))
+		return errors.New(fmt.Sprintf("get route %s failed:%s ", virDstPath, err.Error())), 0
+	}
+
+	cfg := &liblog.Config{
+		ScreenOutput: false,
+		LogFile:      path.Join(buildTaskCachePath(task.TaskId, path.Dir(cli.logCfg.LogFile)), fmt.Sprintf("%v.list", task.TaskId)),
+		LogLevel:     "debug",
+		MaxSizeMB:    1024,
+		MaxBackups:   5, //保留的日志文件个数
+		MaxAge:       7,
+		Compress:     false,
+	}
+	copyLogger, _ := liblog.NewZapLoggerWithLevel(cfg)
+
+	if err, totalSize := execCopyDirCommand(cli.sdkManager, srcPath, dstPath, srcRouterInfo.Pool, srcRouterInfo.Endpoint,
+		dstRouterInfo.Pool, dstRouterInfo.Endpoint, logger, cli.copyGoroutineLimit, cli.copyQueueLimit,
+		task.TaskId, cli.tinyFactor, cli.CheckDebugEnable, copyLogger, task.OverWrite, cli.localAddr); err == nil {
+		return nil, totalSize
+	} else {
+		return errors.New(fmt.Sprintf("Execute copy dir operation failed: %s", err.Error())), totalSize
+	}
+}
+
 func buildTaskCachePath(taskid string, dir string) string {
 	return fmt.Sprintf("%s/tasks/%d/%d/%s", dir, hashKey(taskid)&0xFFF%512, hashKey(taskid)%512, taskid)
 }

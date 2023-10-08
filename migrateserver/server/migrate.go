@@ -76,6 +76,74 @@ func (svr *MigrateServer) migrateTargetDir(dir, srcClusterId, dstClusterId strin
 	return nil, job.JobId
 }
 
+func (svr *MigrateServer) migrateHDDTargetDir(dir, srcClusterId, dstClusterId string, overWrite bool) (err error, id string) {
+	var (
+		srcRouterInfo falconroute.RouteInfo
+		dstRouterInfo falconroute.RouteInfo
+		srcRouter     *falconroute.Router
+		dstRouter     *falconroute.Router
+		ok            bool
+		logger        = svr.Logger
+	)
+	//虚拟路径只是用来查路由的，并不是完整路劲
+	virSrcPath := falconroute.GetVirtualPathFromHDDAbsDir(dir)
+	if virSrcPath == "" {
+		logger.Error("Path is not legal", zap.String("srcPath", dir))
+		return errors.New(fmt.Sprintf("srcPath %s is not legal", dir)), ""
+	}
+	//获取源路由
+	if srcRouter, ok = svr.routerMap[srcClusterId]; !ok {
+		logger.Error("route not found in config", zap.String("clusterId", srcClusterId))
+		return errors.New(fmt.Sprintf("route not found in config %s", srcClusterId)), ""
+	}
+	srcRouterInfo, err = srcRouter.GetRoute(virSrcPath, logger)
+	if err != nil {
+		logger.Error("get route failed", zap.Any("virSrcPath", virSrcPath), zap.Error(err))
+		return errors.New(fmt.Sprintf("get route %s failed:%s ", virSrcPath, err.Error())), ""
+	}
+	if srcRouterInfo.GroupType != falconroute.GroupTypeCfs {
+		logger.Error("src route info not in cfs", zap.Any("src", srcRouterInfo))
+		return errors.New(fmt.Sprintf("src route info not in cfs: %s", srcRouterInfo.VirtualPath)), ""
+	}
+	//获取目的路由
+	if dstRouter, ok = svr.routerMap[dstClusterId]; !ok {
+		logger.Error("route not found in config", zap.String("clusterId", dstClusterId))
+		return errors.New(fmt.Sprintf("route not found in config %s", dstClusterId)), ""
+	}
+
+	dstRouterInfo, err = dstRouter.GetRoute(virSrcPath, logger)
+	if err != nil {
+		logger.Error("get router failed", zap.Any("virDstPath", virSrcPath), zap.Error(err))
+		return errors.New(fmt.Sprintf("get router %s failed:%s ", virSrcPath, err.Error())), ""
+	}
+	if dstRouterInfo.GroupType != falconroute.GroupTypeCfs {
+		logger.Error("dst route info not in cfs", zap.Any("dst", dstRouterInfo))
+		return errors.New(fmt.Sprintf("dst route info not in cfs: %s", dstRouterInfo.VirtualPath)), ""
+	}
+
+	srcCli, err := svr.sdkManager.GetCubeFSSdk(srcRouterInfo.Pool, srcRouterInfo.Endpoint)
+	if err != nil {
+		return err, ""
+	}
+	dstCli, err := svr.sdkManager.GetCubeFSSdk(dstRouterInfo.Pool, dstRouterInfo.Endpoint)
+	if err != nil {
+		return err, ""
+	}
+
+	var mode = proto.JobMigrateHDDDir
+
+	if svr.checkMigratingJobConflict(dir, dir, srcClusterId, dstClusterId, mode) {
+		logger.Error("Migrate job is already exist")
+		return errors.New(fmt.Sprintf("Migrate job is already exist")), ""
+	}
+	job := NewMigrateJob(dir, srcClusterId, dir, dstClusterId, mode, svr.SummaryGoroutineLimit, svr.Logger, overWrite)
+	svr.addMigratingJob(job)
+	job.SetSourceSDK(srcCli)
+	job.SetTargetSDK(dstCli)
+	go job.execute(svr)
+	return nil, job.JobId
+}
+
 func (svr *MigrateServer) migrateResourceGroupDir(resourceGroup, srcClusterId, dstClusterId string, overwrite bool) (err error, id string) {
 	var (
 		logger        = svr.Logger

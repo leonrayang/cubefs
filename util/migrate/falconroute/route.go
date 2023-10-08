@@ -110,6 +110,10 @@ func GetVirtualPathFromAbsDir(absDir string) string {
 	}
 }
 
+func GetVirtualPathFromHDDAbsDir(absDir string) string {
+	return "/"
+}
+
 type RouterApi interface {
 	GetGroupUsers(groupName string, logger *zap.Logger) (users []User, err error)
 	GetRoute(virtualPath string, logger *zap.Logger) (routeInfo RouteInfo, err error)

@@ -15,7 +15,7 @@ const (
 	QueryProgressUrl            = "/queryJobProgress"
 	QueryProgressesUrl          = "/queryJobsProgress"
 	CopyLocalUrl                = "/copyLocalFiles"
-	MigrateDirUrl               = "/migrateDir"
+	MigrateHDDDirUrl            = "/migrateHDDDir"
 	MigrateResourceGroupDirUrl  = "/migrateResourceGroupDir"
 	MigrateUserUrl              = "/migrateUser"
 	MigrateResourceGroupUrl     = "/migrateResourceGroup"
@@ -27,6 +27,7 @@ const (
 	DisableClientDebugUrl       = "/disableClientDebug"
 	QueryStreamerLenUrl         = "/queryStreamerLen"
 	AdjustWorkerJobCntUrl       = "/adjustWorkerJobCnt"
+	MigrateDirUrl               = "/migrateDir"
 )
 
 type HttpReply struct {
@@ -59,6 +60,7 @@ const (
 	JobMigrateResourceGroupDir
 	JobMigrateResourceGroup
 	JobMigrateUser
+	JobMigrateHDDDir
 )
 
 const (

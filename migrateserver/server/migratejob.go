@@ -194,6 +194,10 @@ func (job *MigrateJob) execute(svr *MigrateServer) {
 	if job.WorkMode == proto.JobMigrateDir {
 		job.executeInMigrateDirMode(svr)
 	}
+
+	if job.WorkMode == proto.JobMigrateHDDDir {
+		job.executeInMigrateHDDDirMode(svr)
+	}
 }
 func (job *MigrateJob) executeInMoveMode(svr *MigrateServer) {
 	logger := job.logger
@@ -295,6 +299,35 @@ func (job *MigrateJob) executeInMigrateDirMode(svr *MigrateServer) {
 	job.mapFailedLk.Unlock()
 	logger.Debug("executeInMigrateDirMode done ", zap.Any("status", job.GetJobStatus()))
 }
+
+func (job *MigrateJob) executeInMigrateHDDDirMode(svr *MigrateServer) {
+	logger := job.logger
+	logger.Debug("start executeInMigrateHDDDirMode")
+	defer job.close(svr)
+	if job.srcSDK == nil {
+		panic(fmt.Sprintf("srcSDK should not be none"))
+	}
+	if err := job.mkHDDParentDir(job.DstPath); err != nil {
+		job.SetJobStatus(proto.JobFailed)
+		job.saveWalkFailedTask(job.SrcPath, job.DstPath, err)
+		return
+	}
+	//job.TotalSize, _ = job.srcSDK.GetDirSize(job.SrcPath, job.SummaryGoroutineLimit)
+	//
+	job.walkDir(job.SrcPath, job.DstPath, svr)
+	job.SetJobStatus(proto.JobRunning)
+	logger.Debug("walk done")
+	job.waitUtilTaskDone(svr)
+	job.mapFailedLk.Lock()
+	if len(job.failedTask) == 0 {
+		job.SetJobStatus(proto.JobSuccess)
+	} else {
+		job.SetJobStatus(proto.JobFailed)
+	}
+	job.mapFailedLk.Unlock()
+	logger.Debug("executeInMigrateHDDDirMode done ", zap.Any("status", job.GetJobStatus()))
+}
+
 func (job *MigrateJob) close(svr *MigrateServer) {
 	job.completeTime = time.Now()
 	job.logger = job.logger.With(zap.Any("bytes", job.TotalSize),

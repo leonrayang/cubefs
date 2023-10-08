@@ -408,6 +408,10 @@ func (cli *MigrateClient) executeTask(task *proto.Task) {
 	if task.WorkMode == proto.JobMigrateDir {
 		err, task.MigrateSize = cli.doMigrateDirOperation(task)
 	}
+
+	if task.WorkMode == proto.JobMigrateHDDDir {
+		err, task.MigrateSize = cli.doMigrateHDDDirOperation(task)
+	}
 }
 
 func (cli *MigrateClient) StartHttpServer() {

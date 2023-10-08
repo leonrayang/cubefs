@@ -170,12 +170,11 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	var modifyTimeErrCached int32
 	atomic.StoreInt32(&modifyTimeErrCached, 0)
 
-	copyTaskFunc := func() {
-
-		//logger.Debug("execCopyDirCommand new goroutine", zap.Any("TaskId", taskId))
+	copyTaskFunc := func(index int) {
+		logger.Debug("execCopyDirCommand new goroutine", zap.Any("TaskId", taskId), zap.Any("index", index))
 		defer func() {
 			wg.Done()
-			//logger.Debug("execCopyDirCommand  goroutine close", zap.Any("TaskId", taskId))
+			logger.Debug("execCopyDirCommand  goroutine close", zap.Any("TaskId", taskId), zap.Any("index", index))
 		}()
 		for task := range taskCh {
 			select {
@@ -193,19 +192,19 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 						atomic.StoreInt32(&modifyTimeErrCached, 1)
 						select {
 						case errCh <- taskErr:
-							logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
+							logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr), zap.Any("index", index))
 						default:
 							//logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
 						}
 						if copyLogger != nil {
-							copyLogger.Debug("Copy failed", zap.Any("TaskId", taskId), zap.Any("fileName", task.source))
+							copyLogger.Debug("Copy failed", zap.Any("TaskId", taskId), zap.Any("fileName", task.source), zap.Any("index", index))
 						}
 
 					}
 				} else {
 					select {
 					case errCh <- taskErr:
-						logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
+						logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr), zap.Any("index", index))
 					default:
 						//logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
 					}
@@ -216,7 +215,7 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 			}
 		}
 	}
-	//目前无法启用
+
 	if len(children) >= TinyCopyFileLimit {
 		goroutineLimit = tinyFactor * goroutineLimit
 		//发布前删除
@@ -224,9 +223,10 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	}
 	for i := 0; i < goroutineLimit; i++ {
 		wg.Add(1)
-		go copyTaskFunc()
+		go copyTaskFunc(i)
 	}
-	logger.Debug("execCopyDirCommand traverse dir ", zap.Any("TaskId", taskId))
+	logger.Debug("execCopyDirCommand traverse dir ", zap.Any("TaskId", taskId),
+		zap.Any("goroutineLimit", goroutineLimit))
 	for _, child := range children {
 		if srcCli.IsDirByDentry(child) {
 			continue

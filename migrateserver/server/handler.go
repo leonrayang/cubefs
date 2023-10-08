@@ -46,6 +46,8 @@ func (svr *MigrateServer) registerRouter() {
 	http.HandleFunc(proto.RetryMigratingJobUrl, svr.retryMigratingJobHandler)
 	//调整worker的max job
 	http.HandleFunc(proto.AdjustWorkerJobCntUrl, svr.adjustWorkerJobCnt)
+	//迁移目录
+	http.HandleFunc(proto.MigrateHDDDirUrl, svr.migrateHDDDirHandler)
 }
 
 func (svr *MigrateServer) migrateDetailsHandler(w http.ResponseWriter, r *http.Request) {
@@ -302,6 +304,53 @@ func (svr *MigrateServer) migrateDirHandler(w http.ResponseWriter, r *http.Reque
 	}
 	_, req.Dir = validateDirPath(req.Dir)
 	err, id := svr.migrateTargetDir(req.Dir, req.SrcClusterId, req.DstClusterId, req.Overwrite)
+
+	if err != nil {
+		writeErr(w, proto.Fail, err.Error(), logger)
+		return
+	}
+	writeResp(w, id, logger)
+}
+
+func (svr *MigrateServer) migrateHDDDirHandler(w http.ResponseWriter, r *http.Request) {
+	logger := svr.Logger
+	req := &proto.MigrateDirReq{}
+	err := decodeReq(r, req, logger)
+	if err != nil {
+		writeErr(w, proto.ParmErr, err.Error(), logger)
+		return
+	}
+	if len(req.Dir) == 0 {
+		writeErr(w, proto.ParmErr, "Dir can't be empty ", logger)
+		return
+	}
+
+	if len(req.SrcClusterId) == 0 {
+		writeErr(w, proto.ParmErr, "SrcClusterId can't be empty", logger)
+		return
+	}
+
+	if len(req.DstClusterId) == 0 {
+		writeErr(w, proto.ParmErr, "DstClusterId can't be empty", logger)
+		return
+	}
+
+	if req.SrcClusterId == req.DstClusterId {
+		writeErr(w, proto.ParmErr, "Cannot migrate in cluster,srcClusterId equal to dstClusterId", logger)
+		return
+	}
+
+	if req.SrcClusterId != falconroute.ClusterHT && req.SrcClusterId != falconroute.ClusterBHW {
+		writeErr(w, proto.ParmErr, "SrcClusterId must be bhw or ht", logger)
+		return
+	}
+
+	if req.DstClusterId != falconroute.ClusterHT && req.DstClusterId != falconroute.ClusterBHW {
+		writeErr(w, proto.ParmErr, "DstClusterId must be bhw or ht", logger)
+		return
+	}
+	_, req.Dir = validateDirPath(req.Dir)
+	err, id := svr.migrateHDDTargetDir(req.Dir, req.SrcClusterId, req.DstClusterId, req.Overwrite)
 
 	if err != nil {
 		writeErr(w, proto.Fail, err.Error(), logger)

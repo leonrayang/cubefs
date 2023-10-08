@@ -175,3 +175,47 @@ func (job *MigrateJob) mkParentDir(dirPath string) (err error) {
 	}
 	return
 }
+
+func (job *MigrateJob) mkHDDParentDir(dirPath string) (err error) {
+	dirPath = gopath.Clean(dirPath)
+	subs := strings.Split(dirPath, "/")
+	//至少/volumes/mlp/code/personal/肯定是创建好的
+	base := "/"
+
+	for index, _ := range subs {
+		targetDir := gopath.Join(base, subs[index])
+		if !job.dstSDK.PathIsExist(targetDir) {
+			//不存在则创建对应目录,根据源路径的权限
+			var srcDirInfo, targetDirInfo *proto.InodeInfo
+			srcDirInfo, err = job.srcSDK.LookupPath(gopath.Clean(targetDir))
+			if err != nil {
+				job.logger.Error("mkParentDir get src dir failed", zap.Any("targetDir", targetDir), zap.Any("err", err))
+				return
+			}
+			//获取目标路径的父目录
+			targetDirInfo, err = job.dstSDK.LookupPath(gopath.Clean(base))
+			if err != nil {
+				job.logger.Error("mkParentDir get dst dir failed", zap.Any("base", base), zap.Any("err", err))
+				return
+			}
+			_, err = job.dstSDK.CreateDirectory(targetDirInfo.Inode, subs[index], srcDirInfo.Mode, srcDirInfo.Uid, srcDirInfo.Gid)
+			if err != nil {
+				job.logger.Error("mkParentDir create dir failed", zap.Any("targetDir", targetDir), zap.Any("err", err))
+				return
+			}
+		}
+		//如果已经存在，但是不是目录也报错
+		var isDir bool
+		isDir, err = job.dstSDK.IsDir(targetDir)
+		if err != nil {
+			job.logger.Error("check targetDir failed", zap.Any("targetDir", targetDir), zap.Any("err", err))
+			return err
+		}
+		if !isDir {
+			job.logger.Error("targetDir is not dir", zap.Any("targetDir", targetDir), zap.Any("err", err))
+			return err
+		}
+		base = targetDir
+	}
+	return
+}
