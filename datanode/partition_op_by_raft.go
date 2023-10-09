@@ -238,6 +238,10 @@ func (dp *DataPartition) ApplyRandomWrite(command []byte, raftApplyID uint64) (r
 		raftApplyID, dp.partitionID, opItem.extentID, opItem.offset, opItem.size)
 
 	for i := 0; i < 20; i++ {
+		//1.cp 一个extent 副本
+		//2.在副本上随机写NewExtentID
+		//3.修改元数据mt，失败，新的Extent删掉
+		//4. rename
 		err = dp.ExtentStore().Write(opItem.extentID, opItem.offset, opItem.size, opItem.data, opItem.crc, storage.RandomWriteType, opItem.opcode == proto.OpSyncRandomWrite)
 		if err == nil {
 			break

@@ -365,25 +365,33 @@ func (client *ExtentClient) CloseStream(inode uint64) error {
 
 // Evict request shall grab the lock until request is sent to the request channel
 func (client *ExtentClient) EvictStream(inode uint64) error {
+	log.LogErrorf("EvictStream #1 inode %v", inode)
 	client.streamerLock.Lock()
 	s, ok := client.streamers[inode]
 	if !ok {
+		log.LogErrorf("EvictStream #2 inode %v", inode)
 		client.streamerLock.Unlock()
 		return nil
 	}
+	log.LogErrorf("EvictStream #3 inode %v", inode)
 	if s.isOpen {
 		s.isOpen = false
+		log.LogErrorf("EvictStream #4.1.1 inode %v", inode)
 		err := s.IssueEvictRequest()
+		log.LogErrorf("EvictStream #4.1.2 inode %v", inode)
 		if err != nil {
 			return err
 		}
+		log.LogErrorf("EvictStream #4.1.3 inode %v", inode)
 		s.done <- struct{}{}
 	} else {
+		log.LogErrorf("EvictStream #4.2.1 inode %v", inode)
 		delete(s.client.streamers, s.inode)
 		s.client.streamerLock.Unlock()
 		s.done <- struct{}{}
+		log.LogErrorf("EvictStream #4.2.2 inode %v", inode)
 	}
-
+	log.LogErrorf("EvictStream #5 inode %v", inode)
 	return nil
 }
 

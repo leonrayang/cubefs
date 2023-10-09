@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"github.com/cubefs/cubefs/util/liblog"
@@ -164,28 +163,29 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	errCh := make(chan error, 10)
 	taskCh := make(chan CopySubTask, taskLimit)
 	wg := sync.WaitGroup{}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	//ctx, cancel := context.WithCancel(context.Background())
+	//defer cancel()
 	var errMsg string
 	var modifyTimeErrCached int32
 	atomic.StoreInt32(&modifyTimeErrCached, 0)
 
 	copyTaskFunc := func(index int) {
-		logger.Debug("execCopyDirCommand new goroutine", zap.Any("TaskId", taskId), zap.Any("index", index))
+		//logger.Debug("execCopyDirCommand new goroutine", zap.Any("TaskId", taskId), zap.Any("index", index))
 		defer func() {
 			wg.Done()
-			logger.Debug("execCopyDirCommand  goroutine close", zap.Any("TaskId", taskId), zap.Any("index", index))
+			//logger.Debug("execCopyDirCommand  goroutine close", zap.Any("TaskId", taskId), zap.Any("index", index))
 		}()
 		for task := range taskCh {
-			select {
-			case <-ctx.Done():
-				return // Error somewhere, terminate
-			default: // Default is must to avoid blocking
-			}
+			//select {
+			//case <-ctx.Done():
+			//	return // Error somewhere, terminate
+			//default: // Default is must to avoid blocking
+			//}
 			var taskErr error
-			//logger.Warn("Try copy", zap.Any("source", task.source))
+			//logger.Debug("Try copy", zap.Any("source", task.source), zap.Any("TaskId", taskId), zap.Any("index", index))
 			taskErr = srcCli.CopyFileToDir(task.source, task.target, dstCli, taskId, debugFunc,
 				copyLogger, overWrite, addr)
+			//logger.Debug("copy done", zap.Any("source", task.source), zap.Any("TaskId", taskId), zap.Any("index", index), zap.Any("taskErr", taskErr))
 			if taskErr != nil {
 				if strings.Contains(taskErr.Error(), "modify time") {
 					if atomic.LoadInt32(&modifyTimeErrCached) == 0 {
@@ -196,9 +196,9 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 						default:
 							//logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
 						}
-						if copyLogger != nil {
-							copyLogger.Debug("Copy failed", zap.Any("TaskId", taskId), zap.Any("fileName", task.source), zap.Any("index", index))
-						}
+						//if copyLogger != nil {
+						//	copyLogger.Debug("Copy failed", zap.Any("TaskId", taskId), zap.Any("fileName", task.source), zap.Any("index", index))
+						//}
 
 					}
 				} else {
@@ -207,6 +207,9 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 						logger.Warn("Copy failed", zap.Any("TaskId", taskId), zap.Any("err", taskErr), zap.Any("index", index))
 					default:
 						//logger.Warn("to many errors", zap.Any("TaskId", taskId), zap.Any("err", taskErr))
+					}
+					if copyLogger != nil {
+						copyLogger.Debug("Copy failed", zap.Any("TaskId", taskId), zap.Any("fileName", task.source), zap.Any("err", taskErr))
 					}
 				}
 			} else {
@@ -256,6 +259,9 @@ func execCopyDirCommand(manager *cubefssdk.SdkManager, source, target, srcVol, s
 	for subErr := range errCh {
 		errMsg += fmt.Sprintf("%v;", subErr.Error())
 		count++
+	}
+	if count != 0 {
+		errMsg += fmt.Sprintf(";please check error file list %v on %v", taskId, addr)
 	}
 	if count == 10 {
 		errMsg = fmt.Sprintf("[to many errors]%v", errMsg)

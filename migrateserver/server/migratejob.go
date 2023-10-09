@@ -132,9 +132,10 @@ func (job *MigrateJob) delMigratingTask(task proto.Task) {
 		} else {
 			job.logger.Warn("cannot dec job cnt if cnt == 0 ", zap.Any("task", task.String()))
 		}
+		job.migratingTask.Delete(task.Key())
+		job.logger.Warn("delete task ", zap.Any("task", task.String()))
 	}
-	job.migratingTask.Delete(task.Key())
-	job.logger.Warn("delete task ", zap.Any("task", task.String()))
+
 }
 
 func (job *MigrateJob) saveFailedMigratingTask(task proto.Task) {
@@ -654,28 +655,28 @@ func (job *MigrateJob) getErrorMsg(failTaskReportLimit int) (errorMsg string) {
 		return job.ErrorMsg
 	}
 	if job.hasSubMigrateJobs() {
-		var count = 0
+		//var count = 0
 		job.mapSubCompleteJobLk.RLock()
 		for _, sub := range job.subCompleteMigrateJob {
 			failTasks := sub.GetFailedMigratingTask()
 			for index, task := range failTasks {
 				errorMsg += fmt.Sprintf("[%v]%v;", index, task.StringToReport())
-				count++
-				if count > failTaskReportLimit {
-					errorMsg += "too many errors!"
-					job.mapSubCompleteJobLk.RUnlock()
-					return
-				}
+				//count++
+				//if count > failTaskReportLimit {
+				//	errorMsg += "too many errors!"
+				//	job.mapSubCompleteJobLk.RUnlock()
+				//	return
+				//}
 			}
 		}
 		job.mapSubCompleteJobLk.RUnlock()
 
 	}
 	failTasks := job.GetFailedMigratingTask()
-	if len(failTasks) > failTaskReportLimit {
-		failTasks = failTasks[:failTaskReportLimit]
-		errorMsg = "too many errors:"
-	}
+	//if len(failTasks) > failTaskReportLimit {
+	//	failTasks = failTasks[:failTaskReportLimit]
+	//	errorMsg = "too many errors:"
+	//}
 	for index, task := range failTasks {
 		errorMsg += fmt.Sprintf("[%v]%v;", index, task.StringToReport())
 	}

@@ -99,11 +99,13 @@ func (svr *MigrateServer) registerHandler(w http.ResponseWriter, r *http.Request
 	cli := svr.getMigrateClient(req.Addr)
 	if cli != nil {
 		logger.Info("Already register")
-
-	} else {
-		cli = newMigrateClient(req.Addr, req.JobCnt, nodeId, svr)
-		svr.addMigrateClient(cli)
+		//之前的任务要重新分配，worker已经不在了
+		cli.close()
+		svr.cliMap.Delete(cli.Addr)
 	}
+	cli = newMigrateClient(req.Addr, req.JobCnt, nodeId, svr)
+	svr.addMigrateClient(cli)
+
 	resp := &proto.RegisterResp{
 		Addr:   req.Addr,
 		NodeId: req.Addr,
