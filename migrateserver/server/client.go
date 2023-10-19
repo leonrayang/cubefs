@@ -206,8 +206,8 @@ func (mc *MigrateClient) updateRunningTasksStatus(succTasks, failTasks, newTasks
 			mc.taskMap.Delete(key)
 		}
 		//更新task所属dir的状态
-		mc.updateMigratingDirState(task, true, req)
 		logger.Debug("receive success task", zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.String("task", task.String()))
+		mc.updateMigratingDirState(task, true, req)
 	}
 	logger.Debug("action[fetchTasksHandler] succTasks",
 		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
@@ -221,8 +221,8 @@ func (mc *MigrateClient) updateRunningTasksStatus(succTasks, failTasks, newTasks
 			//因为要换个worker，所以从当前worker删除
 			mc.taskMap.Delete(key)
 		}
-		mc.updateMigratingDirState(task, false, req)
 		logger.Debug("receive fail task", zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.String("task", task.String()))
+		mc.updateMigratingDirState(task, false, req)
 	}
 	logger.Debug("action[fetchTasksHandler] failTasks",
 		zap.Any("RequestID", req.RequestID), zap.Any("client", req.NodeId), zap.Any("cost", time.Now().Sub(start).String()))
@@ -244,6 +244,8 @@ func (mc *MigrateClient) updateMigratingDirState(task proto.Task, succ bool, req
 			job.delFailedMigratingTask(task)
 			task.IsRetrying = false
 		}
+		job.completeTaskNum.Add(1)
+		job.delMigratingTask(task)
 	} else {
 		//更新重试次数
 		task.Retry++
@@ -254,19 +256,25 @@ func (mc *MigrateClient) updateMigratingDirState(task proto.Task, succ bool, req
 			select {
 			case job.retryCh <- task:
 				logger.Debug("fail task retry again", zap.String("task", task.String()))
+				//不增加计数，只是从当前进行中的列表中删除
+				job.migratingTask.Delete(task.Key())
 			default:
 				logger.Warn("too many failed tasks, do not retry", zap.String("task", task.String()))
 				task.ErrorMsg += "[too many failed tasks, do not retry!]"
 				task.IsRetrying = false
+				job.completeTaskNum.Add(1)
+				job.delMigratingTask(task)
+				job.saveFailedMigratingTask(task)
 			}
 		} else {
 			logger.Warn("task reach retry limit,failed", zap.String("task", task.String()))
 			task.IsRetrying = false
+			job.completeTaskNum.Add(1)
+			job.delMigratingTask(task)
+			job.saveFailedMigratingTask(task)
 		}
-		job.saveFailedMigratingTask(task)
 	}
-	job.delMigratingTask(task)
-	job.completeTaskNum.Add(1)
+
 }
 func (mc *MigrateClient) taskNeedRetry(task proto.Task) bool {
 	//如果是只有修改时间不一致的错误，就不重传
