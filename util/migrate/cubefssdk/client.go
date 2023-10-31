@@ -3,6 +3,7 @@ package cubefssdk
 import (
 	"github.com/cubefs/cubefs/util/log"
 	"go.uber.org/zap"
+	"strings"
 )
 
 type CubeFSSdk struct {
@@ -32,6 +33,9 @@ func newCubeFSSdk(volName, endpoint string, enableSummary bool, logger *zap.Logg
 		endpoint = "cfs-bhw-starfire-ssd2.oppo.local"
 	}
 
+	if strings.Contains(endpoint, ",") {
+		endpoint = strings.Split(endpoint, ",")[0]
+	}
 	sdk.mwApi, err = NewMetaApi(volName, endpoint, enableSummary, logger)
 	if err != nil {
 		return nil, err
