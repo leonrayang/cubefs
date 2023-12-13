@@ -11,16 +11,12 @@ popd
 
 export PATH=$PATH:/go/bin
 
-pushd ${CurrentPath}/../../storage
-go generate ./...
-if [[ $? -ne 0 ]]; then
-    exit 1
-fi
-popd
-
-pushd ${CurrentPath}/../../cli
-go generate ./...
-if [[ $? -ne 0 ]]; then
-    exit 1
-fi
-popd
+for subdir in storage cli flashnode
+do
+    pushd ${CurrentPath}/../../${subdir}
+    go generate ./...
+    if [[ $? -ne 0 ]]; then
+        exit 1
+    fi
+    popd
+done
