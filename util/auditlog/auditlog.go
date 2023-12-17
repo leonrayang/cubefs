@@ -231,9 +231,7 @@ func NewAudit(dir, logModule string, logMaxSize int64) (*Audit, error) {
 	}
 	host, ip := getAddr()
 	absPath = path.Join(absPath, logModule)
-	if !isPathSafe(absPath) {
-		return nil, errors.New("invalid file path")
-	}
+
 	fi, err := os.Stat(absPath)
 	if err != nil {
 		os.MkdirAll(absPath, 0755)

@@ -394,16 +394,16 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 		f.super.ic.Delete(ino)
 	}()
 
-	var waitForFlush bool
+	//var waitForFlush bool
 	var flags int
 
 	if isDirectIOEnabled(req.FileFlags) || (req.FileFlags&fuse.OpenSync != 0) {
-		waitForFlush = true
+		//waitForFlush = true
 		if f.super.enSyncWrite {
 			flags |= proto.FlagsSyncWrite
 		}
 		if proto.IsCold(f.super.volType) {
-			waitForFlush = false
+			//waitForFlush = false
 			flags |= proto.FlagsSyncWrite
 		}
 	}
@@ -461,16 +461,16 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	}
 
 	//only hot volType need to wait flush
-	if waitForFlush {
-		err = f.super.ec.Flush(ino)
-		if err != nil {
-			msg := fmt.Sprintf("Write: failed to wait for flush, ino(%v) offset(%v) len(%v) err(%v) req(%v)", ino, req.Offset, reqlen, err, req)
-			f.super.handleError("Wrtie", msg)
-			errMetric := exporter.NewCounter("fileWriteFailed")
-			errMetric.AddWithLabels(1, map[string]string{exporter.Vol: f.super.volname, exporter.Err: "EIO"})
-			return ParseError(err)
-		}
-	}
+	//if waitForFlush {
+	//	err = f.super.ec.Flush(ino)
+	//	if err != nil {
+	//		msg := fmt.Sprintf("Write: failed to wait for flush, ino(%v) offset(%v) len(%v) err(%v) req(%v)", ino, req.Offset, reqlen, err, req)
+	//		f.super.handleError("Wrtie", msg)
+	//		errMetric := exporter.NewCounter("fileWriteFailed")
+	//		errMetric.AddWithLabels(1, map[string]string{exporter.Vol: f.super.volname, exporter.Err: "EIO"})
+	//		return ParseError(err)
+	//	}
+	//}
 	elapsed := time.Since(start)
 	log.LogDebugf("TRACE Write: ino(%v) offset(%v) len(%v) flags(%v) fileflags(%v) req(%v) (%v)ns ",
 		ino, req.Offset, reqlen, req.Flags, req.FileFlags, req, elapsed.Nanoseconds())
@@ -479,6 +479,7 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 
 // Flush only when fsyncOnClose is enabled.
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) (err error) {
+	return
 	bgTime := stat.BeginStat()
 	defer func() {
 		stat.EndStat("Flush", err, bgTime, 1)

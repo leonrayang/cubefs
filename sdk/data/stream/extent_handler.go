@@ -125,15 +125,15 @@ func NewExtentHandler(stream *Streamer, offset int, storeMode int, size int) *Ex
 	}
 
 	go eh.receiver()
-	go eh.sender()
+	 //go eh.sender()
 
 	return eh
 }
 
 // String returns the string format of the extent handler.
 func (eh *ExtentHandler) String() string {
-	return fmt.Sprintf("ExtentHandler{ID(%v)Inode(%v)FileOffset(%v)StoreMode(%v)Status(%v)}",
-		eh.id, eh.inode, eh.fileOffset, eh.storeMode, eh.status)
+	return fmt.Sprintf("ExtentHandler{ID(%v)Inode(%v)FileOffset(%v)Size(%v)StoreMode(%v)Status(%v)}",
+		eh.id, eh.inode, eh.fileOffset, eh.size, eh.storeMode, eh.status)
 }
 
 func (eh *ExtentHandler) write(data []byte, offset, size int, direct bool) (ek *proto.ExtentKey, err error) {
@@ -184,7 +184,7 @@ func (eh *ExtentHandler) write(data []byte, offset, size int, direct bool) (ek *
 			eh.flushPacket()
 		}
 	}
-
+	eh.flushPacket()
 	eh.size += total
 
 	// This is just a local cache to prepare write requests.
@@ -192,6 +192,10 @@ func (eh *ExtentHandler) write(data []byte, offset, size int, direct bool) (ek *
 	ek = &proto.ExtentKey{
 		FileOffset: uint64(eh.fileOffset),
 		Size:       uint32(eh.size),
+	}
+	err = eh.appendExtentKey()
+	if err != nil {
+		return
 	}
 	return ek, nil
 }
@@ -291,7 +295,7 @@ func (eh *ExtentHandler) receiver() {
 func (eh *ExtentHandler) processReply(packet *Packet) {
 	defer func() {
 		if atomic.AddInt32(&eh.inflight, -1) <= 0 {
-			eh.empty <- struct{}{}
+			//eh.empty <- struct{}{}
 		}
 	}()
 
@@ -625,8 +629,62 @@ func (eh *ExtentHandler) flushPacket() {
 	if eh.packet == nil {
 		return
 	}
+	var err error
+	packet := eh.packet
+	//log.LogDebugf("ExtentHandler sender begin: eh(%v) packet(%v)", eh, packet.GetUniqueLogId())
+	if eh.getStatus() >= ExtentStatusRecovery {
+		log.LogWarnf("sender in recovery: eh(%v) packet(%v)", eh, packet)
+		eh.reply <- packet
+		return
+	}
 
-	eh.pushToRequest(eh.packet)
+	// Initialize dp, conn, and extID
+	if eh.dp == nil {
+		if err = eh.allocateExtent(); err != nil {
+			eh.setClosed()
+			eh.setRecovery()
+			// if dp is not specified and yet we failed, then error out.
+			// otherwise, just try to recover.
+			if eh.key == nil {
+				eh.setError()
+				log.LogErrorf("sender: eh(%v) err(%v)", eh, err)
+			} else {
+				log.LogWarnf("sender: eh(%v) err(%v)", eh, err)
+			}
+			eh.reply <- packet
+			return
+		}
+	}
+
+	// For ExtentStore, calculate the extent offset.
+	// For TinyStore, the extent offset is always 0 in the request packet,
+	// and the reply packet tells the real extent offset.
+	extOffset := int(packet.KernelOffset) - eh.fileOffset
+
+	// fill the packet according to the extent
+	packet.PartitionID = eh.dp.PartitionID
+	packet.ExtentType = uint8(eh.storeMode)
+	packet.ExtentID = uint64(eh.extID)
+	packet.ExtentOffset = int64(extOffset)
+	packet.Arg = ([]byte)(eh.dp.GetAllAddrs())
+	packet.ArgLen = uint32(len(packet.Arg))
+	packet.RemainingFollowers = uint8(len(eh.dp.Hosts) - 1)
+	if len(eh.dp.Hosts) == 1 {
+		packet.RemainingFollowers = 127
+	}
+	packet.StartT = time.Now().UnixNano()
+
+	//log.LogDebugf("ExtentHandler sender: extent allocated, eh(%v) dp(%v) extID(%v) packet(%v)", eh, eh.dp, eh.extID, packet.GetUniqueLogId())
+
+	if err = packet.writeToConn(eh.conn); err != nil {
+		log.LogWarnf("sender writeTo: failed, eh(%v) err(%v) packet(%v)", eh, err, packet)
+		eh.setClosed()
+		eh.setRecovery()
+	}
+	eh.reply <- packet
+
+	log.LogDebugf("ExtentHandler sender: sent to the reply channel, eh(%v) packet(%v)", eh, packet)
+	//eh.pushToRequest(eh.packet)
 	eh.packet = nil
 }
 

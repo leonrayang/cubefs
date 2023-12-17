@@ -107,7 +107,7 @@ func (s *Streamer) IssueWriteRequest(offset int, data []byte, flags int, checkFu
 		return 0, errors.New(fmt.Sprintf("IssueWriteRequest: stream writer in error status, ino(%v)", s.inode))
 	}
 
-	s.writeLock.Lock()
+	//s.writeLock.Lock()
 	request := writeRequestPool.Get().(*WriteRequest)
 	request.data = data
 	request.fileOffset = offset
@@ -116,10 +116,13 @@ func (s *Streamer) IssueWriteRequest(offset int, data []byte, flags int, checkFu
 	request.done = make(chan struct{}, 1)
 	request.checkFunc = checkFunc
 
-	s.request <- request
-	s.writeLock.Unlock()
+	request.writeBytes, request.err = s.write(request.data, request.fileOffset, request.size, request.flags, request.checkFunc)
+	//request.done <- struct{}{}
 
-	<-request.done
+	//s.request <- request
+	//s.writeLock.Unlock()
+
+	//<-request.done
 	err = request.err
 	write = request.writeBytes
 	writeRequestPool.Put(request)
