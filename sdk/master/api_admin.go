@@ -1011,3 +1011,65 @@ func (api *AdminAPI) GetS3QoSInfo() (data []byte, err error) {
 	}
 	return
 }
+
+func (api *AdminAPI) CreateFlashGroup(slots string) (fgView proto.FlashGroupAdminView, err error) {
+	request := newAPIRequest(http.MethodPost, proto.AdminFlashGroupCreate)
+	request.addParam("slots", slots)
+	err = api.mc.sendRequest(request, &fgView)
+	return
+}
+
+func (api *AdminAPI) SetFlashGroup(flashGroupID uint64, isActive bool) (fgView proto.FlashGroupAdminView, err error) {
+	request := newAPIRequest(http.MethodPost, proto.AdminFlashGroupSet)
+	request.addParam("id", strconv.FormatUint(flashGroupID, 10))
+	request.addParam("enable", strconv.FormatBool(isActive))
+	err = api.mc.sendRequest(request, &fgView)
+	return
+}
+
+func (api *AdminAPI) RemoveFlashGroup(flashGroupID uint64) (result string, err error) {
+	request := newAPIRequest(http.MethodPost, proto.AdminFlashGroupRemove)
+	request.addParam("id", strconv.FormatUint(flashGroupID, 10))
+	data, err := api.mc.serveRequest(request)
+	return string(data), err
+}
+
+func (api *AdminAPI) flashGroupFlashNodes(uri string, flashGroupID uint64, count int, zoneName, addr string) (fgView proto.FlashGroupAdminView, err error) {
+	request := newAPIRequest(http.MethodPost, uri)
+	request.addParam("id", strconv.FormatUint(flashGroupID, 10))
+	request.addParam("count", strconv.Itoa(count))
+	request.addParam("zoneName", zoneName)
+	request.addParam("addr", addr)
+	err = api.mc.sendRequest(request, &fgView)
+	return
+}
+
+func (api *AdminAPI) FlashGroupAddFlashNode(flashGroupID uint64, count int, zoneName, addr string) (fgView proto.FlashGroupAdminView, err error) {
+	return api.flashGroupFlashNodes(proto.AdminFlashGroupNodeAdd, flashGroupID, count, zoneName, addr)
+}
+
+func (api *AdminAPI) FlashGroupRemoveFlashNode(flashGroupID uint64, count int, zoneName, addr string) (fgView proto.FlashGroupAdminView, err error) {
+	return api.flashGroupFlashNodes(proto.AdminFlashGroupNodeRemove, flashGroupID, count, zoneName, addr)
+}
+
+func (api *AdminAPI) GetFlashGroup(flashGroupID uint64) (fgView proto.FlashGroupAdminView, err error) {
+	request := newAPIRequest(http.MethodGet, proto.AdminFlashGroupGet)
+	request.addParam("id", strconv.FormatUint(flashGroupID, 10))
+	err = api.mc.sendRequest(request, &fgView)
+	return
+}
+
+func (api *AdminAPI) ListFlashGroups(isActive, listAllStatus bool) (fgView proto.FlashGroupsAdminView, err error) {
+	request := newAPIRequest(http.MethodGet, proto.AdminFlashGroupList)
+	if !listAllStatus {
+		request.addParam("enable", strconv.FormatBool(isActive))
+	}
+	err = api.mc.sendRequest(request, &fgView)
+	return
+}
+
+func (api *AdminAPI) ClientFlashGroups() (fgView proto.FlashGroupView, err error) {
+	request := newAPIRequest(http.MethodGet, proto.ClientFlashGroups)
+	err = api.mc.sendRequest(request, &fgView)
+	return
+}

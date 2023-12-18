@@ -16,6 +16,7 @@ package master
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -190,6 +191,17 @@ func (c *MasterClient) serveRequest(r *request) (repsData []byte, err error) {
 		}
 	}
 	return
+}
+
+func (c *MasterClient) sendRequest(r *request, rst interface{}) error {
+	buf, err := c.serveRequest(r)
+	if err != nil {
+		return err
+	}
+	if rst == nil {
+		return nil
+	}
+	return json.Unmarshal(buf, rst)
 }
 
 // Nodes returns all master addresses.

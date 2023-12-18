@@ -203,3 +203,47 @@ func (api *NodeAPI) ResponseLcNodeTask(task *proto.AdminTask) (err error) {
 	}
 	return
 }
+
+func (api *NodeAPI) AddFlashNode(serverAddr, zoneName, version string) (id uint64, err error) {
+	request := newAPIRequest(http.MethodPost, proto.FlashNodeAdd)
+	request.addParam("addr", serverAddr)
+	request.addParam("zoneName", zoneName)
+	request.addParam("version", version)
+	val, err := api.mc.serveRequest(request)
+	if err != nil {
+		return
+	}
+	id, err = strconv.ParseUint(string(val), 10, 64)
+	return
+}
+
+func (api *NodeAPI) SetFlashNode(addr, state string) (err error) {
+	request := newAPIRequest(http.MethodGet, proto.FlashNodeSet)
+	request.addParam("addr", addr)
+	request.addParam("state", state)
+	_, err = api.mc.serveRequest(request)
+	return
+}
+
+func (api *NodeAPI) RemoveFlashNode(nodeAddr string) (result string, err error) {
+	request := newAPIRequest(http.MethodPost, proto.FlashNodeRemove)
+	request.addParam("addr", nodeAddr)
+	request.addHeader("isTimeOut", "false")
+	data, err := api.mc.serveRequest(request)
+	return string(data), err
+}
+
+func (api *NodeAPI) GetFlashNode(addr string) (node proto.FlashNodeViewInfo, err error) {
+	request := newAPIRequest(http.MethodGet, proto.FlashNodeGet)
+	request.addParam("addr", addr)
+	err = api.mc.sendRequest(request, &node)
+	return
+}
+
+func (api *AdminAPI) ListFlashNodes(all bool) (zoneFlashNodes map[string][]*proto.FlashNodeViewInfo, err error) {
+	request := newAPIRequest(http.MethodGet, proto.FlashNodeList)
+	request.addParam("all", strconv.FormatBool(all))
+	zoneFlashNodes = make(map[string][]*proto.FlashNodeViewInfo)
+	err = api.mc.sendRequest(request, &zoneFlashNodes)
+	return
+}
