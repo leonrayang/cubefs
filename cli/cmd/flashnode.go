@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/sdk/httpclient"
@@ -131,7 +132,7 @@ func showFlashNodesView(flashNodeViewInfos []*proto.FlashNodeViewInfo, showStat 
 
 		hitRate, evicts, limit := "N/A", "N/A", "N/A"
 		if fn.IsActive && fn.IsEnable {
-			if stat, e := client.WithAddr(fn.Addr).FlashNode().Stat(); e == nil {
+			if stat, e := client.WithAddr(addr2Prof(fn.Addr)).FlashNode().Stat(); e == nil {
 				hitRate = fmt.Sprintf("%.2f%%", stat.CacheStatus.HitRate*100)
 				evicts = strconv.Itoa(stat.CacheStatus.Evicts)
 				limit = strconv.FormatUint(stat.NodeLimit, 10)
@@ -143,4 +144,11 @@ func showFlashNodesView(flashNodeViewInfos []*proto.FlashNodeViewInfo, showStat 
 			formatYesNo(fn.IsActive), formatYesNo(fn.IsEnable),
 			fn.FlashGroupID, formatTime(fn.ReportTime.Unix()), hitRate, evicts, limit)
 	}
+}
+
+// TODO: mandatory design prof http port is service port+1
+func addr2Prof(addr string) string {
+	arr := strings.SplitN(addr, ":", 2)
+	p, _ := strconv.ParseUint(arr[1], 10, 64)
+	return fmt.Sprintf("%s:%d", arr[0], p+1)
 }
