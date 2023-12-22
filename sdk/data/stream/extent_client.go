@@ -18,6 +18,8 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	"github.com/cubefs/cubefs/util/bloom"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,6 +37,11 @@ import (
 	"github.com/cubefs/cubefs/util/stat"
 
 	"golang.org/x/time/rate"
+)
+
+const (
+	PrepareWorkerNum  = 5
+	PrepareReqChanCap = 1024
 )
 
 type SplitExtentKeyFunc func(parentInode, inode uint64, key proto.ExtentKey) error
@@ -108,6 +115,7 @@ type ExtentConfig struct {
 	BcacheDir         string
 	MaxStreamerLimit  int64
 	VerReadSeq        uint64
+	MetaWrapper       *meta.MetaWrapper
 	OnAppendExtentKey AppendExtentKeyFunc
 	OnSplitExtentKey  SplitExtentKeyFunc
 	OnGetExtents      GetExtentsFunc
@@ -145,6 +153,7 @@ type ExtentClient struct {
 	preload            bool
 	LimitManager       *manager.LimitManager
 	dataWrapper        *wrapper.Wrapper
+	metaWrapper        *meta.MetaWrapper
 	appendExtentKey    AppendExtentKeyFunc
 	splitExtentKey     SplitExtentKeyFunc
 	getExtents         GetExtentsFunc
@@ -156,6 +165,20 @@ type ExtentClient struct {
 	inflightL1cache    sync.Map
 	inflightL1BigBlock int32
 	multiVerMgr        *MultiVerMgr
+
+	extentConfig            *ExtentConfig
+	OldCacheBoostStatus     bool
+	EnableClusterCacheBoost bool
+	EnableVolCacheBoost     bool
+	EnableCacheAutoPrepare  bool
+	CacheBoostPath          string
+	CacheTTL                int64
+	CacheReadTimeoutMs      int64
+	RemoteCache             *RemoteCache
+	HostsDelay              sync.Map
+	prepareCh 		   chan *PrepareRequest
+	stopC chan struct{}
+	wg    sync.WaitGroup
 }
 
 func (client *ExtentClient) UidIsLimited(uid uint32) bool {
@@ -305,6 +328,15 @@ retry:
 
 	log.LogInfof("max streamer limit %d", client.maxStreamerLimit)
 	client.streamerList = list.New()
+
+	if client.metaWrapper != nil {
+		client.metaWrapper.RemoteCacheBloom = client.RemoteCacheBloom
+	}
+	client.extentConfig = config
+	if client.IsCacheBoostEnabled() {
+		client.InitRemoteCache()
+	}
+
 	go client.backgroundEvictStream()
 
 	return
@@ -328,6 +360,87 @@ func (client *ExtentClient) UpdateFlowInfo(limit *proto.LimitRsp2Client) {
 func (client *ExtentClient) SetClientID(id uint64) (err error) {
 	client.LimitManager.ID = id
 	return
+}
+
+func (client *ExtentClient) setClusterCacheReadConnTimeoutMs(timeoutMs int64) {
+	if timeoutMs <= 0 {
+		return
+	}
+	client.CacheReadTimeoutMs = timeoutMs
+}
+
+func (client *ExtentClient) setClusterBoostEnable(enableBoost bool) {
+	client.OldCacheBoostStatus = client.IsCacheBoostEnabled()
+
+	oldEnableBoost := client.EnableClusterCacheBoost
+	client.EnableClusterCacheBoost = enableBoost
+	if oldEnableBoost != enableBoost {
+		log.LogInfof("setClusterBoostEnable: from old(%v) to new(%v)", oldEnableBoost, enableBoost)
+	}
+}
+
+func (client *ExtentClient) IsCacheBoostEnabled() bool {
+	return client.EnableClusterCacheBoost && client.EnableVolCacheBoost
+}
+
+func (client *ExtentClient) InitRemoteCache() (err error) {
+	cacheConfig := &CacheConfig{
+		Cluster:       client.dataWrapper.ClusterName,
+		Volume:        client.extentConfig.Volume,
+		Masters:       client.extentConfig.Masters,
+		MW:            client.metaWrapper,
+		//ReadTimeoutMs: w.CacheReadTimeoutMs,
+	}
+	if client.RemoteCache, err = NewRemoteCache(cacheConfig); err != nil {
+		return
+	}
+	if !client.RemoteCache.ResetCacheBoostPathToBloom(client.CacheBoostPath) {
+		client.CacheBoostPath = ""
+	}
+	return
+}
+
+func (client *ExtentClient) UpdateRemoteCacheConfig(view *proto.SimpleVolView) {
+	if client.EnableVolCacheBoost != view.RemoteCacheBoostEnable {
+		log.LogInfof("updateRemoteCacheConfig: RemoteCacheBoostEnable from old(%v) to new(%v)", client.EnableVolCacheBoost, view.RemoteCacheBoostEnable)
+		client.EnableVolCacheBoost = view.RemoteCacheBoostEnable
+	}
+	if client.OldCacheBoostStatus != client.IsCacheBoostEnabled() {
+		log.LogInfof("updateRemoteCacheConfig: enable from old(%v) to new(%v)", client.OldCacheBoostStatus, client.IsCacheBoostEnabled())
+	}
+	// RemoteCache may be nil if the first initialization failed, it will not be set nil anymore even if remote cache is disabled
+	if client.IsCacheBoostEnabled() {
+		if !client.OldCacheBoostStatus || client.RemoteCache == nil {
+			log.LogInfof("updateRemoteCacheConfig: initRemoteCache: enable(%v -> %v) RemoteCache isNil(%v)", client.OldCacheBoostStatus, client.IsCacheBoostEnabled(), client.RemoteCache == nil)
+			if err := client.InitRemoteCache(); err != nil {
+				log.LogErrorf("updateRemoteCacheConfig: initRemoteCache failed, err: %v", err)
+			}
+		}
+	} else if client.OldCacheBoostStatus && client.RemoteCache != nil {
+		client.RemoteCache.Stop()
+		log.LogInfof("updateRemoteCacheConfig: stop RemoteCache")
+	}
+
+	if client.CacheBoostPath != view.RemoteCacheBoostPath {
+		oldBoostPath := client.CacheBoostPath
+		client.CacheBoostPath = view.RemoteCacheBoostPath
+		if client.IsCacheBoostEnabled() && client.RemoteCache != nil {
+			if !client.RemoteCache.ResetCacheBoostPathToBloom(view.RemoteCacheBoostPath) {
+				client.CacheBoostPath = ""
+			}
+		}
+		log.LogInfof("updateRemoteCacheConfig: RemoteCacheBoostPath from old(%v) to want(%v), but(%v)", oldBoostPath, view.RemoteCacheBoostPath, client.CacheBoostPath)
+	}
+
+	if client.EnableCacheAutoPrepare != view.RemoteCacheAutoPrepare {
+		log.LogInfof("updateRemoteCacheConfig: RemoteCacheAutoPrepare from old(%v) to new(%v)", client.EnableCacheAutoPrepare, view.RemoteCacheAutoPrepare)
+		client.EnableCacheAutoPrepare = view.RemoteCacheAutoPrepare
+	}
+
+	if client.CacheTTL != view.RemoteCacheTTL {
+		log.LogInfof("updateRemoteCacheConfig: RemoteCacheTTL from old(%d) to new(%d)", client.CacheTTL, view.RemoteCacheTTL)
+		client.CacheTTL = view.RemoteCacheTTL
+	}
 }
 
 func (client *ExtentClient) GetVolumeName() string {
@@ -745,4 +858,55 @@ func (client *ExtentClient) IsPreloadMode() bool {
 
 func (client *ExtentClient) UploadFlowInfo(clientInfo wrapper.SimpleClientInfo) error {
 	return client.dataWrapper.UploadFlowInfo(clientInfo, false)
+}
+
+func (c *ExtentClient) RemoteCacheBloom() *bloom.BloomFilter {
+	if c.RemoteCache != nil {
+		return c.RemoteCache.GetRemoteCacheBloom()
+	}
+	return nil
+}
+
+func (c *ExtentClient) GetInodeBloomStatus(ino uint64) bool {
+	cacheBloom := c.RemoteCacheBloom()
+	if cacheBloom == nil {
+		return false
+	}
+	cacheBloom.AddUint64(ino)
+	return true
+}
+
+func (c *ExtentClient) DoPrepare() {
+	defer c.wg.Done()
+
+	workerWg := sync.WaitGroup{}
+	for i := 0; i < PrepareWorkerNum; i++ {
+		workerWg.Add(1)
+		go func() {
+			defer workerWg.Done()
+			for {
+				select {
+				case <-c.stopC:
+					return
+				case req := <-c.prepareCh:
+					c.servePrepareRequest(req)
+				}
+			}
+		}()
+	}
+	workerWg.Wait()
+}
+
+func (c *ExtentClient) servePrepareRequest(prepareReq *PrepareRequest) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.LogWarnf("servePrepareRequest: panic occurs, stack(%v)", string(debug.Stack()))
+		}
+	}()
+	s := c.GetStreamer(prepareReq.inode)
+	if s == nil {
+		log.LogWarnf("servePrepareRequest: streamer is nil, prepare request: %v)", prepareReq)
+		return
+	}
+	s.prepareRemoteCache(prepareReq.ctx, prepareReq.ek)
 }

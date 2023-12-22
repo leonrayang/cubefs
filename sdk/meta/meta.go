@@ -17,6 +17,7 @@ package meta
 import (
 	gerrors "errors"
 	"fmt"
+	"github.com/cubefs/cubefs/util/bloom"
 	"sync"
 	"syscall"
 	"time"
@@ -72,7 +73,7 @@ const (
 	DefaultQuotaExpiration               = 120 * time.Second
 	MaxQuotaCache                        = 10000
 )
-
+type RemoteCacheBloomFunc func() *bloom.BloomFilter
 type AsyncTaskErrorFunc func(err error)
 
 func (f AsyncTaskErrorFunc) OnError(err error) {
@@ -164,7 +165,7 @@ type MetaWrapper struct {
 	uniqidRangeMutex sync.Mutex
 
 	qc *QuotaCache
-
+	RemoteCacheBloom RemoteCacheBloomFunc
 	VerReadSeq uint64
 	LastVerSeq uint64
 	Client     wrapper.SimpleClientInfo

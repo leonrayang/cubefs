@@ -409,7 +409,7 @@ func (rc *RemoteCache) refreshHostLatency() {
 
 func (rc *RemoteCache) updateHostLatency(hosts []string) {
 	for _, host := range hosts {
-		// avgTime, err := iputil.PingWithTimeout(strings.Split(host, ":")[0], pingCount, pingTimeout*pingCount)
+		 //avgTime, err := iputil.PingWithTimeout(strings.Split(host, ":")[0], pingCount, pingTimeout*pingCount)
 		// TODO: add ping
 		avgTime, err := 0, errors.New("TODO")
 		if err == nil {

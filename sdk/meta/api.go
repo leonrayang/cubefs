@@ -231,7 +231,16 @@ func (mw *MetaWrapper) create_ll(parentID uint64, name string, mode, uid, gid ui
 		mp           *MetaPartition
 		rwPartitions []*MetaPartition
 	)
-
+	defer func() {
+		if info != nil {
+			if mw.RemoteCacheBloom != nil {
+				cacheBloom := mw.RemoteCacheBloom()
+				if cacheBloom.TestUint64(parentID) {
+					cacheBloom.AddUint64(info.Inode)
+				}
+			}
+		}
+	}()
 	parentMP := mw.getPartitionByInode(parentID)
 	if parentMP == nil {
 		log.LogErrorf("Create_ll: No parent partition, parentID(%v)", parentID)

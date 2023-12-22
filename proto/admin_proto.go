@@ -1025,6 +1025,12 @@ type SimpleVolView struct {
 	LatestVer      uint64
 	Forbidden      bool
 	EnableAuditLog bool
+
+	RemoteCacheBoostEnable bool
+	RemoteCacheBoostPath   string
+	RemoteCacheAutoPrepare bool
+	RemoteCacheTTL         int64
+	EnableRemoveDupReq     bool
 }
 
 type NodeSetInfo struct {
