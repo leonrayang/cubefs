@@ -226,16 +226,16 @@ func newCmdFlashGroupList(client *master.MasterClient) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			var err error
 			defer func() { errout(err) }()
+			var fgView proto.FlashGroupsAdminView
 			var isActive bool
-			listAllStatus := true
 			if len(args) > 0 {
-				listAllStatus = false
 				if isActive, err = strconv.ParseBool(args[0]); err != nil {
 					return
 				}
+				fgView, err = client.AdminAPI().ListFlashGroup(isActive)
+			} else {
+				fgView, err = client.AdminAPI().ListFlashGroups()
 			}
-
-			fgView, err := client.AdminAPI().ListFlashGroups(isActive, listAllStatus)
 			if err != nil {
 				return
 			}
@@ -299,7 +299,7 @@ func newCmdFlashGroupSearch(client *master.MasterClient) *cobra.Command {
 			}
 			slotKey := proto.ComputeCacheBlockSlot(volume, inode, offset)
 
-			fgView, err := client.AdminAPI().ListFlashGroups(true, true)
+			fgView, err := client.AdminAPI().ListFlashGroups()
 			if err != nil {
 				return
 			}
@@ -352,7 +352,7 @@ func newCmdFlashGroupGraph(client *master.MasterClient) *cobra.Command {
 			var err error
 			defer func() { errout(err) }()
 
-			fgView, err := client.AdminAPI().ListFlashGroups(true, true)
+			fgView, err := client.AdminAPI().ListFlashGroups()
 			if err != nil {
 				return
 			}
@@ -392,7 +392,7 @@ func newCmdFlashGroupGraph(client *master.MasterClient) *cobra.Command {
 				stdoutlnf(_fgView, slot.slot, g.ID, g.Status.String(), g.FlashNodeCount, groupn[g.ID], p)
 			}
 
-			fnView, err := client.AdminAPI().ListFlashNodes(true)
+			fnView, err := client.NodeAPI().ListFlashNodes(true)
 			if err != nil {
 				return
 			}

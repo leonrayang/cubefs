@@ -240,7 +240,7 @@ func (api *NodeAPI) GetFlashNode(addr string) (node proto.FlashNodeViewInfo, err
 	return
 }
 
-func (api *AdminAPI) ListFlashNodes(all bool) (zoneFlashNodes map[string][]*proto.FlashNodeViewInfo, err error) {
+func (api *NodeAPI) ListFlashNodes(all bool) (zoneFlashNodes map[string][]*proto.FlashNodeViewInfo, err error) {
 	request := newAPIRequest(http.MethodGet, proto.FlashNodeList)
 	request.addParam("all", strconv.FormatBool(all))
 	zoneFlashNodes = make(map[string][]*proto.FlashNodeViewInfo)

@@ -1059,11 +1059,15 @@ func (api *AdminAPI) GetFlashGroup(flashGroupID uint64) (fgView proto.FlashGroup
 	return
 }
 
-func (api *AdminAPI) ListFlashGroups(isActive, listAllStatus bool) (fgView proto.FlashGroupsAdminView, err error) {
+func (api *AdminAPI) ListFlashGroup(isActive bool) (fgView proto.FlashGroupsAdminView, err error) {
 	request := newAPIRequest(http.MethodGet, proto.AdminFlashGroupList)
-	if !listAllStatus {
-		request.addParam("enable", strconv.FormatBool(isActive))
-	}
+	request.addParam("enable", strconv.FormatBool(isActive))
+	err = api.mc.sendRequest(request, &fgView)
+	return
+}
+
+func (api *AdminAPI) ListFlashGroups() (fgView proto.FlashGroupsAdminView, err error) {
+	request := newAPIRequest(http.MethodGet, proto.AdminFlashGroupList)
 	err = api.mc.sendRequest(request, &fgView)
 	return
 }
