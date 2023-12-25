@@ -3431,16 +3431,19 @@ func (c *Cluster) allFlashNodes() (flashNodes []proto.NodeView) {
 	flashNodes = make([]proto.NodeView, 0)
 	c.flashNodeTopo.flashNodeMap.Range(func(addr, node interface{}) bool {
 		flashNode := node.(*FlashNode)
+		flashNode.RLock()
 		flashNodes = append(flashNodes, proto.NodeView{
 			ID:         flashNode.ID,
 			Addr:       flashNode.Addr,
 			Status:     flashNode.IsActive,
-			IsWritable: flashNode.isWriteAble(),
+			IsWritable: flashNode.isWriteable(),
 		})
+		flashNode.RUnlock()
 		return true
 	})
 	return
 }
+
 
 // get metaNode with specified condition
 func (c *Cluster) getSpecifiedMetaNodes(zones map[string]struct{}, nodeSetIds map[uint64]struct{}) (metaNodes []*MetaNode) {
