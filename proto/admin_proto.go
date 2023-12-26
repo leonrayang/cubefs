@@ -244,6 +244,7 @@ const (
 	FlashNodeList   = "/flashNode/list"
 
 	// FlashGroup API
+	AdminFlashGroupTurn       = "/flashGroup/turn"
 	AdminFlashGroupCreate     = "/flashGroup/create"
 	AdminFlashGroupSet        = "/flashGroup/set"
 	AdminFlashGroupRemove     = "/flashGroup/remove"

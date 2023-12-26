@@ -1012,6 +1012,13 @@ func (api *AdminAPI) GetS3QoSInfo() (data []byte, err error) {
 	return
 }
 
+func (api *AdminAPI) TurnFlashGroup(enable bool) (result string, err error) {
+	request := newAPIRequest(http.MethodPost, proto.AdminFlashGroupTurn)
+	request.addParam("enable", strconv.FormatBool(enable))
+	data, err := api.mc.serveRequest(request)
+	return string(data), err
+}
+
 func (api *AdminAPI) CreateFlashGroup(slots string) (fgView proto.FlashGroupAdminView, err error) {
 	request := newAPIRequest(http.MethodPost, proto.AdminFlashGroupCreate)
 	request.addParam("slots", slots)
