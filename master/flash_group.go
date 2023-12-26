@@ -145,9 +145,8 @@ func (m *Server) turnFlashGroup(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		doStatAndMetric(proto.AdminFlashGroupTurn, metric, err, nil)
 	}()
-	r.ParseForm()
-	enabled, err := extractStatus(r)
-	if err != nil {
+	var enabled bool
+	if err = parseHTTPArgs(r, newHTTPArg(enableKey, &enabled)); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
 		return
 	}
@@ -200,7 +199,7 @@ func (m *Server) removeFlashGroup(w http.ResponseWriter, r *http.Request) {
 		doStatAndMetric(proto.AdminFlashGroupRemove, metric, err, nil)
 	}()
 	var flashGroupID uint64
-	if flashGroupID, err = extractFlashGroupID(r); err != nil {
+	if err = parseHTTPArgs(r, newHTTPArg(idKey, &flashGroupID)); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
 		return
 	}
@@ -248,7 +247,15 @@ func (m *Server) setFlashGroup(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		doStatAndMetric(proto.AdminFlashGroupSet, metric, err, nil)
 	}()
-	if flashGroupID, fgStatus, err = parseRequestForSetFlashGroup(r); err != nil {
+
+	var active bool
+	if err = parseHTTPArgs(r,
+		newHTTPArg(idKey, &flashGroupID),
+		newHTTPArg(enableKey, &active).Convert(func() error {
+			fgStatus = argConvertFlashGroupStatus(active)
+			return nil
+		}),
+	); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
 		return
 	}
@@ -284,7 +291,7 @@ func (m *Server) getFlashGroup(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		doStatAndMetric(proto.AdminFlashGroupGet, metric, err, nil)
 	}()
-	if flashGroupID, err = extractFlashGroupID(r); err != nil {
+	if err = parseHTTPArgs(r, newHTTPArg(idKey, &flashGroupID)); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
 		return
 	}
@@ -301,8 +308,7 @@ func (m *Server) flashGroupAddFlashNode(w http.ResponseWriter, r *http.Request) 
 	defer func() {
 		doStatAndMetric(proto.AdminFlashGroupNodeAdd, metric, err, nil)
 	}()
-
-	flashGroupID, addr, zoneName, count, err := parseRequestForManageFlashNodeOfFlashGroup(r)
+	flashGroupID, addr, zoneName, count, err := parseArgsFlashGroupNode(r)
 	if err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
 		return
@@ -386,7 +392,7 @@ func (m *Server) flashGroupRemoveFlashNode(w http.ResponseWriter, r *http.Reques
 	defer func() {
 		doStatAndMetric(proto.AdminFlashGroupNodeRemove, metric, err, nil)
 	}()
-	flashGroupID, addr, zoneName, count, err := parseRequestForManageFlashNodeOfFlashGroup(r)
+	flashGroupID, addr, zoneName, count, err := parseArgsFlashGroupNode(r)
 	if err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
 		return
@@ -468,13 +474,18 @@ func (m *Server) listFlashGroups(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		doStatAndMetric(proto.AdminFlashGroupList, metric, err, nil)
 	}()
-	if fgStatus, err = extractFlashGroupStatus(r); err != nil {
-		if value := r.FormValue(enableKey); value == "" {
-			allStatus = true // resp all flash groups
-		} else {
-			sendErrReply(w, r, newErrHTTPReply(err))
-			return
-		}
+	var active bool
+	if err = parseHTTPArgs(r,
+		newHTTPArg(enableKey, &active).OmitEmpty().Convert(func() error {
+			fgStatus = argConvertFlashGroupStatus(active)
+			if value := r.FormValue(enableKey); value == "" {
+				allStatus = true // resp all flash groups
+			}
+			return nil
+		}),
+	); err != nil {
+		sendErrReply(w, r, newErrHTTPReply(err))
+		return
 	}
 	fgv := m.cluster.flashNodeTopo.getFlashGroupsAdminView(fgStatus, allStatus)
 	sendOkReply(w, r, newSuccessHTTPReply(fgv))
@@ -494,65 +505,10 @@ func (m *Server) clientFlashGroups(w http.ResponseWriter, r *http.Request) {
 	send(w, r, cache)
 }
 
-func parseRequestForManageFlashNodeOfFlashGroup(r *http.Request) (flashGroupID uint64, addr, zoneName string, count int, err error) {
-	if flashGroupID, err = extractFlashGroupID(r); err != nil {
-		return
-	}
-	if addr = r.FormValue(addrKey); addr != "" {
-		return
-	}
-
-	if zoneName, err = extractZoneName(r); err != nil {
-		return
-	}
-	if count, err = extractCount(r); err != nil {
-		return
-	}
-	if count <= 0 {
-		err = unmatchedKey(countKey)
-	}
-	return
-}
-
-func parseRequestForSetFlashGroup(r *http.Request) (flashGroupID uint64, fgStatus proto.FlashGroupStatus, err error) {
-	if flashGroupID, err = extractFlashGroupID(r); err != nil {
-		return
-	}
-	fgStatus, err = extractFlashGroupStatus(r)
-	return
-}
-
-func extractFlashGroupStatus(r *http.Request) (fgStatus proto.FlashGroupStatus, err error) {
-	if err = r.ParseForm(); err != nil {
-		return
-	}
-	var status bool
-	if status, err = extractStatus(r); err != nil {
-		return
-	}
-	if status {
-		fgStatus = proto.FlashGroupStatus_Active
-	} else {
-		fgStatus = proto.FlashGroupStatus_Inactive
-	}
-	return
-}
-
-func extractFlashGroupID(r *http.Request) (ID uint64, err error) {
-	if err = r.ParseForm(); err != nil {
-		return
-	}
-	var value string
-	if value = r.FormValue(idKey); value == "" {
-		err = keyNotFound(idKey)
-		return
-	}
-	return strconv.ParseUint(value, 10, 64)
-}
-
 func getSetSlots(r *http.Request) (slots []uint32) {
+	r.ParseForm()
 	slots = make([]uint32, 0)
-	slotStr := r.FormValue(fgSlotsKey)
+	slotStr := r.FormValue("slots")
 	if slotStr != "" {
 		arr := strings.Split(slotStr, ",")
 		for i := 0; i < len(arr); i++ {
@@ -561,31 +517,33 @@ func getSetSlots(r *http.Request) (slots []uint32) {
 				continue
 			}
 			if len(slots) >= defaultFlashGroupSlotsCount {
-				continue
+				return
 			}
-
 			slots = append(slots, uint32(slot))
 		}
 	}
 	return
 }
 
-func extractZoneName(r *http.Request) (name string, err error) {
-	if name = r.FormValue(zoneNameKey); name == "" {
-		err = keyNotFound(zoneNameKey)
+func parseArgsFlashGroupNode(r *http.Request) (id uint64, addr, zoneName string, count int, err error) {
+	if err = parseHTTPArgs(r,
+		newHTTPArg(idKey, &id),
+		newHTTPArg(addrKey, &addr),
+	); err == nil {
 		return
 	}
+	err = parseHTTPArgs(r,
+		newHTTPArg(idKey, &id),
+		newHTTPArg(addrKey, &addr).OmitEmpty(),
+		newHTTPArg(zoneNameKey, &zoneName).OmitError(),
+		newHTTPArg(countKey, &count),
+	)
 	return
 }
 
-func extractCount(r *http.Request) (count int, err error) {
-	var value string
-	if value = r.FormValue(countKey); value == "" {
-		return
+func argConvertFlashGroupStatus(active bool) proto.FlashGroupStatus {
+	if active {
+		return proto.FlashGroupStatus_Active
 	}
-	if count, err = strconv.Atoi(value); err != nil {
-		err = unmatchedKey(countKey)
-		return
-	}
-	return
+	return proto.FlashGroupStatus_Inactive
 }

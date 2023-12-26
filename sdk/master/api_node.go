@@ -217,10 +217,10 @@ func (api *NodeAPI) AddFlashNode(serverAddr, zoneName, version string) (id uint6
 	return
 }
 
-func (api *NodeAPI) SetFlashNode(addr, state string) (err error) {
+func (api *NodeAPI) SetFlashNode(addr string, enable bool) (err error) {
 	request := newAPIRequest(http.MethodPost, proto.FlashNodeSet)
 	request.addParam("addr", addr)
-	request.addParam("state", state)
+	request.addParam("enable", strconv.FormatBool(enable))
 	_, err = api.mc.serveRequest(request)
 	return
 }

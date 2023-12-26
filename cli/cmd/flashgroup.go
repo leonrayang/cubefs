@@ -15,7 +15,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -312,8 +311,7 @@ func newCmdFlashGroupClient(client *master.MasterClient) *cobra.Command {
 				return
 			}
 			stdoutln("Client Response:")
-			b, _ := json.MarshalIndent(fgv, "", "  ")
-			stdoutln(string(b))
+			stdoutln(formatIndent(fgv))
 		},
 	}
 }
