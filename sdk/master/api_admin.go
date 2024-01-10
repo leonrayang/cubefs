@@ -368,6 +368,11 @@ func (api *AdminAPI) UpdateVolume(
 	request.addParam("enableQuota", strconv.FormatBool(vv.EnableQuota))
 	request.addParam("deleteLockTime", strconv.FormatInt(vv.DeleteLockTime, 10))
 	request.addParam("clientIDKey", clientIDKey)
+	request.addParam("remoteCacheEnable", strconv.FormatBool(vv.RemoteCacheEnable))
+	request.addParam("remoteCachePath", vv.RemoteCachePath)
+	request.addParam("remoteCacheAutoPrepare", strconv.FormatBool(vv.RemoteCacheAutoPrepare))
+	request.addParam("remoteCacheTTL", strconv.FormatInt(vv.RemoteCacheTTL, 10))
+	request.addParam("remoteCacheReadTimeoutSec", strconv.FormatInt(vv.RemoteCacheReadTimeoutSec, 10))
 
 	if txMask != "" {
 		request.addParam("enableTxMask", txMask)
