@@ -34,20 +34,6 @@ EOF
 
 compose="docker-compose --env-file ${RootPath}/docker/run_docker.env -f ${RootPath}/docker/docker-compose.yml"
 
-has_go() {
-    if command -v go &> /dev/null
-    then
-        echo "1"
-    else
-        echo "0"
-    fi
-}
-
-get_go_build_cache() {
-    tmp=`go env | grep GOCACHE | awk -F= '{print $2}'`
-    echo ${tmp//\'/}
-}
-
 check_is_podman() {
     if docker --version | grep -i -q 'podman'
     then
@@ -78,62 +64,56 @@ clean() {
 }
 
 prepare() {
-    ${compose} run --rm prepare
+    ${compose} run prepare
 }
 
 # unit test
 run_unit_test() {
     prepare
-    ${compose} run --rm unit_test
+    ${compose} run unit_test
 }
 
 # go format
 run_format() {
     prepare
-    ${compose} run --rm format
+    ${compose} run format
 }
 
 run_build_libsdkpre() {
     prepare
-    ${compose} run --rm build_libsdkpre
+    ${compose} run build_libsdkpre
 }
 
 run_goreleaser() {
     prepare
-    ${compose} run --rm goreleaser
+    ${compose} run goreleaser
 }
 
 run_bsgofumpt() {
     prepare
-    ${compose} run --rm bs_gofumpt
+    ${compose} run bs_gofumpt
 }
 
 run_bsgolint() {
     prepare
-    ${compose} run --rm bs_golint
+    ${compose} run bs_golint
 }
 
 run_gosec() {
     prepare
-    ${compose} run --rm gosec
+    ${compose} run gosec
 }
 
 # build
 build() {
     prepare
-    has=`has_go`
-    build_cache_opt=""
-    if test ${has} -eq 1
-    then
-        build_cache_opt="--volume $(get_go_build_cache):/root/.cache/go-build"
-    fi
-    ${compose} run --rm ${build_cache_opt} build
+    ${compose} run build
 }
 
 # build
 build_s3() {
     prepare
-    ${compose} run --rm build bash -c "/bin/bash /cfs/script/build.sh -s3"
+    ${compose} run build bash -c "/bin/bash /cfs/script/build.sh -s3"
 }
 
 # start server
@@ -144,7 +124,7 @@ start_servers() {
 }
 
 start_client() {
-    ${compose} run --rm client bash -c "/cfs/script/start_client.sh ; /bin/bash"
+    ${compose} run client bash -c "/cfs/script/start_client.sh ; /bin/bash"
 }
 
 start_monitor() {
@@ -152,11 +132,11 @@ start_monitor() {
 }
 
 start_s3test() {
-    ${compose} run --rm client
+    ${compose} run client
 }
 
 start_ltptest() {
-    ${compose} run --rm client_ltp
+    ${compose} run client_ltp
 }
 
 run_s3test() {
