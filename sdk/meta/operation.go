@@ -1216,10 +1216,10 @@ func (mw *MetaWrapper) readdirlimit(mp *MetaPartition, parentID uint64, from str
 }
 
 func (mw *MetaWrapper) appendExtentKey(mp *MetaPartition, inode uint64, extent proto.ExtentKey, discard []proto.ExtentKey) (status int, err error) {
-	bgTime := stat.BeginStat()
-	defer func() {
-		stat.EndStat("appendExtentKey", err, bgTime, 1)
-	}()
+	//bgTime := stat.BeginStat()
+	//defer func() {
+	//	stat.EndStat("appendExtentKey", err, bgTime, 1)
+	//}()
 
 	req := &proto.AppendExtentKeyWithCheckRequest{
 		VolName:        mw.volname,
@@ -1238,10 +1238,10 @@ func (mw *MetaWrapper) appendExtentKey(mp *MetaPartition, inode uint64, extent p
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	//metric := exporter.NewTPCnt(packet.GetOpMsg())
+	//defer func() {
+	//	metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+	//}()
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {

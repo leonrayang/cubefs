@@ -412,11 +412,11 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 		flags |= proto.FlagsAppend
 	}
 
-	start := time.Now()
-	metric := exporter.NewTPCnt("filewrite")
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: f.super.volname})
-	}()
+	//start := time.Now()
+	//metric := exporter.NewTPCnt("filewrite")
+	//defer func() {
+	//	metric.SetWithLabels(err, map[string]string{exporter.Vol: f.super.volname})
+	//}()
 
 	checkFunc := func() error {
 		if !f.super.mw.EnableQuota {
@@ -471,9 +471,9 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	//		return ParseError(err)
 	//	}
 	//}
-	elapsed := time.Since(start)
-	log.LogDebugf("TRACE Write: ino(%v) offset(%v) len(%v) flags(%v) fileflags(%v) req(%v) (%v)ns ",
-		ino, req.Offset, reqlen, req.Flags, req.FileFlags, req, elapsed.Nanoseconds())
+	//elapsed := time.Since(start)
+	//log.LogDebugf("TRACE Write: ino(%v) offset(%v) len(%v) flags(%v) fileflags(%v) req(%v) (%v)ns ",
+	//	ino, req.Offset, reqlen, req.Flags, req.FileFlags, req, elapsed.Nanoseconds())
 	return nil
 }
 
