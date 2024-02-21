@@ -57,6 +57,7 @@ type rndWrtOpItem struct {
 
 const (
 	BinaryMarshalMagicVersion = 0xFF
+	BinaryMarshalRaftCmdVersion = 0xFE
 )
 
 func MarshalRandWriteRaftLog(opcode uint8, extentID uint64, offset, size int64, data []byte, crc uint32) (result []byte, err error) {
@@ -120,6 +121,17 @@ func UnmarshalRandWriteRaftLog(raw []byte) (opItem *rndWrtOpItem, err error) {
 		return
 	}
 
+	return
+}
+
+func UnmarshalRaftCmd(raw []byte) (raftOpItem *RaftCmdItem, err error) {
+	raftOpItem = new(RaftCmdItem)
+	defer func() {
+		log.LogDebugf("Unmarsh use oldVersion,result %v", err)
+	}()
+	if err = json.Unmarshal(raw, raftOpItem); err != nil {
+		return
+	}
 	return
 }
 
@@ -232,10 +244,7 @@ func (dp *DataPartition) ApplyRandomWrite(command []byte, raftApplyID uint64) (r
 		}
 	}()
 
-	if opItem, err = UnmarshalRandWriteRaftLog(command); err != nil {
-		log.LogErrorf("[ApplyRandomWrite] ApplyID(%v) Partition(%v) unmarshal failed(%v)", raftApplyID, dp.partitionID, err)
-		return
-	}
+
 	log.LogDebugf("[ApplyRandomWrite] ApplyID(%v) Partition(%v)_Extent(%v)_ExtentOffset(%v)_Size(%v)",
 		raftApplyID, dp.partitionID, opItem.extentID, opItem.offset, opItem.size)
 
@@ -255,11 +264,15 @@ func (dp *DataPartition) ApplyRandomWrite(command []byte, raftApplyID uint64) (r
 			writeType = storage.AppendRandomWriteType
 		} else if opItem.opcode == proto.OpTryWriteAppend || opItem.opcode == proto.OpSyncTryWriteAppend {
 			writeType = storage.AppendWriteType
+		} else if opItem.opcode == proto.OpVersionOp {
+
 		}
 
 		if opItem.opcode == proto.OpSyncRandomWriteAppend || opItem.opcode == proto.OpSyncRandomWrite || opItem.opcode == proto.OpSyncRandomWriteVer {
 			syncWrite = true
 		}
+
+
 
 		dp.disk.limitWrite.Run(int(opItem.size), func() {
 			respStatus, err = dp.ExtentStore().Write(opItem.extentID, opItem.offset, opItem.size, opItem.data, opItem.crc, writeType, syncWrite)

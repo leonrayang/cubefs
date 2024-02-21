@@ -66,6 +66,7 @@ type DataPartitionMetadata struct {
 	LastTruncateID          uint64
 	ReplicaNum              int
 	StopRecover             bool
+	VerList                 []*proto.VolVersionInfo
 }
 
 func (md *DataPartitionMetadata) Validate() (err error) {
@@ -543,7 +544,9 @@ func (dp *DataPartition) PersistMetadata() (err error) {
 		CreateTime:              time.Now().Format(TimeLayout),
 		LastTruncateID:          dp.lastTruncateID,
 		StopRecover:             dp.stopRecover,
+		VerList:                 dp.volVersionInfoList.VerList,
 	}
+
 	if metaData, err = json.Marshal(md); err != nil {
 		return
 	}
