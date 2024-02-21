@@ -341,6 +341,78 @@ func newDataPartition(dpCfg *dataPartitionCfg, disk *Disk, isCreate bool) (dp *D
 	return
 }
 
+func (partition *DataPartition) HandleVersionOp(req *proto.MultiVersionOpRequest) (err error) {
+	var (
+		verData []byte
+		pItem   *RaftCmdItem
+	)
+	if verData, err = json.Marshal(req.VolVerList); err != nil {
+		return
+	}
+	pItem = &RaftCmdItem{
+		Op: uint32(req.Op),
+		K:  []byte("version"),
+		V:  verData,
+	}
+	data, _ := json.Marshal(pItem)
+	_, err = partition.Submit(data)
+	return
+}
+
+func (partition *DataPartition) fsmVersionOp(opItem *RaftCmdItem) (err error) {
+	var verList []*proto.VolVersionInfo
+	log.LogInfo("action[fsmVersionOp] opitem %v", opItem)
+	if err = json.Unmarshal(opItem.V, &verList); err != nil {
+		return
+	}
+	if len(verList) == 0 {
+		return
+	}
+
+	lastSeq := verList[len(verList)-1].Ver
+	partition.volVersionInfoList.RWLock.Lock()
+	if len(partition.volVersionInfoList.VerList) == 0 {
+		partition.volVersionInfoList.VerList = make([]*proto.VolVersionInfo, len(verList))
+		copy(partition.volVersionInfoList.VerList, verList)
+		partition.verSeq = lastSeq
+		log.LogInfof("action[fsmVersionOp] dp %v seq %v updateVerList reqeust ver %v verlist  %v  dp verlist nil and set",
+			partition.partitionID, partition.verSeq, lastSeq, verList)
+		partition.volVersionInfoList.RWLock.Unlock()
+		return
+	}
+
+	lastVerInfo := partition.volVersionInfoList.GetLastVolVerInfo()
+	log.LogInfof("action[fsmVersionOp] dp %v seq %v lastVerList seq %v req seq %v op %v",
+		partition.partitionID, partition.verSeq, lastVerInfo.Ver, lastSeq, opItem.Op)
+
+	if lastVerInfo.Ver >= lastSeq {
+		if lastVerInfo.Ver == lastSeq {
+			if opItem.Op == proto.CreateVersionCommit {
+				lastVerInfo.Status = proto.VersionNormal
+			}
+		}
+		partition.volVersionInfoList.RWLock.Unlock()
+		return
+	}
+
+	var status uint8 = proto.VersionPrepare
+	if opItem.Op == proto.CreateVersionCommit {
+		status = proto.VersionNormal
+	}
+	partition.volVersionInfoList.VerList = append(partition.volVersionInfoList.VerList, &proto.VolVersionInfo{
+		Status: status,
+		Ver:    lastSeq,
+	})
+
+	partition.verSeq = lastSeq
+
+	err = partition.PersistMetadata()
+	log.LogInfof("action[fsmVersionOp] dp %v seq %v updateVerList reqeust add new seq %v verlist (%v) err (%v)",
+		partition.partitionID, partition.verSeq, lastSeq, partition.volVersionInfoList, err)
+
+	partition.volVersionInfoList.RWLock.Unlock()
+}
+
 func (dp *DataPartition) getVerListFromMaster() (err error) {
 	var verList *proto.VolVersionInfoList
 	verList, err = MasterClient.AdminAPI().GetVerList(dp.volumeID)

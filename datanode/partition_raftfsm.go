@@ -47,7 +47,8 @@ func (dp *DataPartition) Apply(command []byte, index uint64) (resp interface{}, 
 				return
 			}
 			if opItem.Op == uint32(proto.OpVersionOp) {
-				dp.PersistMetadata()
+				dp.fsmVersionOp(opItem)
+				return
 			}
 		} else {
 			if _, err = UnmarshalOldVersionRaftLog(command); err != nil {

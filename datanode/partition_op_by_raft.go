@@ -56,7 +56,7 @@ type rndWrtOpItem struct {
 //  +------+----+------+------+------+------+------+
 
 const (
-	BinaryMarshalMagicVersion = 0xFF
+	BinaryMarshalMagicVersion   = 0xFF
 	BinaryMarshalRaftCmdVersion = 0xFE
 )
 
@@ -244,7 +244,6 @@ func (dp *DataPartition) ApplyRandomWrite(command []byte, raftApplyID uint64) (r
 		}
 	}()
 
-
 	log.LogDebugf("[ApplyRandomWrite] ApplyID(%v) Partition(%v)_Extent(%v)_ExtentOffset(%v)_Size(%v)",
 		raftApplyID, dp.partitionID, opItem.extentID, opItem.offset, opItem.size)
 
@@ -271,8 +270,6 @@ func (dp *DataPartition) ApplyRandomWrite(command []byte, raftApplyID uint64) (r
 		if opItem.opcode == proto.OpSyncRandomWriteAppend || opItem.opcode == proto.OpSyncRandomWrite || opItem.opcode == proto.OpSyncRandomWriteVer {
 			syncWrite = true
 		}
-
-
 
 		dp.disk.limitWrite.Run(int(opItem.size), func() {
 			respStatus, err = dp.ExtentStore().Write(opItem.extentID, opItem.offset, opItem.size, opItem.data, opItem.crc, writeType, syncWrite)
@@ -305,9 +302,14 @@ func (dp *DataPartition) RandomWriteSubmit(pkg *repl.Packet) (err error) {
 		log.LogErrorf("action[RandomWriteSubmit] [%v] marshal error %v", dp.partitionID, err)
 		return
 	}
+	pkg.ResultCode, err = dp.Submit(val)
+	return
+}
+
+func (dp *DataPartition) Submit(val []byte) (retCode uint8, err error) {
 	var resp interface{}
 	resp, err = dp.Put(nil, val)
-	pkg.ResultCode, _ = resp.(uint8)
+	retCode, _ = resp.(uint8)
 	if err != nil {
 		log.LogErrorf("action[RandomWriteSubmit] submit err %v", err)
 		return
