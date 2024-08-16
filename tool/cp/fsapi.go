@@ -155,7 +155,9 @@ func (f *OsFs) getParentInoByPath(filePath string) (ino uint64, err error) {
 }
 
 func (f *OsFs) delete(filepath string, parentIno uint64, isDir bool) error {
-	return os.Remove(filepath)
+	err := os.Remove(filepath)
+	clog.LogWarnf("finish delete file, path %s, err %v", filepath, err)
+	return err
 }
 
 func (f *OsFs) statByInode(inode uint64) (info *syscall.Stat_t, err error) {
