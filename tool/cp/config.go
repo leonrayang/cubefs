@@ -160,6 +160,12 @@ func (cfg *config) initLogger() {
 	level := parseLogLevel(cfg.LogLevel)
 
 	logDir := fmt.Sprintf("/tmp/%s/cfs-logs", getUser().Username)
+	if cfg.LogDir != "" {
+		logDir = cfg.LogDir
+	}
+
+	log.Printf("log dir %s/client", logDir)
+
 	_, err := os.Stat(logDir)
 	if err != nil {
 		if !os.IsNotExist(err) {
