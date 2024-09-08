@@ -84,10 +84,16 @@ services:
             - metanode2
             - metanode3
             - metanode4
+            - metanode5
+            - metanode6
+            - metanode7
             - datanode1
             - datanode2
             - datanode3
             - datanode4
+            - datanode5
+            - datanode6
+            - datanode7
             - objectnode1
             - objectnode2
             - objectnode3
@@ -177,7 +183,39 @@ services:
         networks:
             extnetwork:
                 ipv4_address: 192.168.0.24
-
+    metanode5:
+        <<: *metanode
+        volumes:
+            - ${DiskPath:-./docker_data}/metanode5/data:/cfs/data
+            - ./bin:/cfs/bin:ro
+            - ${DiskPath:-./docker_data}/metanode5/log:/cfs/log
+            - ./conf/metanode1.json:/cfs/conf/metanode.json
+            - ./script/start_meta.sh:/cfs/script/start.sh
+        networks:
+            extnetwork:
+                ipv4_address: 192.168.0.25
+    metanode6:
+        <<: *metanode
+        volumes:
+            - ${DiskPath:-./docker_data}/metanode6/data:/cfs/data
+            - ./bin:/cfs/bin:ro
+            - ${DiskPath:-./docker_data}/metanode6/log:/cfs/log
+            - ./conf/metanode1.json:/cfs/conf/metanode.json
+            - ./script/start_meta.sh:/cfs/script/start.sh
+        networks:
+            extnetwork:
+                ipv4_address: 192.168.0.26
+    metanode7:
+        <<: *metanode
+        volumes:
+            - ${DiskPath:-./docker_data}/metanode7/data:/cfs/data
+            - ./bin:/cfs/bin:ro
+            - ${DiskPath:-./docker_data}/metanode7/log:/cfs/log
+            - ./conf/metanode1.json:/cfs/conf/metanode.json
+            - ./script/start_meta.sh:/cfs/script/start.sh
+        networks:
+            extnetwork:
+                ipv4_address: 192.168.0.27
     datanode1:
         <<: *datanode
         volumes:
@@ -222,7 +260,39 @@ services:
         networks:
             extnetwork:
                 ipv4_address: 192.168.0.34
-
+    datanode5:
+        <<: *datanode
+        volumes:
+            - ${DiskPath:-./docker_data}/datanode5/disk:/cfs/disk
+            - ./bin:/cfs/bin:ro
+            - ${DiskPath:-./docker_data}/datanode5/log:/cfs/log
+            - ./conf/datanode1.json:/cfs/conf/datanode.json
+            - ./script/start_datanode.sh:/cfs/script/start.sh
+        networks:
+            extnetwork:
+                ipv4_address: 192.168.0.35
+    datanode6:
+        <<: *datanode
+        volumes:
+            - ${DiskPath:-./docker_data}/datanode6/disk:/cfs/disk
+            - ./bin:/cfs/bin:ro
+            - ${DiskPath:-./docker_data}/datanode6/log:/cfs/log
+            - ./conf/datanode1.json:/cfs/conf/datanode.json
+            - ./script/start_datanode.sh:/cfs/script/start.sh
+        networks:
+            extnetwork:
+                ipv4_address: 192.168.0.36
+    datanode7:
+        <<: *datanode
+        volumes:
+            - ${DiskPath:-./docker_data}/datanode7/disk:/cfs/disk
+            - ./bin:/cfs/bin:ro
+            - ${DiskPath:-./docker_data}/datanode7/log:/cfs/log
+            - ./conf/datanode1.json:/cfs/conf/datanode.json
+            - ./script/start_datanode.sh:/cfs/script/start.sh
+        networks:
+            extnetwork:
+                ipv4_address: 192.168.0.37
     objectnode1:
         <<: *objectnode
         volumes:
