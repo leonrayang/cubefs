@@ -141,7 +141,9 @@ func (w *Walker) traverseDel(src string, srcParentIno uint64) {
 
 func (w *Walker) deleteTask(task opTask) {
 	err := w.srcApi.delete(task.src, task.srcParentIno, task.mode.IsDir())
-	if err != nil {
-		log.Fatalf("delete path %s err %s", task.src, err.Error())
+	if err == nil {
+		return
 	}
+
+	log.Printf("delete path %s err %s, continue", task.src, err.Error())
 }
