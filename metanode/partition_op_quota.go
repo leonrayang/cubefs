@@ -136,21 +136,22 @@ func (mp *metaPartition) statisticExtendByStore(extend *Extend, inodeTree *BTree
 	defer mqMgr.rwlock.Unlock()
 	for quotaId := range quotaInfos.QuotaInfoMap {
 		var baseInfo proto.QuotaUsedInfo
-		value, isFind := mqMgr.statisticRebuildBase.Load(quotaId)
+		value, isFind := mqMgr.storeRebuildBase.Load(quotaId)
 		if isFind {
 			baseInfo = value.(proto.QuotaUsedInfo)
 		}
 		baseInfo.UsedBytes += int64(ino.Size)
 		baseInfo.UsedFiles += 1
-		mqMgr.statisticRebuildBase.Store(quotaId, baseInfo)
-		log.LogDebugf("[statisticExtendByStore] mp [%v] quotaId [%v] inode [%v] baseInfo [%v]",
-			mp.config.PartitionId, quotaId, extend.GetInode(), baseInfo)
+		mqMgr.storeRebuildBase.Store(quotaId, baseInfo)
 	}
 	log.LogDebugf("statisticExtendByStore mp [%v] inode [%v] success.", mp.config.PartitionId, extend.GetInode())
 	return
 }
 
 func (mp *metaPartition) updateUsedInfo(size int64, files int64, ino uint64) {
+	if mp.mqMgr == nil || mp.mqMgr.eSimplify {
+		return
+	}
 	quotaIds, isFind := mp.isExistQuota(ino)
 	if isFind {
 		log.LogInfof("updateUsedInfo ino [%v] quotaIds [%v] size [%v] files [%v]", ino, quotaIds, size, files)
