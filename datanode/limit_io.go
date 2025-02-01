@@ -16,6 +16,7 @@ package datanode
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -75,13 +76,13 @@ func (l *ioLimiter) ResetIO(ioConcurrency int) {
 	q.Close()
 }
 
-func (l *ioLimiter) Run(size int, taskFn func()) {
+func (l *ioLimiter) Run(size int, taskFn func()) (err error) {
 	if size > 0 {
 		if err := l.flow.WaitN(context.Background(), size); err != nil {
 			log.LogWarnf("action[limitio] run wait flow with %d %s", size, err.Error())
 		}
 	}
-	l.getIO().Run(taskFn)
+	return l.getIO().Run(taskFn)
 }
 
 func (l *ioLimiter) TryRun(size int, taskFn func()) bool {
@@ -162,7 +163,7 @@ func newIOQueue(concurrency int) *ioQueue {
 	return q
 }
 
-func (q *ioQueue) Run(taskFn func()) {
+func (q *ioQueue) Run(taskFn func()) (err error) {
 	if q.concurrency <= 0 {
 		taskFn()
 		return
@@ -175,13 +176,19 @@ func (q *ioQueue) Run(taskFn func()) {
 	default:
 	}
 
+	ticker := time.NewTicker(IOLimitTicket)
+	defer ticker.Stop()
 	task := &task{fn: taskFn, done: make(chan struct{})}
+
 	select {
 	case <-q.stopCh:
 		taskFn()
 	case q.queue <- task:
 		<-task.done
+	case <-ticker.C:
+		return fmt.Errorf("exceed wait period")
 	}
+	return
 }
 
 func (q *ioQueue) TryRun(taskFn func()) bool {
