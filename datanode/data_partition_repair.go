@@ -579,7 +579,7 @@ func (dp *DataPartition) NormalExtentRepairRead(p repl.PacketInterface, connect 
 	offset := p.GetExtentOffset()
 	store := dp.ExtentStore()
 
-	log.LogDebugf("extentRepairReadPacket dp %v offset %v needSize %v", dp.partitionID, offset, needReplySize)
+	log.LogDebugf("readPacket dp %v offset %v needSize %v", dp.partitionID, offset, needReplySize)
 	for {
 		if needReplySize <= 0 {
 			break

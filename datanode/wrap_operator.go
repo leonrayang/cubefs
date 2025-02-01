@@ -139,7 +139,7 @@ func (s *DataNode) OperatePacket(p *repl.Packet, c net.Conn) (err error) {
 	case proto.OpStreamRead, proto.OpBackupRead:
 		s.handleStreamReadPacket(p, c, StreamRead)
 	case proto.OpStreamFollowerRead:
-		s.extentRepairReadPacket(p, c, StreamRead)
+		s.readPacket(p, c, StreamRead)
 	case proto.OpExtentRepairRead:
 		s.handleExtentRepairReadPacket(p, c, RepairRead)
 	case proto.OpTinyExtentRepairRead:
@@ -1039,7 +1039,7 @@ func (s *DataNode) handleStreamReadPacket(p *repl.Packet, connect net.Conn, isRe
 	if err = partition.CheckLeader(p, connect); err != nil {
 		return
 	}
-	s.extentRepairReadPacket(p, connect, isRepairRead)
+	s.readPacket(p, connect, isRepairRead)
 }
 
 func (s *DataNode) handleExtentRepairReadPacket(p *repl.Packet, connect net.Conn, isRepairRead bool) {
@@ -1071,7 +1071,7 @@ func (s *DataNode) handleExtentRepairReadPacket(p *repl.Packet, connect net.Conn
 	}()
 	log.LogDebugf("dp(%v) disk(%v) extent(%v) get read extent token",
 		p.PartitionID, partition.disk.Path, p.ExtentID)
-	s.extentRepairReadPacket(p, connect, isRepairRead)
+	s.readPacket(p, connect, isRepairRead)
 }
 
 func (s *DataNode) handleTinyExtentRepairReadPacket(p *repl.Packet, connect net.Conn) {
@@ -1082,7 +1082,7 @@ func (s *DataNode) handleSnapshotExtentRepairReadPacket(p *repl.Packet, connect 
 	s.NormalSnapshotExtentRepairRead(p, connect)
 }
 
-func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRepairRead bool) {
+func (s *DataNode) readPacket(p *repl.Packet, connect net.Conn, isRepairRead bool) {
 	var err error
 
 	defer func() {
@@ -1096,7 +1096,7 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 		err = storage.ForbiddenDataPartitionError
 		return
 	}
-	log.LogDebugf("extentRepairReadPacket ready to repair dp(%v) disk(%v) extent(%v) offset (%v) needSize (%v)",
+	log.LogDebugf("readPacket ready to repair dp(%v) disk(%v) extent(%v) offset (%v) needSize (%v)",
 		p.PartitionID, partition.disk.Path, p.ExtentID, p.ExtentOffset, p.Size)
 
 	if err = partition.NormalExtentRepairRead(p, connect, isRepairRead, s.metrics, repl.NewStreamReadResponsePacket); err != nil {

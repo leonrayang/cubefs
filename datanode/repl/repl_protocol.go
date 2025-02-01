@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -237,8 +238,10 @@ func (rp *ReplProtocol) SetSmux(f func(addr string) (net.Conn, error), putSmux f
 func (rp *ReplProtocol) ServerConn() {
 	var err error
 	defer func() {
+		log.LogDebugf("ServerConn destroyed. %v", rp)
 		rp.Stop()
 		rp.exitedMu.Lock()
+		log.LogDebugf("ServerConn stop the protocol processor. %v", rp)
 		if atomic.AddInt32(&rp.exited, -1) == ReplHasExited {
 			rp.sourceConn.Close()
 			rp.cleanResource()
@@ -248,9 +251,11 @@ func (rp *ReplProtocol) ServerConn() {
 	for {
 		select {
 		case <-rp.exitC:
+			log.LogDebugf("ReplProtocol exitC recv msg %v", rp)
 			return
 		default:
 			if err = rp.readPkgAndPrepare(); err != nil {
+				log.LogDebugf("ReplProtocol %v readPkgAndPrepare err %v", rp, err)
 				return
 			}
 		}
@@ -265,6 +270,7 @@ func (rp *ReplProtocol) ReceiveResponseFromFollowersGoRoutine() {
 			rp.checkLocalResultAndReciveAllFollowerResponse()
 		case <-rp.exitC:
 			rp.exitedMu.Lock()
+			log.LogDebugf("ReceiveResponseFromFollowersGoRoutine stop the protocol processor. %v", rp)
 			if atomic.AddInt32(&rp.exited, -1) == ReplHasExited {
 				rp.sourceConn.Close()
 				rp.cleanResource()
@@ -288,8 +294,8 @@ func (rp *ReplProtocol) readPkgAndPrepare() (err error) {
 	if err = request.ReadFromConnWithVer(rp.sourceConn, proto.NoReadDeadlineTime); err != nil {
 		return
 	}
-	// log.LogDebugf("action[readPkgAndPrepare] packet(%v) op %v from remote(%v) conn(%v) ",
-	//	request.GetUniqueLogId(), request.Opcode, rp.sourceConn.RemoteAddr().String(), rp.sourceConn)
+	log.LogDebugf("action[readPkgAndPrepare] packet(%v) op %v from remote(%v) conn(%v) ",
+		request.GetUniqueLogId(), request.Opcode, rp.sourceConn.RemoteAddr().String(), rp.sourceConn)
 
 	if err = request.resolveFollowersAddr(); err != nil {
 		err = rp.putResponse(request)
@@ -348,6 +354,7 @@ func (rp *ReplProtocol) OperatorAndForwardPktGoRoutine() {
 			}
 		case <-rp.exitC:
 			rp.exitedMu.Lock()
+			log.LogDebugf("OperatorAndForwardPktGoRoutine rp %v is trying to close", rp)
 			if atomic.AddInt32(&rp.exited, -1) == ReplHasExited {
 				rp.sourceConn.Close()
 				rp.cleanResource()
@@ -451,10 +458,15 @@ func (rp *ReplProtocol) writeResponse(reply *Packet) {
 		rp.sourceConn.RemoteAddr().String(), reply.StartT, err))
 }
 
+func (rp *ReplProtocol) String() string {
+	return fmt.Sprintf("ReplProtocol conn %v, id %v, exit flag %v", rp.sourceConn.RemoteAddr(), rp.replId, rp.exited)
+}
+
 // Stop stops the replication protocol.
 func (rp *ReplProtocol) Stop() {
 	rp.exitedMu.Lock()
 	defer rp.exitedMu.Unlock()
+	log.LogDebugf("stop the protocol processor. %v stack %v", rp, string(debug.Stack()))
 	if atomic.LoadInt32(&rp.exited) == ReplRuning {
 		if rp.exitC != nil {
 			close(rp.exitC)
