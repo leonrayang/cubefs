@@ -924,11 +924,38 @@ func (c *CacheEngine) GetHitRate() map[string]float64 {
 	return result
 }
 
+func (c *CacheEngine) GetVolHitRate() map[string]float64 {
+	result := make(map[string]float64)
+	c.lruCacheMap.Range(func(key, value interface{}) bool {
+		cacheItem := value.(*lruCacheItem)
+		statMap := cacheItem.lruCache.GetRateStatMap()
+		for k, v := range statMap {
+			hitRate := math.Trunc(v.HitRate*1e4+0.5) * 1e-4
+			result[k] += hitRate
+		}
+		return true
+	})
+	return result
+}
+
 func (c *CacheEngine) GetEvictCount() map[string]int {
 	result := make(map[string]int)
 	c.lruCacheMap.Range(func(key, value interface{}) bool {
 		cacheItem := value.(*lruCacheItem)
 		result[cacheItem.config.Path] = int(cacheItem.lruCache.GetRateStat().Evicts)
+		return true
+	})
+	return result
+}
+
+func (c *CacheEngine) GetVolEvictCount() map[string]int {
+	result := make(map[string]int)
+	c.lruCacheMap.Range(func(key, value interface{}) bool {
+		cacheItem := value.(*lruCacheItem)
+		statMap := cacheItem.lruCache.GetRateStatMap()
+		for k, v := range statMap {
+			result[k] += int(v.Evicts)
+		}
 		return true
 	})
 	return result

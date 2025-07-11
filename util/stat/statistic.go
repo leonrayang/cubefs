@@ -463,3 +463,28 @@ func GetAvgLatencyMs(typeName string) float32 {
 	}
 	return float32(avgUs) / 1000
 }
+
+func GetVolAvgLatencyMs() map[string]float32 {
+	result := make(map[string]float32)
+	if gSt == nil {
+		return result
+	}
+
+	if gSt.useMutex {
+		gSt.Lock()
+		defer gSt.Unlock()
+	}
+
+	for name, info := range gSt.typeInfoMap {
+		if strings.HasPrefix(name, "MissCacheRead:ReadFromDN_Volume") {
+			lastIndex := strings.LastIndex(name, ":")
+			vol := name[lastIndex+1:]
+			avgUs := int32(0)
+			if info.allCount > 0 {
+				avgUs = int32(info.allTimeUs / time.Duration(info.allCount))
+			}
+			result[vol] = float32(avgUs) / 1000
+		}
+	}
+	return result
+}

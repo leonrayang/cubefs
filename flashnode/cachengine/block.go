@@ -602,6 +602,8 @@ func (cb *CacheBlock) InitForCacheRead(sources []*proto.DataSource, readDataNode
 			offset += size
 			updateWriteBytesMetric(uint64(size), cb.GetRootPath())
 			updateWriteCountMetric(cb.GetRootPath())
+			updateVolWriteBytesMetric(uint64(size), cb.volume)
+			updateVolWriteCountMetric(cb.volume)
 			return nil
 		}
 		logPrefix := func() string {

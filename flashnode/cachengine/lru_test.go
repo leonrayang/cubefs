@@ -36,7 +36,7 @@ func TestLRUManyThings(t *testing.T) {
 	c := NewCache(LRUFileHandleCacheType, 10, util.MB*100, time.Hour, nilDeleteFunc, nilCloseFunc)
 	defer c.Close()
 	var (
-		k  = 1
+		k  = "test/1"
 		v1 = &CacheBlock{blockKey: "block1"}
 		v2 = &CacheBlock{blockKey: "block2"}
 	)
@@ -78,11 +78,11 @@ func TestLRUCapacity(t *testing.T) {
 	c := NewCache(LRUFileHandleCacheType, 2, util.MB*100, time.Hour,
 		func(v interface{}, reason string) error { called = true; return nil },
 		func(v interface{}) error { return fmt.Errorf("close error") })
-	c.Set(1, &CacheBlock{blockKey: "block1"}, 0)
-	c.Set(2, &CacheBlock{blockKey: "block2"}, 0)
-	c.Set(3, &CacheBlock{blockKey: "block3"}, 0)
+	c.Set("test/1", &CacheBlock{blockKey: "block1"}, 0)
+	c.Set("test/2", &CacheBlock{blockKey: "block2"}, 0)
+	c.Set("test/3", &CacheBlock{blockKey: "block3"}, 0)
 	require.Equal(t, 2, c.Len())
-	_, err := c.Get(1)
+	_, err := c.Get("test/1")
 	require.Error(t, err)
 	require.True(t, called)
 	t.Logf("%+v", c.Status())
@@ -93,10 +93,10 @@ func TestLRUExpired(t *testing.T) {
 	c := NewCache(LRUFileHandleCacheType, 2, util.MB*100, time.Hour, nilDeleteFunc, nilCloseFunc)
 	defer c.Close()
 	e := -time.Hour
-	c.Set(1, &CacheBlock{blockKey: "block1"}, e)
-	c.Set(2, &CacheBlock{blockKey: "block2"}, 0)
+	c.Set("test/1", &CacheBlock{blockKey: "block1"}, e)
+	c.Set("test/2", &CacheBlock{blockKey: "block2"}, 0)
 	require.Equal(t, 2, c.Len())
-	_, err := c.Get(1)
+	_, err := c.Get("test/1")
 	require.Error(t, err)
 	require.Equal(t, 1, c.Len())
 

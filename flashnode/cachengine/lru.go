@@ -18,6 +18,7 @@ import (
 	"container/list"
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -37,6 +38,7 @@ type LruCache interface {
 	StatusAll() *Status
 	Len() int
 	GetRateStat() RateStat
+	GetRateStatMap() map[string]*RateStat
 	GetAllocated() int64
 	GetExpiredTime(key interface{}) (time.Time, bool)
 	AddMisses()
@@ -49,6 +51,12 @@ type Status struct {
 	Length    int
 	HitRate   RateStat
 	Keys      []interface{}
+}
+
+type rstat struct {
+	hits   int32
+	misses int32
+	evicts int32 // evict by set
 }
 
 type RateStat struct {
@@ -64,6 +72,9 @@ type fCache struct {
 	allocated          int64
 	preAllocated       int64
 	preAllocatedKeyMap map[interface{}]int64
+
+	rstatMap  map[string]*rstat
+	recentMap map[string]*RateStat
 
 	hits   int32
 	misses int32
@@ -115,6 +126,8 @@ func NewCache(cacheType int, capacity int, maxSize int64, ttl time.Duration, onD
 		onClose:            onClose,
 		closeCh:            make(chan struct{}),
 		items:              make(map[interface{}]*list.Element),
+		rstatMap:           make(map[string]*rstat),
+		recentMap:          make(map[string]*RateStat),
 	}
 	go func() {
 		tick := time.NewTicker(time.Second * 60)
@@ -136,6 +149,21 @@ func (c *fCache) AttachDisk(d *Disk) {
 }
 
 func (c *fCache) replaceRecent() {
+	c.recentMap = make(map[string]*RateStat)
+	for key, v := range c.rstatMap {
+		hits := atomic.SwapInt32(&v.hits, 1)
+		misses := atomic.SwapInt32(&v.misses, 0)
+		evicts := atomic.SwapInt32(&v.evicts, 0)
+		rs := RateStat{
+			Hits:    hits,
+			Misses:  misses,
+			Evicts:  evicts,
+			HitRate: float64(hits) / float64(hits+misses),
+		}
+		c.recentMap[key] = &rs
+	}
+	c.rstatMap = make(map[string]*rstat)
+
 	hits := atomic.SwapInt32(&c.hits, 1)
 	misses := atomic.SwapInt32(&c.misses, 0)
 	evicts := atomic.SwapInt32(&c.evicts, 0)
@@ -312,14 +340,24 @@ func (c *fCache) Set(key, value interface{}, expiration time.Duration) (n int, e
 func (c *fCache) Get(key interface{}) (interface{}, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	str := key.(string)
+	index := strings.Index(str, "/")
+	volume := str[:index]
+	if _, ok := c.rstatMap[volume]; !ok {
+		c.rstatMap[volume] = &rstat{hits: 1, misses: 0, evicts: 0}
+	}
+
 	if ent, ok := c.items[key]; ok {
 		v := ent.Value.(*entry)
 		if v.expiredAt.After(time.Now()) {
 			atomic.AddInt32(&c.hits, 1)
+			atomic.AddInt32(&c.rstatMap[volume].hits, 1)
 			c.lru.MoveToFront(ent)
 			return v.value, nil
 		}
 		atomic.AddInt32(&c.misses, 1)
+		atomic.AddInt32(&c.rstatMap[volume].misses, 1)
+
 		if c.cacheType == LRUCacheBlockCacheType {
 			log.LogInfof("delete(%s) on get, create_time:(%v)  expired_time:(%v)",
 				key, v.createAt.Format("2006-01-02 15:04:05"), v.expiredAt.Format("2006-01-02 15:04:05"))
@@ -331,6 +369,7 @@ func (c *fCache) Get(key interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("expired key[%v]", key)
 	}
 	atomic.AddInt32(&c.misses, 1)
+	atomic.AddInt32(&c.rstatMap[volume].misses, 1)
 	return nil, fmt.Errorf("key[%s] not found", key)
 }
 
@@ -445,6 +484,10 @@ func (c *fCache) Close() error {
 
 func (c *fCache) GetRateStat() RateStat {
 	return *c.recent
+}
+
+func (c *fCache) GetRateStatMap() map[string]*RateStat {
+	return c.recentMap
 }
 
 func (c *fCache) GetAllocated() int64 {

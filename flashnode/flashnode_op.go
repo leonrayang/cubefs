@@ -448,6 +448,8 @@ func (f *FlashNode) doStreamReadRequest(ctx context.Context, conn net.Conn, req 
 		} else {
 			f.metrics.updateReadCountMetric(block.GetRootPath())
 			f.metrics.updateReadBytesMetric(req.Size_, block.GetRootPath())
+			f.metrics.updateVolReadCountMetric(req.CacheRequest.Volume)
+			f.metrics.updateVolReadBytesMetric(req.Size_, req.CacheRequest.Volume)
 		}
 	}()
 

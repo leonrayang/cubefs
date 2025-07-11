@@ -72,7 +72,7 @@ func extentReadWithRetry(reqPacket *proto.Packet, source *proto.DataSource, afte
 			}
 			log.LogDebugf("extentReadWithRetry: try(%d) addr(%s) hosts(%v) reqPacket(%v) volume(%v) ino(%v) client(%v)",
 				try, addr, hosts, reqPacket, volume, ino, clientIP)
-			if readBytes, err = readFromDataPartition(addr, reqPacket, afterReadFunc, timeout); err == nil {
+			if readBytes, err = readFromDataPartition(addr, reqPacket, afterReadFunc, timeout, volume); err == nil {
 				return
 			}
 			errMap[addr] = err
@@ -99,7 +99,7 @@ func extentReadWithRetry(reqPacket *proto.Packet, source *proto.DataSource, afte
 	return
 }
 
-func readFromDataPartition(addr string, reqPacket *proto.Packet, afterReadFunc cachengine.ReadExtentAfter, timeout int) (readBytes int, err error) {
+func readFromDataPartition(addr string, reqPacket *proto.Packet, afterReadFunc cachengine.ReadExtentAfter, timeout int, volume string) (readBytes int, err error) {
 	var conn *net.TCPConn
 	var why string
 	defer func() {
@@ -121,14 +121,14 @@ func readFromDataPartition(addr string, reqPacket *proto.Packet, afterReadFunc c
 		why = "set to connection"
 		return
 	}
-	if readBytes, err = getReadReply(conn, reqPacket, afterReadFunc, timeout); err != nil {
+	if readBytes, err = getReadReply(conn, reqPacket, afterReadFunc, timeout, volume); err != nil {
 		why = fmt.Sprintf("get reply from %v", addr)
 		return
 	}
 	return
 }
 
-func getReadReply(conn *net.TCPConn, reqPacket *proto.Packet, afterReadFunc cachengine.ReadExtentAfter, timeout int) (readBytes int, err error) {
+func getReadReply(conn *net.TCPConn, reqPacket *proto.Packet, afterReadFunc cachengine.ReadExtentAfter, timeout int, volume string) (readBytes int, err error) {
 	buf := bytespool.Alloc(int(reqPacket.Size))
 	defer bytespool.Free(buf)
 
@@ -152,6 +152,7 @@ func getReadReply(conn *net.TCPConn, reqPacket *proto.Packet, afterReadFunc cach
 			return
 		}
 		stat.EndStat("MissCacheRead:ReadFromDN", err, bgTime, 1)
+		stat.EndStat(fmt.Sprintf("MissCacheRead:ReadFromDN_Volume:%v", volume), err, bgTime, 1)
 		stat.EndStat(fmt.Sprintf("MissCacheRead:ReadFromDN[%v]", dnAddr), err, bgTime, 1)
 		if err = checkReadReplyValid(reqPacket, reply, bgTime, dnAddr); err != nil {
 			return
