@@ -33,7 +33,6 @@ import (
 	"github.com/cubefs/cubefs/util/bloom"
 	"github.com/cubefs/cubefs/util/btree"
 	"github.com/cubefs/cubefs/util/errors"
-	"github.com/cubefs/cubefs/util/iputil"
 	"github.com/cubefs/cubefs/util/log"
 	"github.com/cubefs/cubefs/util/stat"
 )
@@ -43,9 +42,7 @@ const (
 	BloomHashNum = 7
 
 	cachePathSeparator = ","
-
-	pingCount        = 3
-	_connIdelTimeout = 30 // 30 second
+	_connIdelTimeout   = 30 // 30 second
 
 	RefreshFlashNodesInterval  = time.Minute
 	RefreshHostLatencyInterval = 20 * time.Second
@@ -104,7 +101,9 @@ type RemoteCache struct {
 	sameZoneTimeout          int64 // microsecond
 	sameRegionTimeout        int64 // ms
 
-	AddressPingMap sync.Map
+	AddressPingMap  sync.Map
+	WarmUpMetaPaths sync.Map
+	WarmPathWorked  int32
 }
 
 type AddressPingStats struct {
@@ -679,11 +678,7 @@ func (rc *RemoteCache) updateHostLatency(hosts []string) {
 		err    error
 	)
 	for _, host := range hosts {
-		if rc.HeartBeatPing {
-			avgRtt, err = rc.HeartBeat(host)
-		} else {
-			avgRtt, err = iputil.PingWithTimeout(strings.Split(host, ":")[0], pingCount, time.Millisecond*time.Duration(rc.ReadTimeout))
-		}
+		avgRtt, err = rc.HeartBeat(host)
 		if err == nil {
 			v, _ := rc.AddressPingMap.LoadOrStore(host, &AddressPingStats{})
 			aps := v.(*AddressPingStats)
@@ -748,14 +743,72 @@ func (rc *RemoteCache) HeartBeat(addr string) (duration time.Duration, err error
 		log.LogWarnf("HeartBeat failed write to addr(%v) err(%v)", addr, err)
 		return
 	}
-	if err = packet.ReadFromConnExt(conn, int(rc.sameZoneTimeout)); err != nil {
+	if err = packet.ReadFromConnExt(conn, int(rc.ReadTimeout)); err != nil {
 		log.LogWarnf("HeartBeat failed to ReadFromConn addr(%v) err(%v)", addr, err)
 		return
 	}
-
 	duration = time.Since(start)
+	if packet.Size != 0 {
+		go func() {
+			rc.UpdateWarmPath(packet.Data, addr)
+		}()
+	}
 	log.LogDebugf("HeartBeat from addr(%v) cost(%v)", addr, duration)
 	return
+}
+
+func (rc *RemoteCache) UpdateWarmPath(data []byte, addr string) {
+	warmUpPaths, err := proto.UnmarshalBinaryWPSlice(data)
+	if err != nil {
+		log.LogWarnf("UpdateWarmPath UnmarshalBinaryWPSlice err(%v)", err)
+		return
+	}
+	for _, warmUpPath := range warmUpPaths {
+		if rc.volname != warmUpPath.VolName {
+			continue
+		}
+		inst, path := hasPathIntersection(warmUpPath.DirPath, rc.metaWrapper.GetSubDir())
+		if !inst {
+			continue
+		}
+		if rc.isPathAlreadyCovered(path) {
+			log.LogDebugf("UpdateWarmPath: path %s is already covered by existing warmup paths", path)
+			continue
+		}
+		warmUpPath.DirPath = path
+		warmUpPath.Status = proto.WarmStatusInitializing
+		warmUpPath.FlashAddr = addr
+		if actual, loaded := rc.WarmUpMetaPaths.LoadOrStore(path, warmUpPath); loaded {
+			info := actual.(*proto.WarmUpPathInfo)
+			if info.Status == proto.WarmStatusCompleted || info.Status == proto.WarmStatusFailed {
+				if time.Now().Add(-5*time.Minute).UnixNano() > info.Expiration {
+					rc.WarmUpMetaPaths.Delete(path)
+				}
+			}
+		}
+	}
+}
+
+func (rc *RemoteCache) isPathAlreadyCovered(newPath string) bool {
+	var isCovered bool
+	rc.WarmUpMetaPaths.Range(func(_, value interface{}) bool {
+		warmUpPath := value.(*proto.WarmUpPathInfo)
+		existingPath := warmUpPath.DirPath
+		if warmUpPath.Status == proto.WarmStatusCompleted || warmUpPath.Status == proto.WarmStatusFailed || warmUpPath.Status == proto.WarmStatusRunning {
+			return true
+		}
+		if strings.HasPrefix(newPath, existingPath) {
+			log.LogDebugf("isPathAlreadyCovered: new path %s is covered by existing path %s", newPath, existingPath)
+			isCovered = true
+			return false
+		}
+		if strings.HasPrefix(existingPath, newPath) {
+			log.LogDebugf("isPathAlreadyCovered: existing path %s is covered by new path %s, will replace", existingPath, newPath)
+			rc.WarmUpMetaPaths.Delete(existingPath)
+		}
+		return true
+	})
+	return isCovered
 }
 
 func (rc *RemoteCache) getFlashHostsMap() map[string]bool {
@@ -798,4 +851,99 @@ func (rc *RemoteCache) getMinFlashGroup() (*FlashGroup, uint32) {
 		}
 	}
 	return nil, 0
+}
+
+func hasPathIntersection(dir1, dir2 string) (bool, string) {
+	sep := "/"
+	if dir1 == "" {
+		dir1 = sep
+	}
+	if dir2 == "" {
+		dir2 = sep
+	}
+	if !strings.HasPrefix(dir1, sep) {
+		dir1 = sep + dir1
+	}
+	if !strings.HasPrefix(dir2, sep) {
+		dir2 = sep + dir2
+	}
+	if !strings.HasSuffix(dir1, sep) {
+		dir1 += sep
+	}
+	if !strings.HasSuffix(dir2, sep) {
+		dir2 += sep
+	}
+	if strings.HasPrefix(dir1, dir2) {
+		return true, dir1[:len(dir1)-1]
+	}
+	if strings.HasPrefix(dir2, dir1) {
+		return true, dir2[:len(dir2)-1]
+	}
+	return false, ""
+}
+
+func (rc *RemoteCache) ApplyWarmupMetaToken(flashNodeAddr string, clientId string, requestType uint8) (bool, error) {
+	var conn *net.TCPConn
+	var err error
+
+	defer func() {
+		rc.conns.PutConnect(conn, err != nil)
+	}()
+
+	// Create packet with OpApplyWarmupMetaToken opcode
+	packet := proto.NewPacket()
+	packet.Opcode = proto.OpApplyWarmupMetaToken
+
+	// Set request data (requestType)
+	packet.Data = []byte{requestType}
+	packet.Size = uint32(len(packet.Data))
+
+	// Set client ID in Arg field
+	if clientId != "" {
+		packet.Arg = []byte(clientId)
+		packet.ArgLen = uint32(len(packet.Arg))
+	}
+
+	// Get connection to flashnode
+	if conn, err = rc.conns.GetConnect(flashNodeAddr); err != nil {
+		log.LogWarnf("ApplyWarmupMetaToken: get connection to flashnode failed, addr(%v) err(%v)", flashNodeAddr, err)
+		return false, err
+	}
+
+	// Write request to flashnode
+	if err = packet.WriteToConn(conn); err != nil {
+		log.LogWarnf("ApplyWarmupMetaToken: failed to write to flashnode(%v) err(%v)", flashNodeAddr, err)
+		return false, err
+	}
+
+	// Read response from flashnode
+	replyPacket := proto.NewPacket()
+	if err = replyPacket.ReadFromConn(conn, proto.ReadDeadlineTime); err != nil {
+		log.LogWarnf("ApplyWarmupMetaToken: failed to read response from flashnode(%v) err(%v)", flashNodeAddr, err)
+		return false, err
+	}
+
+	// Check if operation was successful
+	if replyPacket.ResultCode != proto.OpOk {
+		err = fmt.Errorf("flashnode returned error: %s", string(replyPacket.Data))
+		log.LogWarnf("ApplyWarmupMetaToken: flashnode(%v) returned error ResultCode(%v) err(%v)",
+			flashNodeAddr, replyPacket.ResultCode, err)
+		return false, err
+	}
+
+	// Check response data to determine if token operation was successful
+	if replyPacket.Size > 0 && len(replyPacket.Data) > 0 {
+		if replyPacket.Data[0] == 1 {
+			log.LogDebugf("ApplyWarmupMetaToken: flashnode(%v) clientId(%v) requestType(%v) success",
+				flashNodeAddr, clientId, requestType)
+			return true, nil
+		} else {
+			log.LogDebugf("ApplyWarmupMetaToken: flashnode(%v) clientId(%v) requestType(%v) failed (token limit reached or client not found)",
+				flashNodeAddr, clientId, requestType)
+			return false, nil
+		}
+	}
+
+	log.LogWarnf("ApplyWarmupMetaToken: flashnode(%v) returned empty response data", flashNodeAddr)
+	return false, fmt.Errorf("empty response data from flashnode")
 }

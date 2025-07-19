@@ -84,6 +84,11 @@ const (
 	// remotecache
 	ForceRemoteCache
 
+	// warm up
+	ReadDirLimit
+	MaxWarmUpConcurrency
+	StopWarmWorker
+
 	MaxMountOption
 )
 
@@ -184,6 +189,9 @@ func InitMountOptions(opts []MountOption) {
 	opts[BcacheOnlyForNotSSD] = MountOption{"enableBcacheOnlyForNotSSD", "Enable block cache only for not ssd", "", false}
 
 	opts[ForceRemoteCache] = MountOption{"forceRemoteCache", "All read requests are handled by the remote cache.", "", false}
+	opts[ReadDirLimit] = MountOption{"readDirLimit", "The limit for reading directory entries in warm up", "", int64(500)}
+	opts[MaxWarmUpConcurrency] = MountOption{"maxWarmUpConcurrency", "The maximum number of concurrent goroutines for warm up", "", int64(2)}
+	opts[StopWarmWorker] = MountOption{"stopWarmWorker", "Stop warm up worker", "", false}
 	for i := 0; i < MaxMountOption; i++ {
 		flag.StringVar(&opts[i].cmdlineValue, opts[i].keyword, "", opts[i].description)
 	}
@@ -361,4 +369,9 @@ type MountOptions struct {
 
 	// remote cache
 	ForceRemoteCache bool
+
+	// warm up
+	ReadDirLimit         int64
+	MaxWarmUpConcurrency int64
+	StopWarmWorker       bool
 }

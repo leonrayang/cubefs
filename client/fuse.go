@@ -90,12 +90,14 @@ const (
 	LoggerOutput = "output.log"
 	ModuleName   = "fuseclient"
 
-	ControlCommandSetRate      = "/rate/set"
-	ControlCommandGetRate      = "/rate/get"
-	ControlCommandFreeOSMemory = "/debug/freeosmemory"
-	ControlCommandSuspend      = "/suspend"
-	ControlCommandResume       = "/resume"
-	Role                       = "Client"
+	ControlCommandSetRate            = "/rate/set"
+	ControlCommandGetRate            = "/rate/get"
+	ControlCommandFreeOSMemory       = "/debug/freeosmemory"
+	ControlCommandSuspend            = "/suspend"
+	ControlCommandResume             = "/resume"
+	ControlCommandStopWarmWorker     = "/stopWarmWorker"
+	ControlCommandGetWarmUpMetaPaths = "/warmUpMetaPaths"
+	Role                             = "Client"
 
 	DefaultIP            = "127.0.0.1"
 	DynamicUDSNameFormat = "/tmp/CubeFS-fdstore-%v.sock"
@@ -758,6 +760,8 @@ func mount(opt *proto.MountOptions) (fsConn *fuse.Conn, super *cfs.Super, err er
 	http.HandleFunc(log.GetLogPath, log.GetLog)
 	http.HandleFunc(ControlCommandSuspend, super.SetSuspend)
 	http.HandleFunc(ControlCommandResume, super.SetResume)
+	http.HandleFunc(ControlCommandStopWarmWorker, super.SetStopWarmWorker)
+	http.HandleFunc(ControlCommandGetWarmUpMetaPaths, super.GetWarmUpMetaPaths)
 	// auditlog
 	http.HandleFunc(auditlog.EnableAuditLogReqPath, super.EnableAuditLog)
 	http.HandleFunc(auditlog.DisableAuditLogReqPath, auditlog.DisableAuditLog)
@@ -1007,6 +1011,10 @@ func parseMountOption(cfg *config.Config) (*proto.MountOptions, error) {
 	opt.StreamRetryTimeout = int(GlobalMountOptions[proto.StreamRetryTimeOut].GetInt64())
 
 	opt.ForceRemoteCache = GlobalMountOptions[proto.ForceRemoteCache].GetBool()
+
+	opt.ReadDirLimit = GlobalMountOptions[proto.ReadDirLimit].GetInt64()
+	opt.MaxWarmUpConcurrency = GlobalMountOptions[proto.MaxWarmUpConcurrency].GetInt64()
+	opt.StopWarmWorker = GlobalMountOptions[proto.StopWarmWorker].GetBool()
 
 	if opt.MountPoint == "" || opt.Volname == "" || opt.Owner == "" || opt.Master == "" {
 		return nil, errors.New(fmt.Sprintf("invalid config file: lack of mandatory fields, mountPoint(%v), volName(%v), owner(%v), masterAddr(%v)", opt.MountPoint, opt.Volname, opt.Owner, opt.Master))

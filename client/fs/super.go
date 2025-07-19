@@ -17,6 +17,7 @@ package fs
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -42,6 +43,7 @@ import (
 	"github.com/cubefs/cubefs/util/log"
 	"github.com/cubefs/cubefs/util/stat"
 	"github.com/cubefs/cubefs/util/ump"
+	"github.com/google/uuid"
 )
 
 // Super defines the struct of a super block.
@@ -83,6 +85,7 @@ type Super struct {
 	bcacheFilterFiles   string
 	bcacheCheckInterval int64
 	bcacheBatchCnt      int64
+	syncMetaCache       int32
 
 	readThreads  int
 	writeThreads int
@@ -93,6 +96,11 @@ type Super struct {
 	closeC   chan struct{}
 
 	cacheDpStorageClass uint32
+
+	// warm up configurable parameters
+	readDirLimit         int64
+	maxWarmUpConcurrency int64
+	stopWarmWorker       bool
 }
 
 // Functions that Super needs to implement
@@ -104,6 +112,8 @@ var (
 const (
 	BlobWriterIdleTimeoutPeriod = 10
 	DefaultTaskPoolSize         = 30
+	WarmUpCheckInterval         = 30 * time.Second
+	RemoteMetaCacheDuration     = 48 * time.Hour
 )
 
 // NewSuper returns a new Super.
@@ -152,7 +162,7 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 	}
 
 	s.keepCache = opt.KeepCache
-	if opt.MaxStreamerLimit > 0 {
+	if opt.MaxStreamerLimit > 0 || opt.ForceRemoteCache {
 		s.ic = NewInodeCache(inodeExpiration, MaxInodeCache)
 		s.dc = NewDcache(inodeExpiration, MaxInodeCache)
 	} else {
@@ -214,6 +224,11 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 	}
 
 	s.cacheDpStorageClass = opt.VolCacheDpStorageClass
+
+	// Initialize warm up configurable parameters
+	s.readDirLimit = opt.ReadDirLimit
+	s.maxWarmUpConcurrency = opt.MaxWarmUpConcurrency
+	s.stopWarmWorker = opt.StopWarmWorker
 
 	extentConfig := &stream.ExtentConfig{
 		Volume:            opt.Volname,
@@ -313,7 +328,10 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 	stat.PrintModuleStat = func(writer *bufio.Writer) {
 		fmt.Fprintf(writer, "ic:%d dc:%d nodecache:%d dircache:%d\n", s.ic.lruList.Len(), s.dc.lruList.Len(), len(s.nodeCache), s.mw.DirCacheLen())
 	}
-	go s.loopSyncMeta()
+	go s.loopSyncMeta(opt.ForceRemoteCache)
+
+	// Start warm up meta paths goroutine
+	go s.loopWarmUpMetaPaths(opt.ForceRemoteCache)
 
 	return s, nil
 }
@@ -434,6 +452,54 @@ func (s *Super) SetRate(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(fmt.Sprintf("Set write rate to %v successfully\n", msg)))
 		}
 	}
+}
+
+func (s *Super) SetStopWarmWorker(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	stop := r.FormValue("stop")
+	if stop == "" {
+		replyFail(w, r, "Parameter 'stop' is required")
+		return
+	}
+
+	stopBool, err := strconv.ParseBool(stop)
+	if err != nil {
+		replyFail(w, r, "Parameter 'stop' must be 'true' or 'false'")
+		return
+	}
+	s.stopWarmWorker = stopBool
+	replySucc(w, r, fmt.Sprintf("Set stopWarmWorker to %v successfully", stopBool))
+}
+
+func (s *Super) GetWarmUpMetaPaths(w http.ResponseWriter, r *http.Request) {
+	var paths []map[string]interface{}
+
+	s.ec.RemoteCache.WarmUpMetaPaths.Range(func(key, value interface{}) bool {
+		warmPath := key.(string)
+		warmUpPath := value.(*proto.WarmUpPathInfo)
+
+		pathInfo := map[string]interface{}{
+			"path":        warmPath,
+			"status":      atomic.LoadInt32(&warmUpPath.Status),
+			"flashAddr":   warmUpPath.FlashAddr,
+			"loadedCount": warmUpPath.LoadedCount,
+		}
+		paths = append(paths, pathInfo)
+		return true
+	})
+
+	result := map[string]interface{}{
+		"paths": paths,
+		"count": len(paths),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
 }
 
 func (s *Super) umpKey(act string) string {
@@ -626,23 +692,37 @@ func (s *Super) Notify(stat fs.FSStatType, msg interface{}) {
 	}
 }
 
-func (s *Super) loopSyncMeta() {
-	if s.bcacheDir == "" {
-		return
-	}
+func (s *Super) loopSyncMeta(forceRemoteCache bool) {
+	ticker := time.NewTicker(time.Second * 10)
+	defer ticker.Stop()
 	for {
-		finishC := s.syncMeta()
 		select {
-		case <-finishC:
-			time.Sleep(time.Second * time.Duration(s.bcacheCheckInterval))
+		case <-ticker.C:
+			if log.EnableDebug() {
+				log.LogDebugf("loopSyncMeta with config forceRemoteCache:%v remoteCacheEnable:%v", forceRemoteCache, s.ec.IsRemoteCacheEnabled())
+			}
+			if forceRemoteCache || s.ec.IsRemoteCacheEnabled() {
+				s.ic.ChangeExpiration(RemoteMetaCacheDuration)
+				if s.bcacheCheckInterval == 300 {
+					s.bcacheCheckInterval = 1800
+				}
+			} else {
+				s.ic.RecoverExpiration()
+			}
+			if (s.bcacheDir == "" || forceRemoteCache || s.ec.IsRemoteCacheEnabled()) && atomic.CompareAndSwapInt32(&s.syncMetaCache, 0, 1) {
+				go s.syncMeta()
+			}
 		case <-s.closeC:
+			log.LogInfof("loopSyncMeta: exit")
 			return
 		}
 	}
 }
 
-func (s *Super) syncMeta() <-chan struct{} {
-	finishC := make(chan struct{})
+func (s *Super) syncMeta() {
+	defer func() {
+		atomic.StoreInt32(&s.syncMetaCache, 0)
+	}()
 	start := time.Now()
 	cacheLen := s.ic.lruList.Len()
 
@@ -735,11 +815,8 @@ func (s *Super) syncMeta() <-chan struct{} {
 			})
 		})
 	}
-
 	log.LogDebugf("total cache cnt:%d,changedCnt:%d,sync meta cost:%v", cacheLen, changeCnt, time.Since(start))
-	close(finishC)
-
-	return finishC
+	time.Sleep(time.Second * time.Duration(s.bcacheCheckInterval))
 }
 
 func (s *Super) getModifyInodes(inodes []uint64) (changedNodes []uint64) {
@@ -810,4 +887,241 @@ func (s *Super) SetTransaction(txMaskStr string, timeout int64, retryNum int64, 
 	s.mw.TxConflictRetryInterval = retryInterval
 	log.LogDebugf("SetTransaction: mask[%v], op[%v], timeout[%v], retryNum[%v], retryInterval[%v ms]",
 		mask, txMaskStr, timeout, retryNum, retryInterval)
+}
+
+// loopWarmUpMetaPaths periodically checks WarmUpMetaPaths and warms up inode cache
+func (s *Super) loopWarmUpMetaPaths(forceRemoteCache bool) {
+	ticker := time.NewTicker(WarmUpCheckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.closeC:
+			log.LogInfof("loopWarmUpMetaPaths: exit")
+			return
+		case <-ticker.C:
+			if forceRemoteCache || s.ec.IsRemoteCacheEnabled() {
+				s.processWarmUpMetaPaths()
+			}
+		}
+	}
+}
+
+// processWarmUpMetaPaths processes all warm up paths in the map
+func (s *Super) processWarmUpMetaPaths() {
+	var pathsToProcess []proto.WarmUpMetaResource
+
+	// Collect paths to process and expired paths
+	s.ec.RemoteCache.WarmUpMetaPaths.Range(func(key, value interface{}) bool {
+		warmPath := key.(string)
+		warmUpPath := value.(*proto.WarmUpPathInfo)
+
+		// Check if path is ready to be processed
+		if atomic.LoadInt32(&warmUpPath.Status) == proto.WarmStatusInitializing {
+			pathsToProcess = append(pathsToProcess, proto.WarmUpMetaResource{
+				DirPath:    warmPath,
+				ServerAddr: warmUpPath.FlashAddr,
+			})
+		}
+		return true
+	})
+
+	// Process paths that need warming up
+	for _, wp := range pathsToProcess {
+		go s.warmUpPath(wp)
+	}
+}
+
+// warmUpPath warms up a single path by traversing its directory structure
+func (s *Super) warmUpPath(metaResource proto.WarmUpMetaResource) {
+	if !atomic.CompareAndSwapInt32(&s.ec.RemoteCache.WarmPathWorked, 0, 1) {
+		log.LogDebugf("warmUpPath: other path is working")
+		return
+	}
+	defer atomic.StoreInt32(&s.ec.RemoteCache.WarmPathWorked, 0)
+	value, ok := s.ec.RemoteCache.WarmUpMetaPaths.Load(metaResource.DirPath)
+	if !ok {
+		return
+	}
+	warmUpPath := value.(*proto.WarmUpPathInfo)
+
+	// Try to set status to running atomically
+	if !atomic.CompareAndSwapInt32(&warmUpPath.Status, proto.WarmStatusInitializing, proto.WarmStatusRunning) {
+		log.LogDebugf("warmUpPath: path %s is already being processed", metaResource.DirPath)
+		return
+	}
+
+	clientId := uuid.New().String()
+	success, err := s.ec.RemoteCache.ApplyWarmupMetaToken(metaResource.ServerAddr, clientId, proto.WarmupMetaTokenApply)
+	if err != nil {
+		_, _ = s.ec.RemoteCache.ApplyWarmupMetaToken(metaResource.ServerAddr, clientId, proto.WarmupMetaTokenRelease)
+		log.LogWarnf("warmUpPath: apply warm up meta token failed %v", err)
+		atomic.StoreInt32(&warmUpPath.Status, proto.WarmStatusFailed)
+		return
+	}
+	if !success {
+		atomic.StoreInt32(&warmUpPath.Status, proto.WarmStatusInitializing)
+		return
+	}
+	// Create channel for renew goroutine coordination
+	renewDone := make(chan struct{})
+	defer func() {
+		close(renewDone)
+		_, _ = s.ec.RemoteCache.ApplyWarmupMetaToken(metaResource.ServerAddr, clientId, proto.WarmupMetaTokenRelease)
+	}()
+
+	// Start a goroutine to periodically renew the token
+	go func() {
+		ticker := time.NewTicker(30 * time.Second) // Renew every 30 seconds
+		defer ticker.Stop()
+		for {
+			select {
+			case <-s.closeC:
+				log.LogDebugf("warmUpPath: renew goroutine stopped due to super close for path %s", metaResource.DirPath)
+				return
+			case <-renewDone:
+				log.LogDebugf("warmUpPath: renew goroutine stopped for path %s", metaResource.DirPath)
+				return
+			case <-ticker.C:
+				// Check if warmup is still running
+				if atomic.LoadInt32(&warmUpPath.Status) != proto.WarmStatusRunning {
+					log.LogDebugf("warmUpPath: warmup status changed to %d, stopping renew for path %s",
+						atomic.LoadInt32(&warmUpPath.Status), metaResource.DirPath)
+					return
+				}
+
+				// Try to renew the token
+				renew, err1 := s.ec.RemoteCache.ApplyWarmupMetaToken(metaResource.ServerAddr, clientId, proto.WarmupMetaTokenRenew)
+				if err1 != nil {
+					atomic.CompareAndSwapInt32(&warmUpPath.Status, proto.WarmStatusRunning, proto.WarmStatusFailed)
+					log.LogWarnf("warmUpPath: renew warmup meta token failed for path %s, err: %v", metaResource.DirPath, err)
+					return
+				}
+				if !renew {
+					atomic.CompareAndSwapInt32(&warmUpPath.Status, proto.WarmStatusRunning, proto.WarmStatusFailed)
+					log.LogWarnf("warmUpPath: renew warmup meta token failed (client not found) for path %s", metaResource.DirPath)
+					return
+				}
+				log.LogDebugf("warmUpPath: successfully renewed token for path %s", metaResource.DirPath)
+			}
+		}
+	}()
+
+	log.LogInfof("warmUpPath: start warming up path %s", metaResource.DirPath)
+
+	// Get the inode for the path
+	ino, err := s.mw.LookupPath(metaResource.DirPath)
+	if err != nil {
+		log.LogWarnf("warmUpPath: failed to get inode for path %s, err: %v", metaResource.DirPath, err)
+		atomic.StoreInt32(&warmUpPath.Status, proto.WarmStatusFailed)
+		return
+	}
+	defer func() {
+		// Set status to completed when done
+		atomic.StoreInt32(&warmUpPath.Status, proto.WarmStatusCompleted)
+		log.LogInfof("warmUpPath: completed warming up path %s", metaResource.DirPath)
+	}()
+	var (
+		wg                  sync.WaitGroup
+		currentGoroutineNum int64 = 0
+	)
+	wg.Add(1)
+	atomic.AddInt64(&currentGoroutineNum, 1)
+	// Warm up the directory recursively
+	s.warmUpDirectory(ino, &currentGoroutineNum, &wg, true, warmUpPath)
+	wg.Wait()
+}
+
+// warmUpDirectory recursively warms up a directory and its contents using batch scanning
+func (s *Super) warmUpDirectory(dirIno uint64, currentGoroutineNum *int64, wg *sync.WaitGroup, created bool, warmUpPath *proto.WarmUpPathInfo) {
+	defer func() {
+		if created {
+			atomic.AddInt64(currentGoroutineNum, -1)
+			wg.Done()
+		}
+	}()
+	// Get directory info and cache it
+	dirInfo, err := s.mw.InodeGet_ll(dirIno)
+	if err != nil {
+		log.LogWarnf("warmUpDirectory: failed to get dir info for ino %d, err: %v", dirIno, err)
+		return
+	}
+	s.ic.Put(dirInfo)
+	atomic.AddInt64(&warmUpPath.LoadedCount, 1)
+
+	// Use batch scanning similar to ManualScanner
+	marker := ""
+	done := false
+	var subDirs []uint64
+	for !done {
+		if s.stopWarmWorker || atomic.LoadInt32(&warmUpPath.Status) != proto.WarmStatusRunning {
+			return
+		}
+		select {
+		case <-s.closeC:
+			log.LogDebugf("warmUpDirectory: stopped due to super close for dir %v", dirIno)
+			return
+		default:
+		}
+		// Read directory contents in batches
+		children, err := s.mw.ReadDirLimit_ll(dirIno, marker, uint64(s.readDirLimit))
+		if err != nil {
+			log.LogWarnf("warmUpDirectory: failed to read dir for ino %d, marker %s, err: %v", dirIno, marker, err)
+			return
+		}
+
+		if len(children) == 0 {
+			break
+		}
+		atomic.AddInt64(&warmUpPath.LoadedCount, int64(len(children)))
+		// Handle marker logic
+		if marker != "" {
+			if len(children) >= 1 && marker == children[0].Name {
+				if len(children) <= 1 {
+					break
+				} else {
+					children = children[1:]
+				}
+			}
+		}
+
+		// Collect inodes for batch processing
+		var inodes []uint64
+		for _, child := range children {
+			inodes = append(inodes, child.Inode)
+
+			// If it's a directory, add to subDirs for recursive processing
+			if proto.IsDir(child.Type) {
+				subDirs = append(subDirs, child.Inode)
+			}
+		}
+		// Batch get inode info and cache them
+		if len(inodes) > 0 {
+			infos := s.mw.BatchInodeGet(inodes)
+			for _, info := range infos {
+				s.ic.Put(info)
+			}
+			log.LogDebugf("warmUpDirectory: cached %d inodes for dir %v (batch)", len(infos), dirIno)
+		}
+
+		// Check if we've read all entries
+		childrenNr := len(children)
+		if (marker == "" && childrenNr < int(s.readDirLimit)) || (marker != "" && childrenNr+1 < int(s.readDirLimit)) {
+			done = true
+		} else {
+			marker = children[childrenNr-1].Name
+		}
+	}
+	// Recursively warm up subdirectories
+	if len(subDirs) > 0 {
+		for _, subDir := range subDirs {
+			if atomic.LoadInt64(currentGoroutineNum) < s.maxWarmUpConcurrency {
+				atomic.AddInt64(currentGoroutineNum, 1)
+				wg.Add(1)
+				go s.warmUpDirectory(subDir, currentGoroutineNum, wg, true, warmUpPath)
+			} else {
+				s.warmUpDirectory(subDir, currentGoroutineNum, wg, false, warmUpPath)
+			}
+		}
+	}
 }

@@ -297,6 +297,7 @@ const (
 	OpFlashNodeScan             uint8 = 0xD4
 	OpFlashNodeTaskCommand      uint8 = 0xD5
 	OpFlashSDKHeartbeat         uint8 = 0xCB
+	OpApplyWarmupMetaToken      uint8 = 0xCC
 )
 
 const (
@@ -737,6 +738,8 @@ func (p *Packet) GetOpMsg() (m string) {
 		m = "OpFlashNodeTaskCommand"
 	case OpFlashSDKHeartbeat:
 		m = "OpFlashSDKHeartbeat"
+	case OpApplyWarmupMetaToken:
+		m = "OpApplyWarmupMetaToken"
 	default:
 		m = fmt.Sprintf("op:%v not found", p.Opcode)
 	}

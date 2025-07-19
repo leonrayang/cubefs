@@ -40,6 +40,7 @@ func (f *FlashNode) registerAPIHandler() {
 	http.HandleFunc("/setWaitForCacheBlock", f.handleSetWaitForCacheBlock)
 	http.HandleFunc("/slotStat", f.handleSlotStat)
 	http.HandleFunc("/submitTask", f.handleSubmitTask)
+	http.HandleFunc("/setWarmupMetaTotalToken", f.handleSetWarmupMetaTotalToken)
 }
 
 func (f *FlashNode) handleStat(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +73,12 @@ func (f *FlashNode) handleSubmitTask(w http.ResponseWriter, r *http.Request) {
 	if req.Id == "" {
 		req.Id = uuid.New().String()
 	}
+
+	// Set default warm up path expiration if not provided
+	if req.ManualTaskConfig.WarmUpPathExpire == 0 {
+		req.ManualTaskConfig.WarmUpPathExpire = int64(_defaultWarmUpPathExpire.Seconds())
+	}
+
 	rootDir := req.GetPathPrefix()
 	var tmpDir string
 	f.manualScanners.Range(func(k, v interface{}) bool {
@@ -313,5 +320,42 @@ func (f *FlashNode) handleSlotStat(w http.ResponseWriter, r *http.Request) {
 		NodeId:   f.nodeID,
 		Addr:     f.localAddr,
 		SlotStat: f.GetFlashNodeSlotStat(),
+	})
+}
+
+func (f *FlashNode) handleSetWarmupMetaTotalToken(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		replyErr(w, r, proto.ErrCodeParamError, err.Error(), nil)
+		return
+	}
+
+	tokenStr := r.FormValue("token")
+	if tokenStr == "" {
+		replyErr(w, r, proto.ErrCodeParamError, "token parameter cannot be empty", nil)
+		return
+	}
+
+	token, err := strconv.Atoi(tokenStr)
+	if err != nil {
+		replyErr(w, r, proto.ErrCodeParamError, "invalid token value, must be a positive integer", nil)
+		return
+	}
+
+	if token <= 0 {
+		replyErr(w, r, proto.ErrCodeParamError, "token value must be greater than 0", nil)
+		return
+	}
+
+	f.currentWarmUpWorkerMutex.Lock()
+	oldToken := f.warmupMetaTotalToken
+	f.warmupMetaTotalToken = token
+	f.currentWarmUpWorkerMutex.Unlock()
+
+	log.LogInfof("handleSetWarmupMetaTotalToken: warmupMetaTotalToken changed from %d to %d", oldToken, token)
+
+	replyOK(w, r, map[string]interface{}{
+		"oldToken": oldToken,
+		"newToken": token,
+		"message":  fmt.Sprintf("warmupMetaTotalToken updated from %d to %d", oldToken, token),
 	})
 }
