@@ -96,7 +96,7 @@ func (api *NodeAPI) AddMetaNodeWithAuthNode(serverAddr, zoneName, clientIDKey st
 // This function ignores FaultDomain logic and creates a nodeset that only accepts HTTP interface calls
 // to create specified volume datapartitions. It does not allow automatic creation or migration of other
 // datapartitions into this nodeset, though data partition migration out of this nodeset is permitted.
-func (api *NodeAPI) CreateNodeSetWithSpecifiedNodes(zoneName string, dataNodeAddrs []string, metaNodeAddrs []string) (nodeSetId uint64, err error) {
+func (api *NodeAPI) CreateNodeSetWithSpecifiedNodes(zoneName string, dataNodeAddrs []string, metaNodeAddrs []string, allowedVolumes []string) (nodeSetId uint64, err error) {
 	request := newRequest(get, proto.CreateNodeSetWithSpecifiedNodes).Header(api.h)
 	if zoneName != "" {
 		request.addParam("zoneName", zoneName)
@@ -106,6 +106,9 @@ func (api *NodeAPI) CreateNodeSetWithSpecifiedNodes(zoneName string, dataNodeAdd
 	}
 	if len(metaNodeAddrs) > 0 {
 		request.addParam("metaNodeAddrs", strings.Join(metaNodeAddrs, ","))
+	}
+	if len(allowedVolumes) > 0 {
+		request.addParam("allowedVolumes", strings.Join(allowedVolumes, ","))
 	}
 
 	var data []byte

@@ -26,15 +26,20 @@ func TestZone_createNodeSetWithSpecifiedNodes(t *testing.T) {
 	// Test data
 	dataNodeAddrs := []string{"192.168.1.10:17310", "192.168.1.11:17310"}
 	metaNodeAddrs := []string{"192.168.1.20:17210", "192.168.1.21:17210"}
+	allowedVolumes := []string{"vol1", "vol2"}
 
 	// Test the function
-	ns, err := zone.createNodeSetWithSpecifiedNodes(c, dataNodeAddrs, metaNodeAddrs)
+	ns, err := zone.createNodeSetWithSpecifiedNodes(c, dataNodeAddrs, metaNodeAddrs, allowedVolumes)
 
 	// Verify results
 	assert.NoError(t, err)
 	assert.NotNil(t, ns)
 	assert.Equal(t, zone.name, ns.zoneName)
 	assert.Equal(t, int32(5), ns.decommissionParallelLimit)
+
+	// Verify the nodeset is restricted
+	assert.True(t, ns.IsRestricted())
+	assert.Equal(t, allowedVolumes, ns.GetAllowedVolumes())
 
 	// Verify datanodes were added
 	assert.Equal(t, 2, ns.dataNodeLen())
@@ -78,13 +83,14 @@ func TestZone_createNodeSetWithSpecifiedNodes_EmptyLists(t *testing.T) {
 	zone := newZone("test-zone", proto.MediaType_SSD)
 
 	// Test with empty lists
-	ns, err := zone.createNodeSetWithSpecifiedNodes(c, []string{}, []string{})
+	ns, err := zone.createNodeSetWithSpecifiedNodes(c, []string{}, []string{}, []string{"vol1"})
 
 	// Verify results
 	assert.NoError(t, err)
 	assert.NotNil(t, ns)
 	assert.Equal(t, 0, ns.dataNodeLen())
 	assert.Equal(t, 0, ns.metaNodeLen())
+	assert.True(t, ns.IsRestricted())
 }
 
 func TestZone_createNodeSetWithSpecifiedNodes_ExistingNodes(t *testing.T) {
@@ -114,9 +120,10 @@ func TestZone_createNodeSetWithSpecifiedNodes_ExistingNodes(t *testing.T) {
 	// Test data
 	dataNodeAddrs := []string{"192.168.1.10:17310", "192.168.1.11:17310"}
 	metaNodeAddrs := []string{"192.168.1.20:17210", "192.168.1.21:17210"}
+	allowedVolumes := []string{"vol1", "vol2"}
 
 	// Test the function
-	ns, err := zone.createNodeSetWithSpecifiedNodes(c, dataNodeAddrs, metaNodeAddrs)
+	ns, err := zone.createNodeSetWithSpecifiedNodes(c, dataNodeAddrs, metaNodeAddrs, allowedVolumes)
 
 	// Verify results
 	assert.NoError(t, err)

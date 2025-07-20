@@ -3319,11 +3319,12 @@ func (m *Server) addDataNode(w http.ResponseWriter, r *http.Request) {
 
 func (m *Server) createNodeSetWithSpecifiedNodes(w http.ResponseWriter, r *http.Request) {
 	var (
-		zoneName      string
-		dataNodeAddrs []string
-		metaNodeAddrs []string
-		ns            *nodeSet
-		err           error
+		zoneName       string
+		dataNodeAddrs  []string
+		metaNodeAddrs  []string
+		allowedVolumes []string
+		ns             *nodeSet
+		err            error
 	)
 	metric := exporter.NewTPCnt(apiToMetricsName(proto.CreateNodeSetWithSpecifiedNodes))
 	defer func() {
@@ -3331,7 +3332,7 @@ func (m *Server) createNodeSetWithSpecifiedNodes(w http.ResponseWriter, r *http.
 	}()
 
 	// Parse zone name
-	zoneName = r.FormValue("zoneName")
+	zoneName = r.FormValue(zoneNameKey)
 	if zoneName == "" {
 		zoneName = DefaultZoneName
 	}
@@ -3362,26 +3363,43 @@ func (m *Server) createNodeSetWithSpecifiedNodes(w http.ResponseWriter, r *http.
 		}
 	}
 
+	// Parse allowed volume names
+	allowedVolumesStr := r.FormValue("allowedVolumes")
+	if allowedVolumesStr != "" {
+		allowedVolumes = strings.Split(allowedVolumesStr, ",")
+		for i, volume := range allowedVolumes {
+			allowedVolumes[i] = strings.TrimSpace(volume)
+		}
+	}
+
 	// Validate that at least one node type is specified
 	if len(dataNodeAddrs) == 0 && len(metaNodeAddrs) == 0 {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: "at least one datanode or metanode address must be specified"})
 		return
 	}
 
+	// Validate that at least one allowed volume is specified
+	if len(allowedVolumes) == 0 {
+		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: "allowedVolumes must be specified for restricted nodeset"})
+		return
+	}
+
 	// Create the nodeset with specified nodes
-	ns, err = m.cluster.createNodeSetWithSpecifiedNodes(zoneName, dataNodeAddrs, metaNodeAddrs)
+	ns, err = m.cluster.createNodeSetWithSpecifiedNodes(zoneName, dataNodeAddrs, metaNodeAddrs, allowedVolumes)
 	if err != nil {
-		log.LogErrorf("createNodeSetWithSpecifiedNodes: create failed, zone %s, dataNodes %v, metaNodes %v, err %s",
-			zoneName, dataNodeAddrs, metaNodeAddrs, err.Error())
+		log.LogErrorf("createNodeSetWithSpecifiedNodes: create failed, zone %s, dataNodes %v, metaNodes %v, allowedVolumes %v, err %s",
+			zoneName, dataNodeAddrs, metaNodeAddrs, allowedVolumes, err.Error())
 		sendErrReply(w, r, newErrHTTPReply(err))
 		return
 	}
 
 	response := map[string]interface{}{
-		"nodeSetId":     ns.ID,
-		"zoneName":      zoneName,
-		"dataNodeAddrs": dataNodeAddrs,
-		"metaNodeAddrs": metaNodeAddrs,
+		"nodeSetId":      ns.ID,
+		"zoneName":       zoneName,
+		"dataNodeAddrs":  dataNodeAddrs,
+		"metaNodeAddrs":  metaNodeAddrs,
+		"allowedVolumes": allowedVolumes,
+		"isRestricted":   ns.IsRestricted(),
 	}
 	sendOkReply(w, r, newSuccessHTTPReply(response))
 }

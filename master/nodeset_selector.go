@@ -110,6 +110,7 @@ func (ns *nodeSet) getTotalAvailableSpaceOf(nodeType NodeType) uint64 {
 type NodesetSelector interface {
 	GetName() string
 	Select(nsc nodeSetCollection, excludeNodeSets []uint64, replicaNum uint8) (ns *nodeSet, err error)
+	SelectForVolume(nsc nodeSetCollection, excludeNodeSets []uint64, replicaNum uint8, volumeName string) (ns *nodeSet, err error)
 }
 
 type RoundRobinNodesetSelector struct {
@@ -132,6 +133,46 @@ func (s *RoundRobinNodesetSelector) Select(nsc nodeSetCollection, excludeNodeSet
 		s.index++
 
 		if containsID(excludeNodeSets, ns.ID) {
+			continue
+		}
+		// Skip restricted nodesets (they should only be used for specific volumes)
+		if ns.IsRestricted() {
+			continue
+		}
+		if ns.canWriteFor(s.nodeType, int(replicaNum)) {
+			return
+		}
+	}
+
+	switch s.nodeType {
+	case DataNodeType:
+		err = proto.ErrNoNodeSetToCreateDataPartition
+	case MetaNodeType:
+		err = proto.ErrNoNodeSetToCreateMetaPartition
+	default:
+		panic("unknow node type")
+	}
+	return
+}
+
+func (s *RoundRobinNodesetSelector) SelectForVolume(nsc nodeSetCollection, excludeNodeSets []uint64, replicaNum uint8, volumeName string) (ns *nodeSet, err error) {
+	// sort nodesets by id, so we can get a node list that is as stable as possible
+	sort.Slice(nsc, func(i, j int) bool {
+		return nsc[i].ID < nsc[j].ID
+	})
+	for i := 0; i < len(nsc); i++ {
+		if s.index >= len(nsc) {
+			s.index = 0
+		}
+
+		ns = nsc[s.index]
+		s.index++
+
+		if containsID(excludeNodeSets, ns.ID) {
+			continue
+		}
+		// Check if nodeset is available for this volume
+		if !isNodeSetAvailableForVolume(ns, volumeName) {
 			continue
 		}
 		if ns.canWriteFor(s.nodeType, int(replicaNum)) {
@@ -237,6 +278,62 @@ func (s *CarryWeightNodesetSelector) Select(nsc nodeSetCollection, excludeNodeSe
 	// prepare weight of evert nodesets
 	s.prepareCarry(nsc, total)
 	nsc = s.getAvailNodesets(nsc, excludeNodeSets, replicaNum)
+	// Filter out restricted nodesets for general allocation
+	filteredNsc := make(nodeSetCollection, 0, len(nsc))
+	for _, ns := range nsc {
+		if !ns.IsRestricted() {
+			filteredNsc = append(filteredNsc, ns)
+		}
+	}
+	nsc = filteredNsc
+	avaliCount := 0
+	if len(nsc) < 1 {
+		goto err
+	}
+	avaliCount = s.setNodesetCarry(nsc, total)
+	// sort nodesets by weight
+	sort.Slice(nsc, func(i, j int) bool {
+		return s.carrys[nsc[i].ID] > s.carrys[nsc[j].ID]
+	})
+	// pick the first nodeset than has N writable node
+	for i := 0; i < avaliCount; i++ {
+		ns = nsc[i]
+		if ns.canWriteFor(s.nodeType, int(replicaNum)) && !containsID(excludeNodeSets, ns.ID) {
+			break
+		}
+	}
+	if ns != nil {
+		if !ns.canWriteFor(s.nodeType, int(replicaNum)) || containsID(excludeNodeSets, ns.ID) {
+			goto err
+		}
+		s.carrys[ns.ID] -= 1.0
+	}
+	return
+err:
+	switch s.nodeType {
+	case DataNodeType:
+		err = proto.ErrNoNodeSetToCreateDataPartition
+	case MetaNodeType:
+		err = proto.ErrNoNodeSetToCreateMetaPartition
+	default:
+		panic("unknow node type")
+	}
+	return
+}
+
+func (s *CarryWeightNodesetSelector) SelectForVolume(nsc nodeSetCollection, excludeNodeSets []uint64, replicaNum uint8, volumeName string) (ns *nodeSet, err error) {
+	total := s.getMaxTotal(nsc)
+	// prepare weight of evert nodesets
+	s.prepareCarry(nsc, total)
+	nsc = s.getAvailNodesets(nsc, excludeNodeSets, replicaNum)
+	// Filter nodesets based on volume restrictions
+	filteredNsc := make(nodeSetCollection, 0, len(nsc))
+	for _, ns := range nsc {
+		if isNodeSetAvailableForVolume(ns, volumeName) {
+			filteredNsc = append(filteredNsc, ns)
+		}
+	}
+	nsc = filteredNsc
 	avaliCount := 0
 	if len(nsc) < 1 {
 		goto err
@@ -295,7 +392,30 @@ func (s *AvailableSpaceFirstNodesetSelector) Select(nsc nodeSetCollection, exclu
 	// pick the first nodeset that has N writable nodes
 	for i := 0; i < nsc.Len(); i++ {
 		ns = nsc[i]
-		if ns.canWriteFor(s.nodeType, int(replicaNum)) && !containsID(excludeNodeSets, ns.ID) {
+		if ns.canWriteFor(s.nodeType, int(replicaNum)) && !containsID(excludeNodeSets, ns.ID) && !ns.IsRestricted() {
+			return
+		}
+	}
+	switch s.nodeType {
+	case DataNodeType:
+		err = proto.ErrNoNodeSetToCreateDataPartition
+	case MetaNodeType:
+		err = proto.ErrNoNodeSetToCreateMetaPartition
+	default:
+		panic("unknow node type")
+	}
+	return
+}
+
+func (s *AvailableSpaceFirstNodesetSelector) SelectForVolume(nsc nodeSetCollection, excludeNodeSets []uint64, replicaNum uint8, volumeName string) (ns *nodeSet, err error) {
+	// sort nodesets by available space
+	sort.Slice(nsc, func(i, j int) bool {
+		return nsc[i].getTotalAvailableSpaceOf(s.nodeType) > nsc[j].getTotalAvailableSpaceOf(s.nodeType)
+	})
+	// pick the first nodeset that has N writable nodes
+	for i := 0; i < nsc.Len(); i++ {
+		ns = nsc[i]
+		if ns.canWriteFor(s.nodeType, int(replicaNum)) && !containsID(excludeNodeSets, ns.ID) && isNodeSetAvailableForVolume(ns, volumeName) {
 			return
 		}
 	}
@@ -337,7 +457,38 @@ func (s *StrawNodesetSelector) getWeight(ns *nodeSet) float64 {
 func (s *StrawNodesetSelector) Select(nsc nodeSetCollection, excludeNodeSets []uint64, replicaNum uint8) (ns *nodeSet, err error) {
 	tmp := make(nodeSetCollection, 0)
 	for _, nodeset := range nsc {
-		if nodeset.canWriteFor(s.nodeType, int(replicaNum)) && !containsID(excludeNodeSets, nodeset.ID) {
+		if nodeset.canWriteFor(s.nodeType, int(replicaNum)) && !containsID(excludeNodeSets, nodeset.ID) && !nodeset.IsRestricted() {
+			tmp = append(tmp, nodeset)
+		}
+	}
+	nsc = tmp
+	if len(nsc) < 1 {
+		switch s.nodeType {
+		case DataNodeType:
+			err = proto.ErrNoNodeSetToCreateDataPartition
+		case MetaNodeType:
+			err = proto.ErrNoNodeSetToCreateMetaPartition
+		default:
+			panic("unknow node type")
+		}
+		return
+	}
+	maxStraw := float64(0)
+	for _, nodeset := range nsc {
+		straw := float64(s.rand.Intn(StrawNodesetSelectorRandMax))
+		straw = math.Log(straw/float64(StrawNodesetSelectorRandMax)) / s.getWeight(nodeset)
+		if ns == nil || straw > maxStraw {
+			ns = nodeset
+			maxStraw = straw
+		}
+	}
+	return
+}
+
+func (s *StrawNodesetSelector) SelectForVolume(nsc nodeSetCollection, excludeNodeSets []uint64, replicaNum uint8, volumeName string) (ns *nodeSet, err error) {
+	tmp := make(nodeSetCollection, 0)
+	for _, nodeset := range nsc {
+		if nodeset.canWriteFor(s.nodeType, int(replicaNum)) && !containsID(excludeNodeSets, nodeset.ID) && isNodeSetAvailableForVolume(nodeset, volumeName) {
 			tmp = append(tmp, nodeset)
 		}
 	}
@@ -385,4 +536,13 @@ func NewNodesetSelector(name string, nodeType NodeType) NodesetSelector {
 	default:
 		return NewRoundRobinNodesetSelector(nodeType)
 	}
+}
+
+// isNodeSetAvailableForVolume checks if a nodeset is available for a specific volume
+// considering volume restrictions
+func isNodeSetAvailableForVolume(ns *nodeSet, volumeName string) bool {
+	if !ns.IsRestricted() {
+		return true
+	}
+	return ns.IsVolumeAllowed(volumeName)
 }

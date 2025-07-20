@@ -6238,7 +6238,7 @@ func (c *Cluster) getVolOpLog(volName string) proto.OpLogView {
 // This function ignores FaultDomain logic and creates a nodeset that only accepts HTTP interface calls
 // to create specified volume datapartitions. It does not allow automatic creation or migration of other
 // datapartitions into this nodeset, though data partition migration out of this nodeset is permitted.
-func (c *Cluster) createNodeSetWithSpecifiedNodes(zoneName string, dataNodeAddrs []string, metaNodeAddrs []string) (ns *nodeSet, err error) {
+func (c *Cluster) createNodeSetWithSpecifiedNodes(zoneName string, dataNodeAddrs []string, metaNodeAddrs []string, allowedVolumes []string) (ns *nodeSet, err error) {
 	c.nsMutex.Lock()
 	defer c.nsMutex.Unlock()
 
@@ -6246,8 +6246,8 @@ func (c *Cluster) createNodeSetWithSpecifiedNodes(zoneName string, dataNodeAddrs
 		zoneName = DefaultZoneName
 	}
 
-	log.LogInfof("[createNodeSetWithSpecifiedNodes] zone(%v) dataNodeAddrs(%v) metaNodeAddrs(%v)",
-		zoneName, dataNodeAddrs, metaNodeAddrs)
+	log.LogInfof("[createNodeSetWithSpecifiedNodes] zone(%v) dataNodeAddrs(%v) metaNodeAddrs(%v) allowedVolumes(%v)",
+		zoneName, dataNodeAddrs, metaNodeAddrs, allowedVolumes)
 
 	// Get or create zone
 	zone, err := c.t.getZone(zoneName)
@@ -6269,7 +6269,7 @@ func (c *Cluster) createNodeSetWithSpecifiedNodes(zoneName string, dataNodeAddrs
 	}
 
 	// Create the nodeset with specified nodes
-	ns, err = zone.createNodeSetWithSpecifiedNodes(c, dataNodeAddrs, metaNodeAddrs)
+	ns, err = zone.createNodeSetWithSpecifiedNodes(c, dataNodeAddrs, metaNodeAddrs, allowedVolumes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create nodeset with specified nodes: %v", err)
 	}
@@ -6277,7 +6277,7 @@ func (c *Cluster) createNodeSetWithSpecifiedNodes(zoneName string, dataNodeAddrs
 	// Add nodeset to domain manager if needed (but ignore FaultDomain logic)
 	c.addNodeSetGrp(ns, false)
 
-	log.LogInfof("[createNodeSetWithSpecifiedNodes] successfully created nodeSet[%v] in zone[%v] with %d datanodes and %d metanodes",
-		ns.ID, zoneName, len(dataNodeAddrs), len(metaNodeAddrs))
+	log.LogInfof("[createNodeSetWithSpecifiedNodes] successfully created restricted nodeSet[%v] in zone[%v] with %d datanodes, %d metanodes, and %d allowed volumes",
+		ns.ID, zoneName, len(dataNodeAddrs), len(metaNodeAddrs), len(allowedVolumes))
 	return ns, nil
 }

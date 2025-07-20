@@ -992,6 +992,10 @@ type nodeSet struct {
 	startDecommissionDiskListTraverse chan struct{}
 	DecommissionDisks                 sync.Map
 	DecommissionDisksLock             sync.RWMutex
+	// Volume restriction fields
+	isRestricted           bool
+	allowedVolumeNames     map[string]bool
+	allowedVolumeNamesLock sync.RWMutex
 }
 
 type nodeSetDecommissionParallelStatus struct {
@@ -1022,6 +1026,7 @@ func newNodeSet(c *Cluster, id uint64, cap int, zoneName string) *nodeSet {
 		startDecommissionDiskListTraverse: make(chan struct{}, 1),
 		dataNodeSelector:                  NewNodeSelector(DefaultNodeSelectorName, DataNodeType),
 		metaNodeSelector:                  NewNodeSelector(DefaultNodeSelectorName, MetaNodeType),
+		allowedVolumeNames:                make(map[string]bool),
 	}
 	go ns.traverseDecommissionDisk(c)
 	return ns
@@ -1688,9 +1693,9 @@ func (zone *Zone) createNodeSet(c *Cluster) (ns *nodeSet, err error) {
 // This function ignores FaultDomain logic and creates a nodeset that only accepts HTTP interface calls
 // to create specified volume datapartitions. It does not allow automatic creation or migration of other
 // datapartitions into this nodeset, though data partition migration out of this nodeset is permitted.
-func (zone *Zone) createNodeSetWithSpecifiedNodes(c *Cluster, dataNodeAddrs []string, metaNodeAddrs []string) (ns *nodeSet, err error) {
-	log.LogInfof("action[createNodeSetWithSpecifiedNodes] zone[%v] dataNodeAddrs[%v] metaNodeAddrs[%v]",
-		zone.name, dataNodeAddrs, metaNodeAddrs)
+func (zone *Zone) createNodeSetWithSpecifiedNodes(c *Cluster, dataNodeAddrs []string, metaNodeAddrs []string, allowedVolumes []string) (ns *nodeSet, err error) {
+	log.LogInfof("action[createNodeSetWithSpecifiedNodes] zone[%v] dataNodeAddrs[%v] metaNodeAddrs[%v] allowedVolumes[%v]",
+		zone.name, dataNodeAddrs, metaNodeAddrs, allowedVolumes)
 
 	// Allocate a new nodeset ID
 	id, err := c.idAlloc.allocateCommonID()
@@ -1702,6 +1707,12 @@ func (zone *Zone) createNodeSetWithSpecifiedNodes(c *Cluster, dataNodeAddrs []st
 	ns = newNodeSet(c, id, c.cfg.nodeSetCapacity, zone.name)
 	ns.UpdateMaxParallel(int32(c.DecommissionLimit))
 	ns.startDecommissionSchedule()
+
+	// Mark this nodeset as restricted and add allowed volumes
+	ns.SetRestricted(true)
+	for _, volumeName := range allowedVolumes {
+		ns.AddAllowedVolume(volumeName)
+	}
 
 	// Add specified datanodes to the nodeset
 	for _, addr := range dataNodeAddrs {
@@ -1764,7 +1775,6 @@ func (zone *Zone) createNodeSetWithSpecifiedNodes(c *Cluster, dataNodeAddrs []st
 	}
 
 	// Persist the nodeset
-	log.LogInfof("action[createNodeSetWithSpecifiedNodes] syncAddNodeSet[%v] zonename[%v]", ns.ID, zone.name)
 	if err = c.syncAddNodeSet(ns); err != nil {
 		return nil, fmt.Errorf("failed to sync add nodeset: %v", err)
 	}
@@ -1774,13 +1784,8 @@ func (zone *Zone) createNodeSetWithSpecifiedNodes(c *Cluster, dataNodeAddrs []st
 		return nil, fmt.Errorf("failed to put nodeset to zone: %v", err)
 	}
 
-	// Update nodeset in cluster
-	if err = c.syncUpdateNodeSet(ns); err != nil {
-		return nil, fmt.Errorf("failed to sync update nodeset: %v", err)
-	}
-
-	log.LogInfof("action[createNodeSetWithSpecifiedNodes] successfully created nodeSet[%v] with %d datanodes and %d metanodes",
-		ns.ID, len(dataNodeAddrs), len(metaNodeAddrs))
+	log.LogInfof("action[createNodeSetWithSpecifiedNodes] successfully created restricted nodeSet[%v] in zone[%v] with %d datanodes, %d metanodes, and %d allowed volumes",
+		ns.ID, zone.name, len(dataNodeAddrs), len(metaNodeAddrs), len(allowedVolumes))
 	return ns, nil
 }
 
@@ -2636,4 +2641,45 @@ func (ns *nodeSet) getRunningDecommissionDisk(c *Cluster) []string {
 		return true
 	})
 	return disks
+}
+
+// Volume restriction methods
+func (ns *nodeSet) IsRestricted() bool {
+	ns.RLock()
+	defer ns.RUnlock()
+	return ns.isRestricted
+}
+
+func (ns *nodeSet) SetRestricted(restricted bool) {
+	ns.Lock()
+	defer ns.Unlock()
+	ns.isRestricted = restricted
+}
+
+func (ns *nodeSet) AddAllowedVolume(volumeName string) {
+	ns.allowedVolumeNamesLock.Lock()
+	defer ns.allowedVolumeNamesLock.Unlock()
+	ns.allowedVolumeNames[volumeName] = true
+}
+
+func (ns *nodeSet) RemoveAllowedVolume(volumeName string) {
+	ns.allowedVolumeNamesLock.Lock()
+	defer ns.allowedVolumeNamesLock.Unlock()
+	delete(ns.allowedVolumeNames, volumeName)
+}
+
+func (ns *nodeSet) IsVolumeAllowed(volumeName string) bool {
+	ns.allowedVolumeNamesLock.RLock()
+	defer ns.allowedVolumeNamesLock.RUnlock()
+	return ns.allowedVolumeNames[volumeName]
+}
+
+func (ns *nodeSet) GetAllowedVolumes() []string {
+	ns.allowedVolumeNamesLock.RLock()
+	defer ns.allowedVolumeNamesLock.RUnlock()
+	volumes := make([]string, 0, len(ns.allowedVolumeNames))
+	for volumeName := range ns.allowedVolumeNames {
+		volumes = append(volumes, volumeName)
+	}
+	return volumes
 }
