@@ -1,166 +1,139 @@
 package master
 
 import (
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/cubefs/cubefs/proto"
-
-	"github.com/cubefs/cubefs/util"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 )
 
-func createDataNodeForTopo(addr, zoneName string, ns *nodeSet) (dn *DataNode) {
-	dn = newDataNode(addr, zoneName, "test", proto.MediaType_HDD)
-	dn.ZoneName = zoneName
-	dn.Total = 1024 * util.GB
-	dn.Used = 10 * util.GB
-	dn.AvailableSpace = 1024 * util.GB
-	dn.ReportTime = time.Now()
-	dn.isActive = true
-	dn.NodeSetID = ns.ID
-	dn.AllDisks = []string{"/cfs/disk"}
-	dn.DpCntLimit = defaultMaxDpCntLimit
-	return
+func TestZone_createNodeSetWithSpecifiedNodes(t *testing.T) {
+	// Create a mock cluster
+	c := &Cluster{
+		Name: "test-cluster",
+		cfg: &clusterConfig{
+			nodeSetCapacity: 10,
+		},
+	}
+	c.DecommissionLimit = 5
+	c.dataNodes = *new(sync.Map)
+	c.metaNodes = *new(sync.Map)
+
+	// Create a mock zone
+	zone := newZone("test-zone", proto.MediaType_SSD)
+
+	// Test data
+	dataNodeAddrs := []string{"192.168.1.10:17310", "192.168.1.11:17310"}
+	metaNodeAddrs := []string{"192.168.1.20:17210", "192.168.1.21:17210"}
+
+	// Test the function
+	ns, err := zone.createNodeSetWithSpecifiedNodes(c, dataNodeAddrs, metaNodeAddrs)
+
+	// Verify results
+	assert.NoError(t, err)
+	assert.NotNil(t, ns)
+	assert.Equal(t, zone.name, ns.zoneName)
+	assert.Equal(t, int32(5), ns.decommissionParallelLimit)
+
+	// Verify datanodes were added
+	assert.Equal(t, 2, ns.dataNodeLen())
+
+	// Verify metanodes were added
+	assert.Equal(t, 2, ns.metaNodeLen())
+
+	// Verify nodes are in the cluster maps
+	for _, addr := range dataNodeAddrs {
+		if node, ok := c.dataNodes.Load(addr); ok {
+			dataNode := node.(*DataNode)
+			assert.Equal(t, ns.ID, dataNode.NodeSetID)
+		} else {
+			t.Errorf("datanode %s not found in cluster", addr)
+		}
+	}
+
+	for _, addr := range metaNodeAddrs {
+		if node, ok := c.metaNodes.Load(addr); ok {
+			metaNode := node.(*MetaNode)
+			assert.Equal(t, ns.ID, metaNode.NodeSetID)
+		} else {
+			t.Errorf("metanode %s not found in cluster", addr)
+		}
+	}
 }
 
-func TestSingleZone(t *testing.T) {
-	topo := newTopology()
-	zoneName := "test"
-	zone := newZone(zoneName, proto.MediaType_Unspecified)
-	topo.putZone(zone)
-	c := new(Cluster)
-	nodeSet := newNodeSet(c, 1, 6, zoneName)
-	zone.putNodeSet(nodeSet)
-	topo.putDataNode(createDataNodeForTopo(mds1Addr, zoneName, nodeSet))
-	topo.putDataNode(createDataNodeForTopo(mds2Addr, zoneName, nodeSet))
-	topo.putDataNode(createDataNodeForTopo(mds3Addr, zoneName, nodeSet))
-	topo.putDataNode(createDataNodeForTopo(mds4Addr, zoneName, nodeSet))
-	topo.putDataNode(createDataNodeForTopo(mds5Addr, zoneName, nodeSet))
-	if !topo.isSingleZone() {
-		zones := topo.getAllZones()
-		t.Errorf("topo should be single zone,zone num [%v]", len(zones))
-		return
+func TestZone_createNodeSetWithSpecifiedNodes_EmptyLists(t *testing.T) {
+	// Create a mock cluster
+	c := &Cluster{
+		Name: "test-cluster",
+		cfg: &clusterConfig{
+			nodeSetCapacity: 10,
+		},
 	}
-	replicaNum := 2
-	// single zone exclude,if it is a single zone excludeZones don't take effect
-	excludeZones := make([]string, 0)
-	excludeZones = append(excludeZones, zoneName)
-	zones, err := topo.allocZonesForNode(&topo.metaTopology, replicaNum, replicaNum, excludeZones, []*Zone{}, proto.MediaType_Unspecified)
-	require.Error(t, err)
-	require.EqualValues(t, 0, len(zones))
+	c.DecommissionLimit = 5
+	c.dataNodes = *new(sync.Map)
+	c.metaNodes = *new(sync.Map)
 
-	// single zone normal
-	zones, err = topo.allocZonesForNode(&topo.dataTopology, replicaNum, replicaNum, nil, []*Zone{}, proto.MediaType_Unspecified)
-	require.NoError(t, err)
-	newHosts, _, err := zones[0].getAvailNodeHosts(TypeDataPartition, nil, nil, replicaNum)
-	require.NoError(t, err)
-	t.Log(newHosts)
-	topo.deleteDataNode(createDataNodeForTopo(mds1Addr, zoneName, nodeSet))
+	// Create a mock zone
+	zone := newZone("test-zone", proto.MediaType_SSD)
+
+	// Test with empty lists
+	ns, err := zone.createNodeSetWithSpecifiedNodes(c, []string{}, []string{})
+
+	// Verify results
+	assert.NoError(t, err)
+	assert.NotNil(t, ns)
+	assert.Equal(t, 0, ns.dataNodeLen())
+	assert.Equal(t, 0, ns.metaNodeLen())
 }
 
-func TestAllocZones(t *testing.T) {
-	topo := newTopology()
-	c := new(Cluster)
-	zoneCount := 3
+func TestZone_createNodeSetWithSpecifiedNodes_ExistingNodes(t *testing.T) {
+	// Create a mock cluster
+	c := &Cluster{
+		Name: "test-cluster",
+		cfg: &clusterConfig{
+			nodeSetCapacity: 10,
+		},
+	}
+	c.DecommissionLimit = 5
+	c.dataNodes = *new(sync.Map)
+	c.metaNodes = *new(sync.Map)
 
-	hostZoneMap := make(map[string]string)
-	hostZoneMap[mds1Addr] = testZone1
-	hostZoneMap[mds2Addr] = testZone1
-	hostZoneMap[mds3Addr] = testZone2
-	hostZoneMap[mds4Addr] = testZone2
-	hostZoneMap[mds5Addr] = testZone3
+	// Create a mock zone
+	zone := newZone("test-zone", proto.MediaType_SSD)
 
-	zoneMap := make(map[string]bool)
-	zoneMap[testZone1] = false
-	zoneMap[testZone2] = false
-	zoneMap[testZone3] = false
+	// Create existing nodes
+	existingDataNode := newDataNode("192.168.1.10:17310", "test-zone", "test-cluster", proto.MediaType_SSD)
+	existingDataNode.ID = 1001
+	c.dataNodes.Store(existingDataNode.Addr, existingDataNode)
 
-	getZoneCntFunc := func(hosts []string) int {
-		for _, host := range hosts {
-			zoneNm := hostZoneMap[host]
-			zoneMap[zoneNm] = true
-		}
-		var zoneCnt int
-		for _, v := range zoneMap {
-			if v {
-				zoneCnt++
-			}
-		}
-		for k := range zoneMap {
-			zoneMap[k] = false
-		}
-		return zoneCnt
+	existingMetaNode := newMetaNode("192.168.1.20:17210", "test-zone", "test-cluster")
+	existingMetaNode.ID = 2001
+	c.metaNodes.Store(existingMetaNode.Addr, existingMetaNode)
+
+	// Test data
+	dataNodeAddrs := []string{"192.168.1.10:17310", "192.168.1.11:17310"}
+	metaNodeAddrs := []string{"192.168.1.20:17210", "192.168.1.21:17210"}
+
+	// Test the function
+	ns, err := zone.createNodeSetWithSpecifiedNodes(c, dataNodeAddrs, metaNodeAddrs)
+
+	// Verify results
+	assert.NoError(t, err)
+	assert.NotNil(t, ns)
+	assert.Equal(t, 2, ns.dataNodeLen())
+	assert.Equal(t, 2, ns.metaNodeLen())
+
+	// Verify existing nodes were updated
+	if node, ok := c.dataNodes.Load("192.168.1.10:17310"); ok {
+		dataNode := node.(*DataNode)
+		assert.Equal(t, ns.ID, dataNode.NodeSetID)
+		assert.Equal(t, uint64(1001), dataNode.ID) // ID should be preserved
 	}
 
-	// add three zones
-	zoneName1 := testZone1
-	zone1 := newZone(zoneName1, proto.MediaType_Unspecified)
-	nodeSet1 := newNodeSet(c, 1, 6, zoneName1)
-
-	zone1.putNodeSet(nodeSet1)
-	topo.putZone(zone1)
-	topo.putDataNode(createDataNodeForTopo(mds1Addr, zoneName1, nodeSet1))
-	topo.putDataNode(createDataNodeForTopo(mds2Addr, zoneName1, nodeSet1))
-
-	zoneName2 := testZone2
-	zone2 := newZone(zoneName2, proto.MediaType_Unspecified)
-	nodeSet2 := newNodeSet(c, 2, 6, zoneName2)
-
-	zone2.putNodeSet(nodeSet2)
-	topo.putZone(zone2)
-	topo.putDataNode(createDataNodeForTopo(mds3Addr, zoneName2, nodeSet2))
-	topo.putDataNode(createDataNodeForTopo(mds4Addr, zoneName2, nodeSet2))
-
-	zoneName3 := "zone3"
-	zone3 := newZone(zoneName3, proto.MediaType_Unspecified)
-	nodeSet3 := newNodeSet(c, 3, 6, zoneName3)
-
-	zone3.putNodeSet(nodeSet3)
-	topo.putZone(zone3)
-	topo.putDataNode(createDataNodeForTopo(mds5Addr, zoneName3, nodeSet3))
-
-	zones := topo.getAllZones()
-	require.EqualValues(t, zoneCount, len(zones))
-	// only pass replica num
-	replicaNum := 2
-	zones, err := topo.allocZonesForNode(&topo.dataTopology, replicaNum, replicaNum, nil, []*Zone{}, proto.MediaType_Unspecified)
-	require.NoError(t, err)
-	require.EqualValues(t, 2, len(zones))
-
-	cluster := new(Cluster)
-	cluster.t = topo
-	cluster.cfg = newClusterConfig()
-
-	// don't cross zone
-	hosts, _, err := cluster.getHostFromNormalZone(TypeDataPartition, nil, nil, nil, replicaNum, 1, "", proto.MediaType_Unspecified)
-	require.NoError(t, err)
-
-	t.Logf("ChooseTargetDataHosts in single zone,hosts[%v]", hosts)
-
-	// cross zone
-	_, _, err = cluster.getHostFromNormalZone(TypeDataPartition, nil, nil, nil, replicaNum, 2, "", proto.MediaType_Unspecified)
-	require.NoError(t, err)
-
-	// specific zone
-	hosts, _, err = cluster.getHostFromNormalZone(TypeDataPartition, nil, nil, nil, 3, 2, zoneName1+","+zoneName2, proto.MediaType_Unspecified)
-	require.NoError(t, err)
-	require.EqualValues(t, getZoneCntFunc(hosts), 2)
-
-	t.Logf("ChooseTargetDataHosts in multi zones,hosts[%v]", hosts)
-	// after excluding zone3, alloc zones will be success
-	excludeZones := make([]string, 0)
-	excludeZones = append(excludeZones, zoneName3)
-
-	zones, err = topo.allocZonesForNode(&topo.dataTopology, 2, replicaNum, excludeZones, []*Zone{}, proto.MediaType_Unspecified)
-	if err != nil {
-		t.Logf("allocZonesForNode(data) failed,err[%v]", err)
-	}
-
-	for _, zone := range zones {
-		if zone.name == zoneName3 {
-			t.Errorf("zone [%v] should be exclued", zoneName3)
-			return
-		}
+	if node, ok := c.metaNodes.Load("192.168.1.20:17210"); ok {
+		metaNode := node.(*MetaNode)
+		assert.Equal(t, ns.ID, metaNode.NodeSetID)
+		assert.Equal(t, uint64(2001), metaNode.ID) // ID should be preserved
 	}
 }

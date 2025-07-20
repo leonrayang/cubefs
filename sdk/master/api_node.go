@@ -15,7 +15,10 @@
 package master
 
 import (
+	"encoding/json"
+	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/cubefs/cubefs/proto"
 )
@@ -86,6 +89,41 @@ func (api *NodeAPI) AddMetaNodeWithAuthNode(serverAddr, zoneName, clientIDKey st
 		return
 	}
 	id, err = strconv.ParseUint(string(data), 10, 64)
+	return
+}
+
+// CreateNodeSetWithSpecifiedNodes creates a nodeset with specified datanode and metanode addresses.
+// This function ignores FaultDomain logic and creates a nodeset that only accepts HTTP interface calls
+// to create specified volume datapartitions. It does not allow automatic creation or migration of other
+// datapartitions into this nodeset, though data partition migration out of this nodeset is permitted.
+func (api *NodeAPI) CreateNodeSetWithSpecifiedNodes(zoneName string, dataNodeAddrs []string, metaNodeAddrs []string) (nodeSetId uint64, err error) {
+	request := newRequest(get, proto.CreateNodeSetWithSpecifiedNodes).Header(api.h)
+	if zoneName != "" {
+		request.addParam("zoneName", zoneName)
+	}
+	if len(dataNodeAddrs) > 0 {
+		request.addParam("dataNodeAddrs", strings.Join(dataNodeAddrs, ","))
+	}
+	if len(metaNodeAddrs) > 0 {
+		request.addParam("metaNodeAddrs", strings.Join(metaNodeAddrs, ","))
+	}
+
+	var data []byte
+	if data, err = api.mc.serveRequest(request); err != nil {
+		return
+	}
+
+	// Parse the response to extract nodeSetId
+	var response map[string]interface{}
+	if err = json.Unmarshal(data, &response); err != nil {
+		return
+	}
+
+	if nodeSetIdFloat, ok := response["nodeSetId"].(float64); ok {
+		nodeSetId = uint64(nodeSetIdFloat)
+	} else {
+		err = fmt.Errorf("invalid response format: nodeSetId not found or not a number")
+	}
 	return
 }
 

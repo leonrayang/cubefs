@@ -1684,6 +1684,106 @@ func (zone *Zone) createNodeSet(c *Cluster) (ns *nodeSet, err error) {
 	return
 }
 
+// createNodeSetWithSpecifiedNodes creates a nodeset with specified datanode and metanode addresses.
+// This function ignores FaultDomain logic and creates a nodeset that only accepts HTTP interface calls
+// to create specified volume datapartitions. It does not allow automatic creation or migration of other
+// datapartitions into this nodeset, though data partition migration out of this nodeset is permitted.
+func (zone *Zone) createNodeSetWithSpecifiedNodes(c *Cluster, dataNodeAddrs []string, metaNodeAddrs []string) (ns *nodeSet, err error) {
+	log.LogInfof("action[createNodeSetWithSpecifiedNodes] zone[%v] dataNodeAddrs[%v] metaNodeAddrs[%v]",
+		zone.name, dataNodeAddrs, metaNodeAddrs)
+
+	// Allocate a new nodeset ID
+	id, err := c.idAlloc.allocateCommonID()
+	if err != nil {
+		return nil, err
+	}
+
+	// Create the nodeset
+	ns = newNodeSet(c, id, c.cfg.nodeSetCapacity, zone.name)
+	ns.UpdateMaxParallel(int32(c.DecommissionLimit))
+	ns.startDecommissionSchedule()
+
+	// Add specified datanodes to the nodeset
+	for _, addr := range dataNodeAddrs {
+		// Check if datanode already exists
+		if existingNode, ok := c.dataNodes.Load(addr); ok {
+			existingDataNode := existingNode.(*DataNode)
+			if existingDataNode.NodeSetID != 0 {
+				return nil, fmt.Errorf("datanode %s already belongs to nodeset %d", addr, existingDataNode.NodeSetID)
+			}
+			// Update existing datanode to belong to this nodeset
+			existingDataNode.NodeSetID = ns.ID
+			ns.putDataNode(existingDataNode)
+			if err = c.syncUpdateDataNode(existingDataNode); err != nil {
+				return nil, fmt.Errorf("failed to sync update datanode %s: %v", addr, err)
+			}
+		} else {
+			// Create new datanode
+			dataNode := newDataNode(addr, zone.name, c.Name, zone.dataMediaType)
+			dataNode.ID, err = c.idAlloc.allocateCommonID()
+			if err != nil {
+				return nil, fmt.Errorf("failed to allocate ID for datanode %s: %v", addr, err)
+			}
+			dataNode.NodeSetID = ns.ID
+			ns.putDataNode(dataNode)
+			if err = c.syncAddDataNode(dataNode); err != nil {
+				return nil, fmt.Errorf("failed to sync add datanode %s: %v", addr, err)
+			}
+			c.dataNodes.Store(addr, dataNode)
+		}
+	}
+
+	// Add specified metanodes to the nodeset
+	for _, addr := range metaNodeAddrs {
+		// Check if metanode already exists
+		if existingNode, ok := c.metaNodes.Load(addr); ok {
+			existingMetaNode := existingNode.(*MetaNode)
+			if existingMetaNode.NodeSetID != 0 {
+				return nil, fmt.Errorf("metanode %s already belongs to nodeset %d", addr, existingMetaNode.NodeSetID)
+			}
+			// Update existing metanode to belong to this nodeset
+			existingMetaNode.NodeSetID = ns.ID
+			ns.putMetaNode(existingMetaNode)
+			if err = c.syncUpdateMetaNode(existingMetaNode); err != nil {
+				return nil, fmt.Errorf("failed to sync update metanode %s: %v", addr, err)
+			}
+		} else {
+			// Create new metanode
+			metaNode := newMetaNode(addr, zone.name, c.Name)
+			metaNode.ID, err = c.idAlloc.allocateCommonID()
+			if err != nil {
+				return nil, fmt.Errorf("failed to allocate ID for metanode %s: %v", addr, err)
+			}
+			metaNode.NodeSetID = ns.ID
+			ns.putMetaNode(metaNode)
+			if err = c.syncAddMetaNode(metaNode); err != nil {
+				return nil, fmt.Errorf("failed to sync add metanode %s: %v", addr, err)
+			}
+			c.metaNodes.Store(addr, metaNode)
+		}
+	}
+
+	// Persist the nodeset
+	log.LogInfof("action[createNodeSetWithSpecifiedNodes] syncAddNodeSet[%v] zonename[%v]", ns.ID, zone.name)
+	if err = c.syncAddNodeSet(ns); err != nil {
+		return nil, fmt.Errorf("failed to sync add nodeset: %v", err)
+	}
+
+	// Add nodeset to zone
+	if err = zone.putNodeSet(ns); err != nil {
+		return nil, fmt.Errorf("failed to put nodeset to zone: %v", err)
+	}
+
+	// Update nodeset in cluster
+	if err = c.syncUpdateNodeSet(ns); err != nil {
+		return nil, fmt.Errorf("failed to sync update nodeset: %v", err)
+	}
+
+	log.LogInfof("action[createNodeSetWithSpecifiedNodes] successfully created nodeSet[%v] with %d datanodes and %d metanodes",
+		ns.ID, len(dataNodeAddrs), len(metaNodeAddrs))
+	return ns, nil
+}
+
 func (zone *Zone) getAllNodeSet() (nsc nodeSetCollection) {
 	zone.nsLock.RLock()
 	defer zone.nsLock.RUnlock()

@@ -6233,3 +6233,51 @@ func (c *Cluster) getVolOpLog(volName string) proto.OpLogView {
 	}
 	return opv
 }
+
+// createNodeSetWithSpecifiedNodes creates a nodeset with specified datanode and metanode addresses.
+// This function ignores FaultDomain logic and creates a nodeset that only accepts HTTP interface calls
+// to create specified volume datapartitions. It does not allow automatic creation or migration of other
+// datapartitions into this nodeset, though data partition migration out of this nodeset is permitted.
+func (c *Cluster) createNodeSetWithSpecifiedNodes(zoneName string, dataNodeAddrs []string, metaNodeAddrs []string) (ns *nodeSet, err error) {
+	c.nsMutex.Lock()
+	defer c.nsMutex.Unlock()
+
+	if zoneName == "" {
+		zoneName = DefaultZoneName
+	}
+
+	log.LogInfof("[createNodeSetWithSpecifiedNodes] zone(%v) dataNodeAddrs(%v) metaNodeAddrs(%v)",
+		zoneName, dataNodeAddrs, metaNodeAddrs)
+
+	// Get or create zone
+	zone, err := c.t.getZone(zoneName)
+	if err != nil {
+		log.LogInfof("[createNodeSetWithSpecifiedNodes] create zone(%v) for nodeset", zoneName)
+		// Use the media type from the first datanode if available, otherwise use unspecified
+		var mediaType uint32 = proto.MediaType_Unspecified
+		if len(dataNodeAddrs) > 0 {
+			// Try to get media type from existing datanode
+			if existingNode, ok := c.dataNodes.Load(dataNodeAddrs[0]); ok {
+				mediaType = existingNode.(*DataNode).MediaType
+			}
+		}
+		zone = newZone(zoneName, mediaType)
+		if err = c.sycnPutZoneInfo(zone); err != nil {
+			return nil, fmt.Errorf("failed to persist zone %s: %v", zoneName, err)
+		}
+		c.t.putZoneIfAbsent(zone)
+	}
+
+	// Create the nodeset with specified nodes
+	ns, err = zone.createNodeSetWithSpecifiedNodes(c, dataNodeAddrs, metaNodeAddrs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create nodeset with specified nodes: %v", err)
+	}
+
+	// Add nodeset to domain manager if needed (but ignore FaultDomain logic)
+	c.addNodeSetGrp(ns, false)
+
+	log.LogInfof("[createNodeSetWithSpecifiedNodes] successfully created nodeSet[%v] in zone[%v] with %d datanodes and %d metanodes",
+		ns.ID, zoneName, len(dataNodeAddrs), len(metaNodeAddrs))
+	return ns, nil
+}

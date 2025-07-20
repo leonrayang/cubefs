@@ -3317,6 +3317,75 @@ func (m *Server) addDataNode(w http.ResponseWriter, r *http.Request) {
 	sendOkReply(w, r, newSuccessHTTPReply(id))
 }
 
+func (m *Server) createNodeSetWithSpecifiedNodes(w http.ResponseWriter, r *http.Request) {
+	var (
+		zoneName      string
+		dataNodeAddrs []string
+		metaNodeAddrs []string
+		ns            *nodeSet
+		err           error
+	)
+	metric := exporter.NewTPCnt(apiToMetricsName(proto.CreateNodeSetWithSpecifiedNodes))
+	defer func() {
+		doStatAndMetric(proto.CreateNodeSetWithSpecifiedNodes, metric, err, nil)
+	}()
+
+	// Parse zone name
+	zoneName = r.FormValue("zoneName")
+	if zoneName == "" {
+		zoneName = DefaultZoneName
+	}
+
+	// Parse data node addresses
+	dataNodeAddrsStr := r.FormValue("dataNodeAddrs")
+	if dataNodeAddrsStr != "" {
+		dataNodeAddrs = strings.Split(dataNodeAddrsStr, ",")
+		for i, addr := range dataNodeAddrs {
+			dataNodeAddrs[i] = strings.TrimSpace(addr)
+			if !checkIpPort(dataNodeAddrs[i]) {
+				sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: fmt.Sprintf("invalid datanode address: %s", dataNodeAddrs[i])})
+				return
+			}
+		}
+	}
+
+	// Parse meta node addresses
+	metaNodeAddrsStr := r.FormValue("metaNodeAddrs")
+	if metaNodeAddrsStr != "" {
+		metaNodeAddrs = strings.Split(metaNodeAddrsStr, ",")
+		for i, addr := range metaNodeAddrs {
+			metaNodeAddrs[i] = strings.TrimSpace(addr)
+			if !checkIpPort(metaNodeAddrs[i]) {
+				sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: fmt.Sprintf("invalid metanode address: %s", metaNodeAddrs[i])})
+				return
+			}
+		}
+	}
+
+	// Validate that at least one node type is specified
+	if len(dataNodeAddrs) == 0 && len(metaNodeAddrs) == 0 {
+		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: "at least one datanode or metanode address must be specified"})
+		return
+	}
+
+	// Create the nodeset with specified nodes
+	ns, err = m.cluster.createNodeSetWithSpecifiedNodes(zoneName, dataNodeAddrs, metaNodeAddrs)
+	if err != nil {
+		log.LogErrorf("createNodeSetWithSpecifiedNodes: create failed, zone %s, dataNodes %v, metaNodes %v, err %s",
+			zoneName, dataNodeAddrs, metaNodeAddrs, err.Error())
+		sendErrReply(w, r, newErrHTTPReply(err))
+		return
+	}
+
+	response := map[string]interface{}{
+		"nodeSetId":     ns.ID,
+		"zoneName":      zoneName,
+		"dataNodeAddrs": dataNodeAddrs,
+		"metaNodeAddrs": metaNodeAddrs,
+	}
+	sendOkReply(w, r, newSuccessHTTPReply(response))
+}
+
 func (m *Server) getDataNode(w http.ResponseWriter, r *http.Request) {
 	var (
 		nodeAddr     string

@@ -167,6 +167,7 @@ const (
 	// node APIs
 
 	AddDataNode                        = "/dataNode/add"
+	CreateNodeSetWithSpecifiedNodes    = "/nodeSet/createWithSpecifiedNodes"
 	DecommissionDataNode               = "/dataNode/decommission"
 	QueryDataNodeDecoProgress          = "/dataNode/queryDecommissionProgress"
 	QueryDataNodeDecoFailedDps         = "/dataNode/queryDecommissionFailedDps"
