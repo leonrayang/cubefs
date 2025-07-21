@@ -833,7 +833,11 @@ func (s *Super) getModifyInodes(inodes []uint64) (changedNodes []uint64) {
 		if oldInfo == nil {
 			continue
 		}
-		if !oldInfo.ModifyTime.Equal(newInfo.ModifyTime) || newInfo.Generation != s.ec.GetExtentCacheGen(newInfo.Inode) {
+		oldGen := s.ec.GetExtentCacheGen(newInfo.Inode)
+		if oldGen == 0 {
+			oldGen = oldInfo.Generation
+		}
+		if !oldInfo.ModifyTime.Equal(newInfo.ModifyTime) || newInfo.Generation != oldGen {
 			log.LogDebugf("oldInfo:ino(%d) modifyTime(%v) gen(%d),newInfo:ino(%d) modifyTime(%d) gen(%d)", oldInfo.Inode, oldInfo.ModifyTime.Unix(), s.ec.GetExtentCacheGen(newInfo.Inode), newInfo.Inode, newInfo.ModifyTime.Unix(), newInfo.Generation)
 			changedNodes = append(changedNodes, newInfo.Inode)
 		} else {

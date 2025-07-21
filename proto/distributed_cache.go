@@ -338,7 +338,7 @@ func ComputeSourcesVersion(sources []*DataSource, gen uint64) (version uint32) {
 		binary.BigEndian.PutUint64(crcData[i*32+16:i*32+24], s.ExtentOffset)
 		binary.BigEndian.PutUint64(crcData[i*32+24:i*32+32], s.Size_)
 	}
-	binary.BigEndian.PutUint64(crcData[len(sources)*32:len(sources)*32+8], gen)
+	binary.BigEndian.PutUint64(crcData[len(sources)*32:len(sources)*32+8], 0)
 	return fastcrc32.Checksum(crcData)
 }
 
