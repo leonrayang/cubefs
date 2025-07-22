@@ -430,7 +430,7 @@ func (client *ExtentClient) SetClientID(id uint64) (err error) {
 }
 
 func (client *ExtentClient) IsRemoteCacheEnabled() bool {
-	rcEnable := client.RemoteCache.ClusterEnabled && client.RemoteCache.VolumeEnabled
+	rcEnable := client.RemoteCache.ClusterEnabled && (client.forceRemoteCache || client.RemoteCache.VolumeEnabled)
 	master.ClientRCacheEnable = rcEnable
 	return rcEnable
 }

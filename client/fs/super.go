@@ -328,10 +328,10 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 	stat.PrintModuleStat = func(writer *bufio.Writer) {
 		fmt.Fprintf(writer, "ic:%d dc:%d nodecache:%d dircache:%d\n", s.ic.lruList.Len(), s.dc.lruList.Len(), len(s.nodeCache), s.mw.DirCacheLen())
 	}
-	go s.loopSyncMeta(opt.ForceRemoteCache)
+	go s.loopSyncMeta()
 
 	// Start warm up meta paths goroutine
-	go s.loopWarmUpMetaPaths(opt.ForceRemoteCache)
+	go s.loopWarmUpMetaPaths()
 
 	return s, nil
 }
@@ -692,16 +692,16 @@ func (s *Super) Notify(stat fs.FSStatType, msg interface{}) {
 	}
 }
 
-func (s *Super) loopSyncMeta(forceRemoteCache bool) {
+func (s *Super) loopSyncMeta() {
 	ticker := time.NewTicker(time.Second * 10)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
 			if log.EnableDebug() {
-				log.LogDebugf("loopSyncMeta with config forceRemoteCache:%v remoteCacheEnable:%v", forceRemoteCache, s.ec.IsRemoteCacheEnabled())
+				log.LogDebugf("loopSyncMeta with config remoteCacheEnable:%v", s.ec.IsRemoteCacheEnabled())
 			}
-			if forceRemoteCache || s.ec.IsRemoteCacheEnabled() {
+			if s.ec.IsRemoteCacheEnabled() {
 				s.ic.ChangeExpiration(RemoteMetaCacheDuration)
 				if s.bcacheCheckInterval == 300 {
 					s.bcacheCheckInterval = 1800
@@ -709,7 +709,7 @@ func (s *Super) loopSyncMeta(forceRemoteCache bool) {
 			} else {
 				s.ic.RecoverExpiration()
 			}
-			if (s.bcacheDir == "" || forceRemoteCache || s.ec.IsRemoteCacheEnabled()) && atomic.CompareAndSwapInt32(&s.syncMetaCache, 0, 1) {
+			if (s.bcacheDir == "" || s.ec.IsRemoteCacheEnabled()) && atomic.CompareAndSwapInt32(&s.syncMetaCache, 0, 1) {
 				go s.syncMeta()
 			}
 		case <-s.closeC:
@@ -894,7 +894,7 @@ func (s *Super) SetTransaction(txMaskStr string, timeout int64, retryNum int64, 
 }
 
 // loopWarmUpMetaPaths periodically checks WarmUpMetaPaths and warms up inode cache
-func (s *Super) loopWarmUpMetaPaths(forceRemoteCache bool) {
+func (s *Super) loopWarmUpMetaPaths() {
 	ticker := time.NewTicker(WarmUpCheckInterval)
 	defer ticker.Stop()
 
@@ -904,7 +904,7 @@ func (s *Super) loopWarmUpMetaPaths(forceRemoteCache bool) {
 			log.LogInfof("loopWarmUpMetaPaths: exit")
 			return
 		case <-ticker.C:
-			if forceRemoteCache || s.ec.IsRemoteCacheEnabled() {
+			if s.ec.IsRemoteCacheEnabled() {
 				s.processWarmUpMetaPaths()
 			}
 		}
