@@ -1,0 +1,22 @@
+{
+    "mountPoint": "/mnt/cubefs",
+    "volName": "test_volume",
+    "owner": "cfs",
+    "masterAddr": "10.196.59.198:17010,10.196.59.199:17010,10.196.59.200:17010",
+    "logDir": "/cfs/log",
+    "logLevel": "debug",
+    "profPort": "17410",
+    
+    "fuseDefaultMaxBackground": 64,
+    "fuseMaxPagesPerReq": 512,
+    
+    "rdonly": false,
+    "authenticate": false,
+    "enableXattr": true,
+    "enablePosixACL": false,
+    "icacheTimeout": 1,
+    "lookupValid": 1,
+    "attrValid": 1,
+    "writeCache": false,
+    "keepCache": false
+} 

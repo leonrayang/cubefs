@@ -88,6 +88,10 @@ const (
 	// remotecache
 	ForceRemoteCache
 
+	// FUSE kernel parameters
+	FuseDefaultMaxBackground
+	FuseMaxPagesPerReq
+
 	MaxMountOption
 )
 
@@ -187,7 +191,17 @@ func InitMountOptions(opts []MountOption) {
 	opts[AheadReadBlockTimeOut] = MountOption{"aheadReadBlockTimeOut", "ahead read block expiration time", "", int64(3)}
 	opts[AheadReadWindowCnt] = MountOption{"aheadReadWindowCnt", "ahead read window block count", "", int64(8)}
 
-	opts[ForceRemoteCache] = MountOption{"forceRemoteCache", "All read requests are handled by the remote cache.", "", false}
+	opts[ForceRemoteCache] = MountOption{"forceRemoteCache", "Force remote cache", "", false}
+
+	// FUSE kernel parameters
+	opts[FuseDefaultMaxBackground] = MountOption{"fuseDefaultMaxBackground", "FUSE default max background requests", "", int64(32)}
+	opts[FuseMaxPagesPerReq] = MountOption{"fuseMaxPagesPerReq", "FUSE max pages per request", "", int64(256)}
+
+	opts[FileSystemName] = MountOption{"fileSystemName", "File System Name", "", ""}
+	opts[SnapshotReadVerSeq] = MountOption{"snapshotReadVerSeq", "Snapshot Read Version Sequence", "", int64(-1)}
+	opts[DisableMountSubtype] = MountOption{"disableMountSubtype", "Disable Mount Subtype", "", false}
+	opts[StreamRetryTimeOut] = MountOption{"streamRetryTimeout", "Stream Retry Timeout", "", int64(3)}
+
 	for i := 0; i < MaxMountOption; i++ {
 		flag.StringVar(&opts[i].cmdlineValue, opts[i].keyword, "", opts[i].description)
 	}
@@ -368,4 +382,8 @@ type MountOptions struct {
 
 	// remote cache
 	ForceRemoteCache bool
+
+	// FUSE kernel parameters
+	FuseDefaultMaxBackground int64
+	FuseMaxPagesPerReq       int64
 }
