@@ -422,6 +422,13 @@ build_bcache(){
     popd >/dev/null
 }
 
+build_bazil_fuse_demo(){
+    pushd $SrcPath >/dev/null
+    echo -n "build bazil-fuse-demo      "
+    CGO_ENABLED=0 go build ${MODFLAGS} -gcflags=all=-trimpath=${SrcPath} -asmflags=all=-trimpath=${SrcPath} -ldflags="${LDFlags}" -o ${BuildBinPath}/bazil-fuse-demo ${SrcPath}/test/bazil_fuse_demo/main.go  && echo "success" || echo "failed"
+    popd >/dev/null
+}
+
 clean() {
     $RM -rf ${BuildBinPath}
 }
@@ -520,6 +527,9 @@ case "$cmd" in
         ;;
     "bcache")
         build_bcache
+        ;;
+    "bazil_fuse_demo")
+        build_bazil_fuse_demo
         ;;
     *)
         ;;

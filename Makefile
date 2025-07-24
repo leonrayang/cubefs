@@ -8,8 +8,8 @@ default: all
 phony := all
 all: build
 
-phony += build server authtool client cli libsdkpre libsdk fsck fdstore bcache blobstore deploy
-build: server authtool client cli libsdk fsck fdstore bcache blobstore deploy
+phony += build server authtool client cli libsdkpre libsdk fsck fdstore bcache blobstore deploy bazil_fuse_demo
+build: server authtool client cli libsdk fsck fdstore bcache blobstore deploy bazil_fuse_demo
 
 server:
 	@build/build.sh server $(GOMOD) --threads=$(threads)
@@ -45,6 +45,9 @@ fdstore:
 
 bcache:
 	@build/build.sh bcache $(GOMOD) --threads=$(threads)
+
+bazil_fuse_demo:
+	@build/build.sh bazil_fuse_demo $(GOMOD) --threads=$(threads)
 
 phony += clean
 clean:

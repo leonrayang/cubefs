@@ -1,0 +1,468 @@
+// Copyright 2025 The CubeFS Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+// implied. See the License for the specific language governing
+// permissions and limitations under the License.
+
+package main
+
+import (
+	"context"
+	"flag"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"runtime/pprof"
+	"sync"
+	"time"
+
+	"syscall"
+
+	"github.com/cubefs/cubefs/depends/bazil.org/fuse"
+	"github.com/cubefs/cubefs/depends/bazil.org/fuse/fs"
+)
+
+const (
+	// Default mount point
+	DefaultMountPoint = "/tmp/cubefs_demo"
+	// Default data directory for local storage
+	DefaultDataDir = "/tmp/cubefs_demo_data"
+)
+
+// LocalFileSystem implements a simple local file system
+type LocalFileSystem struct {
+	mu      sync.RWMutex
+	dataDir string
+	root    *LocalDir
+	nextIno uint64
+	handles map[fuse.HandleID]*LocalFile
+	nextHID fuse.HandleID
+}
+
+// LocalDir represents a directory in the local file system
+type LocalDir struct {
+	fs       *LocalFileSystem
+	ino      uint64
+	name     string
+	parent   *LocalDir
+	children map[string]*LocalNode
+	mu       sync.RWMutex
+}
+
+// LocalFile represents a file in the local file system
+type LocalFile struct {
+	fs       *LocalFileSystem
+	ino      uint64
+	name     string
+	parent   *LocalDir
+	data     []byte
+	size     uint64
+	mu       sync.RWMutex
+	handleID fuse.HandleID
+}
+
+// LocalNode is a union of LocalDir and LocalFile
+type LocalNode struct {
+	Dir  *LocalDir
+	File *LocalFile
+}
+
+// NewLocalFileSystem creates a new local file system
+func NewLocalFileSystem(dataDir string) *LocalFileSystem {
+	fs := &LocalFileSystem{
+		dataDir: dataDir,
+		handles: make(map[fuse.HandleID]*LocalFile),
+		nextIno: 1,
+		nextHID: 1,
+	}
+
+	// Create root directory
+	fs.root = &LocalDir{
+		fs:       fs,
+		ino:      fs.nextIno,
+		name:     "",
+		parent:   nil,
+		children: make(map[string]*LocalNode),
+	}
+	fs.nextIno++
+
+	// Create data directory if it doesn't exist
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		log.Printf("Failed to create data directory: %v", err)
+	}
+
+	return fs
+}
+
+// Root returns the root directory
+func (lfs *LocalFileSystem) Root() (fs.Node, error) {
+	return lfs.root, nil
+}
+
+// Node returns a node by inode number
+func (lfs *LocalFileSystem) Node(ino, pino uint64, mode uint32) (fs.Node, error) {
+	// For this simple demo, we'll just return the root
+	// In a real implementation, you'd look up the node by inode
+	return lfs.root, nil
+}
+
+// State returns the filesystem state
+func (lfs *LocalFileSystem) State() (fs.FSStatType, string) {
+	return fs.FSStatResume, "running"
+}
+
+// Notify sends a notification
+func (lfs *LocalFileSystem) Notify(stat fs.FSStatType, msg interface{}) {
+	// For this simple demo, we don't need to do anything
+}
+
+// Attr returns file attributes
+func (d *LocalDir) Attr(ctx context.Context, a *fuse.Attr) error {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	a.Inode = d.ino
+	a.Mode = os.ModeDir | 0755
+	a.Size = 0
+	a.Blocks = 0
+	a.Atime = time.Now()
+	a.Mtime = time.Now()
+	a.Ctime = time.Now()
+
+	return nil
+}
+
+// Attr returns file attributes
+func (f *LocalFile) Attr(ctx context.Context, a *fuse.Attr) error {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	a.Inode = f.ino
+	a.Mode = 0644
+	a.Size = f.size
+	a.Blocks = (f.size + 511) / 512
+	a.Atime = time.Now()
+	a.Mtime = time.Now()
+	a.Ctime = time.Now()
+
+	return nil
+}
+
+// Lookup finds a file or directory in the directory
+func (d *LocalDir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.LookupResponse) (fs.Node, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	if child, exists := d.children[req.Name]; exists {
+		if child.Dir != nil {
+			return child.Dir, nil
+		}
+		return child.File, nil
+	}
+
+	return nil, fuse.ENOENT
+}
+
+// Create creates a new file
+func (d *LocalDir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Check if file already exists
+	if child, exists := d.children[req.Name]; exists {
+		if child.File != nil {
+			// File exists, return it
+			return child.File, child.File, nil
+		}
+		// Directory exists, can't create file
+		return nil, nil, fuse.EEXIST
+	}
+
+	// Create new file
+	file := &LocalFile{
+		fs:     d.fs,
+		ino:    d.fs.nextIno,
+		name:   req.Name,
+		parent: d,
+		data:   make([]byte, 0),
+		size:   0,
+	}
+	d.fs.nextIno++
+
+	// Add to parent's children
+	d.children[req.Name] = &LocalNode{File: file}
+
+	return file, file, nil
+}
+
+// Mkdir creates a new directory
+func (d *LocalDir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Check if directory already exists
+	if child, exists := d.children[req.Name]; exists {
+		if child.Dir != nil {
+			return child.Dir, nil
+		}
+		return nil, fuse.EEXIST
+	}
+
+	// Create new directory
+	dir := &LocalDir{
+		fs:       d.fs,
+		ino:      d.fs.nextIno,
+		name:     req.Name,
+		parent:   d,
+		children: make(map[string]*LocalNode),
+	}
+	d.fs.nextIno++
+
+	// Add to parent's children
+	d.children[req.Name] = &LocalNode{Dir: dir}
+
+	return dir, nil
+}
+
+// Remove removes a file or directory
+func (d *LocalDir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	child, exists := d.children[req.Name]
+	if !exists {
+		return fuse.ENOENT
+	}
+
+	if req.Dir && child.File != nil {
+		return syscall.ENOTDIR
+	}
+	if !req.Dir && child.Dir != nil {
+		return syscall.EISDIR
+	}
+
+	delete(d.children, req.Name)
+	return nil
+}
+
+// ReadDirAll reads all directory entries at once
+func (d *LocalDir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
+	// Add profiling for ReadDirAll operations
+	defer pprof.SetGoroutineLabels(ctx)
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var entries []fuse.Dirent
+
+	// Add . and ..
+	entries = append(entries, fuse.Dirent{
+		Inode: d.ino,
+		Name:  ".",
+		Type:  fuse.DT_Dir,
+	})
+
+	if d.parent != nil {
+		entries = append(entries, fuse.Dirent{
+			Inode: d.parent.ino,
+			Name:  "..",
+			Type:  fuse.DT_Dir,
+		})
+	}
+
+	// Add children
+	for name, child := range d.children {
+		if child.Dir != nil {
+			entries = append(entries, fuse.Dirent{
+				Inode: child.Dir.ino,
+				Name:  name,
+				Type:  fuse.DT_Dir,
+			})
+		} else if child.File != nil {
+			entries = append(entries, fuse.Dirent{
+				Inode: child.File.ino,
+				Name:  name,
+				Type:  fuse.DT_File,
+			})
+		}
+	}
+
+	return entries, nil
+}
+
+// Open opens a file
+func (f *LocalFile) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// Use filesystem lock to safely access shared resources
+	f.fs.mu.Lock()
+	defer f.fs.mu.Unlock()
+
+	// Assign handle ID
+	f.handleID = f.fs.nextHID
+	f.fs.nextHID++
+	f.fs.handles[f.handleID] = f
+
+	return f, nil
+}
+
+// Release closes a file
+func (f *LocalFile) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// Use filesystem lock to safely access shared resources
+	f.fs.mu.Lock()
+	defer f.fs.mu.Unlock()
+
+	delete(f.fs.handles, f.handleID)
+	return nil
+}
+
+// Read reads data from a file
+func (f *LocalFile) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if req.Offset >= int64(f.size) {
+		resp.Data = make([]byte, 0)
+		return nil
+	}
+
+	end := req.Offset + int64(req.Size)
+	if end > int64(f.size) {
+		end = int64(f.size)
+	}
+
+	resp.Data = make([]byte, end-req.Offset)
+	copy(resp.Data, f.data[req.Offset:end])
+
+	return nil
+}
+
+// Write writes data to a file
+func (f *LocalFile) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// end := req.Offset + int64(len(req.Data))
+	// if end > int64(len(f.data)) {
+	// 	// Extend data slice
+	// 	newData := make([]byte, end)
+	// 	copy(newData, f.data)
+	// 	f.data = newData
+	// }
+
+	// copy(f.data[req.Offset:], req.Data)
+	f.size = uint64(len(f.data))
+	resp.Size = len(req.Data)
+
+	return nil
+}
+
+// Flush flushes file data
+func (f *LocalFile) Flush(ctx context.Context, req *fuse.FlushRequest) error {
+	// In this simple implementation, we don't need to do anything
+	return nil
+}
+
+// Fsync synchronizes file data
+func (f *LocalFile) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	// In this simple implementation, we don't need to do anything
+	return nil
+}
+
+// Setattr sets file attributes
+func (f *LocalFile) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if req.Valid.Size() {
+		if req.Size > uint64(len(f.data)) {
+			// Extend file
+			newData := make([]byte, req.Size)
+			copy(newData, f.data)
+			f.data = newData
+		} else {
+			// Truncate file
+			f.data = f.data[:req.Size]
+		}
+		f.size = req.Size
+	}
+
+	return nil
+}
+
+func main() {
+	var (
+		mountPoint = flag.String("mount", DefaultMountPoint, "Mount point")
+		dataDir    = flag.String("data", DefaultDataDir, "Data directory for local storage")
+		debug      = flag.Bool("debug", false, "Enable debug logging")
+		pprofAddr  = flag.String("pprof", ":6060", "Pprof server address (e.g., :6060)")
+	)
+	flag.Parse()
+
+	// Set up logging
+	if *debug {
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+	}
+
+	// Start pprof server in a goroutine
+	go func() {
+		log.Printf("Starting pprof server on %s", *pprofAddr)
+		log.Printf("Profiling endpoints available at:")
+		log.Printf("  - CPU profile: http://%s/debug/pprof/profile", *pprofAddr)
+		log.Printf("  - Memory profile: http://%s/debug/pprof/heap", *pprofAddr)
+		log.Printf("  - Goroutine profile: http://%s/debug/pprof/goroutine", *pprofAddr)
+		log.Printf("  - All profiles: http://%s/debug/pprof/", *pprofAddr)
+
+		if err := http.ListenAndServe(*pprofAddr, nil); err != nil {
+			log.Printf("Pprof server error: %v", err)
+		}
+	}()
+
+	// Create file system
+	lfs := NewLocalFileSystem(*dataDir)
+
+	// Create mount point if it doesn't exist
+	if err := os.MkdirAll(*mountPoint, 0755); err != nil {
+		log.Printf("Failed to create mount point: %v", err)
+		os.Exit(1)
+	}
+
+	// Mount the file system
+	conn, err := fuse.Mount(*mountPoint, false, fuse.FSName("cubefs_demo"), fuse.Subtype("cubefs_demo"))
+	if err != nil {
+		log.Printf("Failed to mount: %v", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	log.Printf("Cubefs Demo mounted at %s", *mountPoint)
+	log.Printf("Data directory: %s", *dataDir)
+	log.Printf("Press Ctrl+C to unmount")
+
+	// Serve the file system
+	err = fs.Serve(conn, lfs, nil)
+	if err != nil {
+		log.Printf("Failed to serve: %v", err)
+		os.Exit(1)
+	}
+
+	// Check if the mount process has an error to report
+	<-conn.Ready
+	if err := conn.MountError; err != nil {
+		log.Printf("Mount error: %v", err)
+		os.Exit(1)
+	}
+}
