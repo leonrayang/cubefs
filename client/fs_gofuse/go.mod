@@ -1,8 +1,14 @@
-module github.com/cubefs/cubefs/sdk_gofuse
+module github.com/cubefs/cubefs/client/fs_gofuse
 
 go 1.17
 
-require github.com/cubefs/cubefs v1.34.0
+require (
+	github.com/cubefs/cubefs v1.34.0
+	github.com/cubefs/cubefs/sdk/gofuse_adapter v0.0.0-00010101000000-000000000000
+	github.com/hanwen/go-fuse/v2 v2.7.0
+	github.com/jacobsa/daemonize v0.0.0-20160101105449-e460293e890f
+	go.uber.org/automaxprocs v1.5.1
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -16,7 +22,6 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
-	github.com/jacobsa/daemonize v0.0.0-20160101105449-e460293e890f // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/prometheus/client_golang v1.13.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
@@ -34,4 +39,7 @@ require (
 	google.golang.org/protobuf v1.28.1 // indirect
 )
 
-replace github.com/cubefs/cubefs => ../
+replace (
+	github.com/cubefs/cubefs => ../../
+	github.com/cubefs/cubefs/sdk/gofuse_adapter => ../../sdk/gofuse_adapter
+)

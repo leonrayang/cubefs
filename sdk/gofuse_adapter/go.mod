@@ -1,12 +1,8 @@
-module github.com/cubefs/cubefs/client_gofuse
+module github.com/cubefs/cubefs/sdk/gofuse_adapter
 
 go 1.17
 
-require (
-	github.com/cubefs/cubefs v1.34.0
-	github.com/cubefs/cubefs/sdk_gofuse v0.0.0-00010101000000-000000000000
-	github.com/hanwen/go-fuse/v2 v2.1.0
-)
+require github.com/cubefs/cubefs v1.34.0
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -38,7 +34,4 @@ require (
 	google.golang.org/protobuf v1.28.1 // indirect
 )
 
-replace (
-	github.com/cubefs/cubefs => ../
-	github.com/cubefs/cubefs/sdk_gofuse => ../sdk_gofuse
-)
+replace github.com/cubefs/cubefs => ../../

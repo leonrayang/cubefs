@@ -48,11 +48,11 @@ This is a high-performance FUSE client for Cubefs using the `go-fuse` library. I
 
 ```bash
 # Build the SDK adapter
-cd sdk_gofuse
+cd ../../sdk/gofuse_adapter
 make build
 
 # Build the client
-cd ../client_gofuse
+cd ../../client/fs_gofuse
 make build
 ```
 
@@ -137,7 +137,7 @@ sudo umount /tmp/cubefs_gofuse
 
 ### SDK Integration
 
-The `sdk_gofuse` adapter provides:
+The `sdk/gofuse_adapter` adapter provides:
 
 ```go
 type CubefsAdapter struct {

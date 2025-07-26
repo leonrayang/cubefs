@@ -1,4 +1,4 @@
-module cubefs_demo_standalone
+module github.com/cubefs/cubefs/client/fs_gofuse/demo
 
 go 1.17
 

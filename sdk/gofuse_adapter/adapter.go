@@ -115,11 +115,24 @@ func (ca *CubefsAdapter) GetInodeInfo(ino uint64) (*InodeInfo, error) {
 		CreateTime: info.CreateTime,
 		AccessTime: info.AccessTime,
 		ModifyTime: info.ModifyTime,
-		LinkTarget: "", // Not available in proto.InodeInfo
+		LinkTarget: "", // Not directly available in proto.InodeInfo
 		Nlink:      info.Nlink,
 		Uid:        info.Uid,
 		Gid:        info.Gid,
 	}, nil
+}
+
+// Lookup looks up a child inode by name in the parent directory
+func (ca *CubefsAdapter) Lookup(parentIno uint64, name string) (uint64, error) {
+	ca.mu.RLock()
+	defer ca.mu.RUnlock()
+
+	ino, _, err := ca.metaWrapper.Lookup_ll(parentIno, name)
+	if err != nil {
+		return 0, err
+	}
+
+	return ino, nil
 }
 
 // CreateInode creates a new inode
@@ -166,13 +179,35 @@ func (ca *CubefsAdapter) ReadDir(ino uint64) ([]*DirEntry, error) {
 		return nil, err
 	}
 
-	dirEntries := make([]*DirEntry, len(entries))
-	for i, entry := range entries {
-		dirEntries[i] = &DirEntry{
+	var dirEntries []*DirEntry
+	for _, entry := range entries {
+		dirEntries = append(dirEntries, &DirEntry{
 			Inode: entry.Inode,
 			Name:  entry.Name,
 			Type:  entry.Type,
-		}
+		})
+	}
+
+	return dirEntries, nil
+}
+
+// ReadDirLimit reads directory entries with a limit
+func (ca *CubefsAdapter) ReadDirLimit(ino uint64, from string, limit uint64) ([]*DirEntry, error) {
+	ca.mu.RLock()
+	defer ca.mu.RUnlock()
+
+	entries, err := ca.metaWrapper.ReadDirLimit_ll(ino, from, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	var dirEntries []*DirEntry
+	for _, entry := range entries {
+		dirEntries = append(dirEntries, &DirEntry{
+			Inode: entry.Inode,
+			Name:  entry.Name,
+			Type:  entry.Type,
+		})
 	}
 
 	return dirEntries, nil
