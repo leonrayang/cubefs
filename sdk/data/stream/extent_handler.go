@@ -502,10 +502,10 @@ func (eh *ExtentHandler) processReplyError(packet *Packet, errmsg string) {
 	}
 }
 
-func (eh *ExtentHandler) flush() (err error) {
+func (eh *ExtentHandler) flush(all bool) (err error) {
 	log.LogDebugf("ExtentHandler flush begin: eh(%s)", eh.String())
 	eh.flushPacket()
-	err = eh.waitForFlush()
+	err = eh.waitForFlush(all)
 	if err != nil {
 		log.LogErrorf("ExtentHandler flush failed, eh(%s), err %s", eh.String(), err.Error())
 		return err
@@ -646,7 +646,7 @@ func (eh *ExtentHandler) appendExtentKey() (err error) {
 
 // This function is meaningful to be called from stream writer flush method,
 // because there is no new write request.
-func (eh *ExtentHandler) waitForFlush() (err error) {
+func (eh *ExtentHandler) waitForFlush(all bool) (err error) {
 	log.LogDebugf("ExtentHandler waitForFlush begin: eh(%v)", eh)
 	defer func() {
 		log.LogDebugf("ExtentHandler waitForFlush end: eh(%v)", eh)
@@ -656,14 +656,29 @@ func (eh *ExtentHandler) waitForFlush() (err error) {
 		return
 	}
 
+	// Optimization: return early if inflight is less than 256
+	// This reduces flush latency while ensuring data consistency
+	// The FUSE kernel flush is mainly about ensuring data is queued, not waiting for all network operations
+	const maxInflightThreshold = 1024
+
 	for {
 		select {
 		case <-eh.empty:
 			if atomic.LoadInt32(&eh.inflight) <= 0 {
 				return
 			}
+			// Early return optimization
+			if !all && atomic.LoadInt32(&eh.inflight) < maxInflightThreshold {
+				log.LogDebugf("ExtentHandler waitForFlush early return: eh(%v) inflight(%v)", eh, atomic.LoadInt32(&eh.inflight))
+				return
+			}
 		case <-eh.stop:
 			if atomic.LoadInt32(&eh.inflight) <= 0 {
+				return
+			}
+			// Early return optimization
+			if !all && atomic.LoadInt32(&eh.inflight) < maxInflightThreshold {
+				log.LogDebugf("ExtentHandler waitForFlush early return: eh(%v) inflight(%v)", eh, atomic.LoadInt32(&eh.inflight))
 				return
 			}
 			return fmt.Errorf("eh maybe cleaned")

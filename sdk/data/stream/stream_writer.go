@@ -310,7 +310,7 @@ func (s *Streamer) handleRequest(request interface{}) {
 		request.err = s.truncate(request.size, request.fullPath)
 		request.done <- struct{}{}
 	case *FlushRequest:
-		request.err = s.flush()
+		request.err = s.flush(false)
 		request.done <- struct{}{}
 	case *ReleaseRequest:
 		request.err = s.release()
@@ -360,7 +360,7 @@ begin:
 		if req.ExtentKey == nil {
 			continue
 		}
-		err = s.flush()
+		err = s.flush(true)
 		if err != nil {
 			return
 		}
@@ -459,7 +459,7 @@ func (s *Streamer) doDirectWriteByAppend(req *ExtentRequest, direct bool, op uin
 	)
 
 	log.LogDebugf("action[doDirectWriteByAppend] inode %v enter in req %v", s.inode, req)
-	err = s.flush()
+	err = s.flush(true)
 	if err != nil {
 		return
 	}
@@ -624,7 +624,7 @@ func (s *Streamer) doDirectWriteByAppend(req *ExtentRequest, direct bool, op uin
 func (s *Streamer) doOverwrite(req *ExtentRequest, direct bool, storageClass uint32) (total int, err error) {
 	var dp *wrapper.DataPartition
 
-	err = s.flush()
+	err = s.flush(true)
 	if err != nil {
 		return
 	}
@@ -930,7 +930,7 @@ func (s *Streamer) doWriteAppendEx(data []byte, offset, size int, direct bool, r
 	return
 }
 
-func (s *Streamer) flush() (err error) {
+func (s *Streamer) flush(all bool) (err error) {
 	for {
 		element := s.dirtylist.Get()
 		if element == nil {
@@ -939,7 +939,7 @@ func (s *Streamer) flush() (err error) {
 		eh := element.Value.(*ExtentHandler)
 
 		log.LogDebugf("Streamer flush begin: eh(%v)", eh)
-		err = eh.flush()
+		err = eh.flush(all)
 		if err != nil {
 			log.LogErrorf("Streamer flush failed: eh(%v)", eh)
 			return
@@ -1013,7 +1013,7 @@ func (s *Streamer) closeOpenHandler() (err error) {
 	handler := s.handler
 	if handler != nil {
 		log.LogDebugf("closeOpenHandler: flush open handler now, eh(%v)", handler)
-		err = handler.flush()
+		err = handler.flush(true)
 		if err != nil {
 			log.LogErrorf("closeOpenHandler: eh(%v) flush failed, err %s", handler, err.Error())
 			return
@@ -1028,7 +1028,7 @@ func (s *Streamer) closeOpenHandler() (err error) {
 		s.handler = nil
 	}
 
-	err = s.flush()
+	err = s.flush(true)
 	if err != nil {
 		log.LogErrorf("closeOpenHandler: flush extent failed, err %s", err.Error())
 		return err
