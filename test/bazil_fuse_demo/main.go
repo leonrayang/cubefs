@@ -17,13 +17,15 @@ package main
 import (
 	"context"
 	"flag"
+	"log"
 	"os"
 	"sync"
 	"time"
 
+	"syscall"
+
 	"github.com/cubefs/cubefs/depends/bazil.org/fuse"
 	"github.com/cubefs/cubefs/depends/bazil.org/fuse/fs"
-	"github.com/cubefs/cubefs/util/log"
 )
 
 const (
@@ -92,7 +94,7 @@ func NewLocalFileSystem(dataDir string) *LocalFileSystem {
 
 	// Create data directory if it doesn't exist
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		log.LogErrorf("Failed to create data directory: %v", err)
+		log.Printf("Failed to create data directory: %v", err)
 	}
 
 	return fs
@@ -101,6 +103,23 @@ func NewLocalFileSystem(dataDir string) *LocalFileSystem {
 // Root returns the root directory
 func (lfs *LocalFileSystem) Root() (fs.Node, error) {
 	return lfs.root, nil
+}
+
+// Node returns a node by inode number
+func (lfs *LocalFileSystem) Node(ino, pino uint64, mode uint32) (fs.Node, error) {
+	// For this simple demo, we'll just return the root
+	// In a real implementation, you'd look up the node by inode
+	return lfs.root, nil
+}
+
+// State returns the filesystem state
+func (lfs *LocalFileSystem) State() (fs.FSStatType, string) {
+	return fs.FSStatResume, "running"
+}
+
+// Notify sends a notification
+func (lfs *LocalFileSystem) Notify(stat fs.FSStatType, msg interface{}) {
+	// For this simple demo, we don't need to do anything
 }
 
 // Attr returns file attributes
@@ -115,8 +134,6 @@ func (d *LocalDir) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Atime = time.Now()
 	a.Mtime = time.Now()
 	a.Ctime = time.Now()
-	a.Crtime = time.Now()
-	a.Nlink = 2 // . and ..
 
 	return nil
 }
@@ -133,8 +150,6 @@ func (f *LocalFile) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Atime = time.Now()
 	a.Mtime = time.Now()
 	a.Ctime = time.Now()
-	a.Crtime = time.Now()
-	a.Nlink = 1
 
 	return nil
 }
@@ -226,18 +241,18 @@ func (d *LocalDir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	}
 
 	if req.Dir && child.File != nil {
-		return fuse.ENOTDIR
+		return syscall.ENOTDIR
 	}
 	if !req.Dir && child.Dir != nil {
-		return fuse.EISDIR
+		return syscall.EISDIR
 	}
 
 	delete(d.children, req.Name)
 	return nil
 }
 
-// ReadDir reads directory entries
-func (d *LocalDir) ReadDir(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) ([]fuse.Dirent, error) {
+// ReadDirAll reads all directory entries at once
+func (d *LocalDir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -326,15 +341,15 @@ func (f *LocalFile) Write(ctx context.Context, req *fuse.WriteRequest, resp *fus
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	end := req.Offset + int64(len(req.Data))
-	if end > int64(len(f.data)) {
-		// Extend data slice
-		newData := make([]byte, end)
-		copy(newData, f.data)
-		f.data = newData
-	}
+	// end := req.Offset + int64(len(req.Data))
+	// if end > int64(len(f.data)) {
+	// 	// Extend data slice
+	// 	newData := make([]byte, end)
+	// 	copy(newData, f.data)
+	// 	f.data = newData
+	// }
 
-	copy(f.data[req.Offset:], req.Data)
+	// copy(f.data[req.Offset:], req.Data)
 	f.size = uint64(len(f.data))
 	resp.Size = len(req.Data)
 
@@ -384,9 +399,7 @@ func main() {
 
 	// Set up logging
 	if *debug {
-		log.SetLevel(log.DebugLevel)
-	} else {
-		log.SetLevel(log.InfoLevel)
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
 	}
 
 	// Create file system
@@ -394,33 +407,33 @@ func main() {
 
 	// Create mount point if it doesn't exist
 	if err := os.MkdirAll(*mountPoint, 0755); err != nil {
-		log.LogErrorf("Failed to create mount point: %v", err)
+		log.Printf("Failed to create mount point: %v", err)
 		os.Exit(1)
 	}
 
 	// Mount the file system
-	conn, err := fuse.Mount(*mountPoint, fuse.FSName("cubefs_demo"), fuse.Subtype("cubefs_demo"))
+	conn, err := fuse.Mount(*mountPoint, false, fuse.FSName("cubefs_demo"), fuse.Subtype("cubefs_demo"))
 	if err != nil {
-		log.LogErrorf("Failed to mount: %v", err)
+		log.Printf("Failed to mount: %v", err)
 		os.Exit(1)
 	}
 	defer conn.Close()
 
-	log.LogInfof("Cubefs Demo mounted at %s", *mountPoint)
-	log.LogInfof("Data directory: %s", *dataDir)
-	log.LogInfof("Press Ctrl+C to unmount")
+	log.Printf("Cubefs Demo mounted at %s", *mountPoint)
+	log.Printf("Data directory: %s", *dataDir)
+	log.Printf("Press Ctrl+C to unmount")
 
 	// Serve the file system
-	err = fs.Serve(conn, lfs)
+	err = fs.Serve(conn, lfs, nil)
 	if err != nil {
-		log.LogErrorf("Failed to serve: %v", err)
+		log.Printf("Failed to serve: %v", err)
 		os.Exit(1)
 	}
 
 	// Check if the mount process has an error to report
 	<-conn.Ready
 	if err := conn.MountError; err != nil {
-		log.LogErrorf("Mount error: %v", err)
+		log.Printf("Mount error: %v", err)
 		os.Exit(1)
 	}
 }

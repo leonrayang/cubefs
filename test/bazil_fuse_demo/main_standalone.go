@@ -26,8 +26,8 @@ import (
 
 	"syscall"
 
-	"bazil.org/fuse"
-	"bazil.org/fuse/fs"
+	"github.com/cubefs/cubefs/depends/bazil.org/fuse"
+	"github.com/cubefs/cubefs/depends/bazil.org/fuse/fs"
 )
 
 const (
@@ -105,6 +105,23 @@ func NewLocalFileSystem(dataDir string) *LocalFileSystem {
 // Root returns the root directory
 func (lfs *LocalFileSystem) Root() (fs.Node, error) {
 	return lfs.root, nil
+}
+
+// Node returns a node by inode number
+func (lfs *LocalFileSystem) Node(ino, pino uint64, mode uint32) (fs.Node, error) {
+	// For this simple demo, we'll just return the root
+	// In a real implementation, you'd look up the node by inode
+	return lfs.root, nil
+}
+
+// State returns the filesystem state
+func (lfs *LocalFileSystem) State() (fs.FSStatType, string) {
+	return fs.FSStatResume, "running"
+}
+
+// Notify sends a notification
+func (lfs *LocalFileSystem) Notify(stat fs.FSStatType, msg interface{}) {
+	// For this simple demo, we don't need to do anything
 }
 
 // Attr returns file attributes
@@ -459,7 +476,7 @@ func main() {
 	}
 
 	// Mount the file system
-	conn, err := fuse.Mount(*mountPoint, fuse.FSName("cubefs_demo"), fuse.Subtype("cubefs_demo"))
+	conn, err := fuse.Mount(*mountPoint, false, fuse.FSName("cubefs_demo"), fuse.Subtype("cubefs_demo"))
 	if err != nil {
 		fmt.Printf("Failed to mount: %v\n", err)
 		os.Exit(1)
@@ -471,7 +488,7 @@ func main() {
 	fmt.Printf("Press Ctrl+C to unmount\n")
 
 	// Serve the file system
-	err = fs.Serve(conn, lfs)
+	err = fs.Serve(conn, lfs, nil)
 	if err != nil {
 		fmt.Printf("Failed to serve: %v\n", err)
 		os.Exit(1)
