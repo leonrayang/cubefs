@@ -1,4 +1,4 @@
-module github.com/cubefs/cubefs/client/fs_gofuse/demo
+module github.com/cubefs/cubefs/test/bazil_fuse_demo
 
 go 1.17
 
