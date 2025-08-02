@@ -18,7 +18,10 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
+	"runtime/pprof"
 	"sync"
 	"time"
 
@@ -253,6 +256,9 @@ func (d *LocalDir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 
 // ReadDirAll reads all directory entries at once
 func (d *LocalDir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
+	// Add profiling for ReadDirAll operations
+	defer pprof.SetGoroutineLabels(ctx)
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -394,6 +400,7 @@ func main() {
 		mountPoint = flag.String("mount", DefaultMountPoint, "Mount point")
 		dataDir    = flag.String("data", DefaultDataDir, "Data directory for local storage")
 		debug      = flag.Bool("debug", false, "Enable debug logging")
+		pprofAddr  = flag.String("pprof", ":6060", "Pprof server address (e.g., :6060)")
 	)
 	flag.Parse()
 
@@ -401,6 +408,20 @@ func main() {
 	if *debug {
 		log.SetFlags(log.LstdFlags | log.Lshortfile)
 	}
+
+	// Start pprof server in a goroutine
+	go func() {
+		log.Printf("Starting pprof server on %s", *pprofAddr)
+		log.Printf("Profiling endpoints available at:")
+		log.Printf("  - CPU profile: http://%s/debug/pprof/profile", *pprofAddr)
+		log.Printf("  - Memory profile: http://%s/debug/pprof/heap", *pprofAddr)
+		log.Printf("  - Goroutine profile: http://%s/debug/pprof/goroutine", *pprofAddr)
+		log.Printf("  - All profiles: http://%s/debug/pprof/", *pprofAddr)
+
+		if err := http.ListenAndServe(*pprofAddr, nil); err != nil {
+			log.Printf("Pprof server error: %v", err)
+		}
+	}()
 
 	// Create file system
 	lfs := NewLocalFileSystem(*dataDir)
