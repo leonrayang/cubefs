@@ -21,11 +21,12 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"runtime/pprof"
 	"sync"
 	"time"
 
 	"syscall"
+
+	"runtime/pprof"
 
 	"github.com/cubefs/cubefs/depends/bazil.org/fuse"
 	"github.com/cubefs/cubefs/depends/bazil.org/fuse/fs"
@@ -254,17 +255,14 @@ func (d *LocalDir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	return nil
 }
 
-// ReadDirAll reads all directory entries at once
+// ReadDir reads directory entries
 func (d *LocalDir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	// Add profiling for ReadDirAll operations
-	defer pprof.SetGoroutineLabels(ctx)
-
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	var entries []fuse.Dirent
 
-	// Add . and ..
+	// Add . and .. entries
 	entries = append(entries, fuse.Dirent{
 		Inode: d.ino,
 		Name:  ".",
@@ -295,18 +293,66 @@ func (d *LocalDir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 			})
 		}
 	}
-
+	log.Printf("ReadDirAll: entries(%v)", entries)
 	return entries, nil
+}
+
+// ReadDir reads directory entries
+func (d *LocalDir) ReadDir(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) ([]fuse.Dirent, error) {
+	// Add profiling for ReadDir operations
+	defer pprof.SetGoroutineLabels(ctx)
+	log.Printf("ReadDir: d(%v)", d)
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	log.Printf("ReadDir: d(%v)", d)
+	// Build all entries
+	var entries []fuse.Dirent
+
+	// Add . and .. entries
+	entries = append(entries, fuse.Dirent{
+		Inode: d.ino,
+		Name:  ".",
+		Type:  fuse.DT_Dir,
+	})
+	log.Printf("ReadDir: d(%v)", d)
+	if d.parent != nil {
+		entries = append(entries, fuse.Dirent{
+			Inode: d.parent.ino,
+			Name:  "..",
+			Type:  fuse.DT_Dir,
+		})
+	}
+	log.Printf("ReadDir: d(%v)", d)
+	// Add children
+	for name, child := range d.children {
+		if child.Dir != nil {
+			entries = append(entries, fuse.Dirent{
+				Inode: child.Dir.ino,
+				Name:  name,
+				Type:  fuse.DT_Dir,
+			})
+		} else if child.File != nil {
+			entries = append(entries, fuse.Dirent{
+				Inode: child.File.ino,
+				Name:  name,
+				Type:  fuse.DT_File,
+			})
+		}
+	}
+	log.Printf("ReadDir: d(%v)", d)
+	// Handle pagination - return entries starting from the requested offset
+	if req.Offset >= int64(len(entries)) {
+		return nil, nil // No more entries
+	}
+
+	// Return entries from the requested offset
+	return entries[req.Offset:], nil
 }
 
 // Open opens a file
 func (f *LocalFile) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
-	// Use filesystem lock to safely access shared resources
-	f.fs.mu.Lock()
-	defer f.fs.mu.Unlock()
 
 	// Assign handle ID
 	f.handleID = f.fs.nextHID
@@ -320,10 +366,6 @@ func (f *LocalFile) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.
 func (f *LocalFile) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
-	// Use filesystem lock to safely access shared resources
-	f.fs.mu.Lock()
-	defer f.fs.mu.Unlock()
 
 	delete(f.fs.handles, f.handleID)
 	return nil
@@ -352,8 +394,8 @@ func (f *LocalFile) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.
 
 // Write writes data to a file
 func (f *LocalFile) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	// f.mu.Lock()
+	// defer f.mu.Unlock()
 
 	// end := req.Offset + int64(len(req.Data))
 	// if end > int64(len(f.data)) {

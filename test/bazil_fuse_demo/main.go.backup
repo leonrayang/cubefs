@@ -18,10 +18,7 @@ import (
 	"context"
 	"flag"
 	"log"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
-	"runtime/pprof"
 	"sync"
 	"time"
 
@@ -254,17 +251,14 @@ func (d *LocalDir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	return nil
 }
 
-// ReadDirAll reads all directory entries at once
+// ReadDir reads directory entries
 func (d *LocalDir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	// Add profiling for ReadDirAll operations
-	defer pprof.SetGoroutineLabels(ctx)
-
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	var entries []fuse.Dirent
 
-	// Add . and ..
+	// Add . and .. entries
 	entries = append(entries, fuse.Dirent{
 		Inode: d.ino,
 		Name:  ".",
@@ -304,10 +298,6 @@ func (f *LocalFile) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	// Use filesystem lock to safely access shared resources
-	f.fs.mu.Lock()
-	defer f.fs.mu.Unlock()
-
 	// Assign handle ID
 	f.handleID = f.fs.nextHID
 	f.fs.nextHID++
@@ -320,10 +310,6 @@ func (f *LocalFile) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.
 func (f *LocalFile) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
-	// Use filesystem lock to safely access shared resources
-	f.fs.mu.Lock()
-	defer f.fs.mu.Unlock()
 
 	delete(f.fs.handles, f.handleID)
 	return nil
@@ -408,7 +394,6 @@ func main() {
 		mountPoint = flag.String("mount", DefaultMountPoint, "Mount point")
 		dataDir    = flag.String("data", DefaultDataDir, "Data directory for local storage")
 		debug      = flag.Bool("debug", false, "Enable debug logging")
-		pprofAddr  = flag.String("pprof", ":6060", "Pprof server address (e.g., :6060)")
 	)
 	flag.Parse()
 
@@ -416,20 +401,6 @@ func main() {
 	if *debug {
 		log.SetFlags(log.LstdFlags | log.Lshortfile)
 	}
-
-	// Start pprof server in a goroutine
-	go func() {
-		log.Printf("Starting pprof server on %s", *pprofAddr)
-		log.Printf("Profiling endpoints available at:")
-		log.Printf("  - CPU profile: http://%s/debug/pprof/profile", *pprofAddr)
-		log.Printf("  - Memory profile: http://%s/debug/pprof/heap", *pprofAddr)
-		log.Printf("  - Goroutine profile: http://%s/debug/pprof/goroutine", *pprofAddr)
-		log.Printf("  - All profiles: http://%s/debug/pprof/", *pprofAddr)
-
-		if err := http.ListenAndServe(*pprofAddr, nil); err != nil {
-			log.Printf("Pprof server error: %v", err)
-		}
-	}()
 
 	// Create file system
 	lfs := NewLocalFileSystem(*dataDir)

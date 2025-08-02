@@ -1,0 +1,9 @@
+2025/08/02 21:54:48 main.go:414: Starting pprof server on :6060
+2025/08/02 21:54:48 main.go:415: Profiling endpoints available at:
+2025/08/02 21:54:48 main.go:416:   - CPU profile: http://:6060/debug/pprof/profile
+2025/08/02 21:54:48 main.go:417:   - Memory profile: http://:6060/debug/pprof/heap
+2025/08/02 21:54:48 main.go:418:   - Goroutine profile: http://:6060/debug/pprof/goroutine
+2025/08/02 21:54:48 main.go:419:   - All profiles: http://:6060/debug/pprof/
+2025/08/02 21:54:48 main.go:443: Cubefs Demo mounted at mount
+2025/08/02 21:54:48 main.go:444: Data directory: data
+2025/08/02 21:54:48 main.go:445: Press Ctrl+C to unmount
