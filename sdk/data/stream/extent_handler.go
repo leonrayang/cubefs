@@ -20,7 +20,6 @@ import (
 	"math"
 	"math/rand"
 	"net"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -185,6 +184,12 @@ type ExtentHandler struct {
 	storageClass uint32
 
 	isMigration bool
+
+	// Copy-on-write optimization fields
+	cowBuffer    *COWBuffer
+	bufferPool   *ExtentHandlerBuffer
+	zcb          *ZeroCopyBuffer
+	isCOWEnabled bool
 }
 
 // NewExtentHandler returns a new extent handler.
@@ -214,6 +219,9 @@ func NewExtentHandler(stream *Streamer, offset int, storeMode int, size int,
 		isMigration:        isMigration,
 	}
 
+	// Initialize copy-on-write optimization
+	eh.initializeCOW()
+	log.LogDebugf("new extent handler: eh(%v)", eh)
 	go eh.receiver()
 	go eh.sender()
 
@@ -226,8 +234,14 @@ func (eh *ExtentHandler) String() string {
 		eh.id, eh.inode, eh.fileOffset, eh.size, eh.storeMode, eh.status, eh.dp, eh.stream.verSeq, eh.key, eh.lastKey, eh.inflight, eh.dirty, eh.storageClass, eh.inflight, eh.dirty)
 }
 
-func (eh *ExtentHandler) write(data []byte, offset, size int, direct bool) (ek *proto.ExtentKey, err error) {
+// writeWithCOWData is the internal implementation that handles COW data parameter
+func (eh *ExtentHandler) writeWithCOWData(dataBuffer *COWBuffer, offset, size int, direct bool) (ek *proto.ExtentKey, err error) {
 	var total, write int
+
+	bgTime := stat.BeginStat()
+	defer func() {
+		stat.EndStat("ExtentHandler_Write", err, bgTime, 1)
+	}()
 	status := eh.getStatus()
 	if status >= ExtentStatusClosed {
 		err = errors.NewErrorf("ExtentHandler Write: Full or Recover eh(%v) key(%v)", eh, eh.key)
@@ -260,12 +274,12 @@ func (eh *ExtentHandler) write(data []byte, offset, size int, direct bool) (ek *
 			if direct {
 				eh.packet.Opcode = proto.OpSyncWrite
 			}
-			// log.LogDebugf("ExtentHandler Write: NewPacket, eh(%v) packet(%v)", eh, eh.packet)
 		}
 		packsize := int(eh.packet.Size)
 		write = util.Min(size-total, blksize-packsize)
 		if write > 0 {
-			copy(eh.packet.Data[packsize:packsize+write], data[total:total+write])
+			// Use COW buffer for data parameter
+			eh.writeDataWithCOWFromBuffer(packsize, dataBuffer, total, write)
 			eh.packet.Size += uint32(write)
 			total += write
 		}
@@ -284,6 +298,95 @@ func (eh *ExtentHandler) write(data []byte, offset, size int, direct bool) (ek *
 		Size:       uint32(eh.size),
 	}
 	return ek, nil
+}
+
+func (eh *ExtentHandler) write(data []byte, offset, size int, direct bool) (ek *proto.ExtentKey, err error) {
+	// CRITICAL: Create COW buffer for the data parameter to handle memory reuse issues
+	// The data parameter belongs to the caller and may be recycled/reused
+	var dataBuffer *COWBuffer
+	if len(data) > 0 {
+		dataBuffer = NewCOWBufferFromSlice(data)
+		log.LogDebugf("ExtentHandler write: Created COW buffer for data parameter, size: %d, offset: %d, total_size: %d", len(data), offset, size)
+		eh.trackDataParameterUsage(data, offset, size)
+	}
+
+	// Use the COW-aware internal implementation
+	return eh.writeWithCOWData(dataBuffer, offset, size, direct)
+}
+
+// WriteWithCOW is the COW-aware version that accepts a COWBuffer parameter directly
+func (eh *ExtentHandler) WriteWithCOW(dataBuffer *COWBuffer, offset, size int, direct bool) (ek *proto.ExtentKey, err error) {
+	return eh.writeWithCOWData(dataBuffer, offset, size, direct)
+}
+
+// initializeCOW initializes copy-on-write optimization
+func (eh *ExtentHandler) initializeCOW() {
+	// Enable COW by default for better performance
+	eh.isCOWEnabled = true
+	eh.zcb = NewZeroCopyBuffer()
+
+	// Initialize buffer pool based on store mode
+	if eh.storeMode == proto.TinyExtentType {
+		eh.cowBuffer = NewCOWBuffer(util.DefaultTinySizeLimit)
+		eh.bufferPool = NewExtentHandlerBuffer(util.DefaultTinySizeLimit, eh.zcb)
+	} else {
+		eh.cowBuffer = NewCOWBuffer(util.BlockSize)
+		eh.bufferPool = NewExtentHandlerBuffer(util.BlockSize, eh.zcb)
+	}
+}
+
+// writeDataWithCOW implements copy-on-write for data writing
+func (eh *ExtentHandler) writeDataWithCOW(offset int, data []byte) {
+	if !eh.isCOWEnabled {
+		// Fallback to direct copy
+		copy(eh.packet.Data[offset:offset+len(data)], data)
+		return
+	}
+
+	// Use copy-on-write for larger data or when buffer is shared
+	if len(data) > 64 || eh.cowBuffer.IsShared() {
+		eh.cowBuffer.WriteAt(offset, data)
+		eh.packet.Data = eh.cowBuffer.GetData()
+	} else {
+		// Direct copy for small, unshared data
+		copy(eh.packet.Data[offset:offset+len(data)], data)
+	}
+}
+
+// writeDataWithCOWFromBuffer implements copy-on-write using a COW buffer for the data parameter
+func (eh *ExtentHandler) writeDataWithCOWFromBuffer(offset int, dataBuffer *COWBuffer, total, write int) {
+	if !eh.isCOWEnabled {
+		// Fallback to direct copy
+		dataSlice := dataBuffer.GetSlice(total, write)
+		copy(eh.packet.Data[offset:offset+write], dataSlice)
+		return
+	}
+
+	// Get the data slice from COW buffer
+	dataSlice := dataBuffer.GetSlice(total, write)
+
+	// Use copy-on-write for larger data or when buffer is shared
+	if write > 64 || eh.cowBuffer.IsShared() {
+		eh.cowBuffer.WriteAt(offset, dataSlice)
+		eh.packet.Data = eh.cowBuffer.GetData()
+		log.LogDebugf("ExtentHandler writeDataWithCOWFromBuffer: Used COW for write size: %d", write)
+	} else {
+		// Direct copy for small, unshared data
+		copy(eh.packet.Data[offset:offset+write], dataSlice)
+		log.LogDebugf("ExtentHandler writeDataWithCOWFromBuffer: Used direct copy for write size: %d", write)
+	}
+}
+
+// trackDataParameterUsage tracks the usage of the data parameter for debugging
+func (eh *ExtentHandler) trackDataParameterUsage(data []byte, offset, size int) {
+	log.LogDebugf("ExtentHandler trackDataParameterUsage: data_len=%d, offset=%d, size=%d, handler_id=%d",
+		len(data), offset, size, eh.id)
+
+	// Track data parameter characteristics
+	if len(data) > 0 {
+		log.LogDebugf("ExtentHandler trackDataParameterUsage: data[0]=%d, data[len-1]=%d",
+			data[0], data[len(data)-1])
+	}
 }
 
 func (eh *ExtentHandler) sender() {
@@ -503,7 +606,7 @@ func (eh *ExtentHandler) processReplyError(packet *Packet, errmsg string) {
 }
 
 func (eh *ExtentHandler) flush() (err error) {
-	log.LogDebugf("ExtentHandler flush begin: eh(%s) trace(%v)", eh.String(), string(debug.Stack()))
+	log.LogDebugf("ExtentHandler flush begin: eh(%s)", eh.String())
 	eh.flushPacket()
 	err = eh.waitForFlush()
 	if err != nil {
@@ -539,10 +642,29 @@ func (eh *ExtentHandler) cleanup() (err error) {
 			status := eh.getStatus()
 			StreamWriteConnPool.PutConnect(conn, status >= ExtentStatusRecovery)
 		}
+
+		// Cleanup copy-on-write resources
+		eh.cleanupCOW()
+
 		close(eh.stop)
 	})
 
 	return
+}
+
+// cleanupCOW cleans up copy-on-write resources
+func (eh *ExtentHandler) cleanupCOW() {
+	if eh.cowBuffer != nil {
+		eh.cowBuffer.Release()
+		eh.cowBuffer = nil
+	}
+
+	if eh.bufferPool != nil {
+		eh.bufferPool.Release()
+		eh.bufferPool = nil
+	}
+
+	eh.isCOWEnabled = false
 }
 
 // can ONLY be called when the handler is not open any more
@@ -838,6 +960,11 @@ func (eh *ExtentHandler) createExtent(dp *wrapper.DataPartition) (extID int, err
 
 // Handler lock is held by the caller.
 func (eh *ExtentHandler) flushPacket() {
+
+	bgTime := stat.BeginStat()
+	defer func() {
+		stat.EndStat("ExtentHandler_flushPacket", nil, bgTime, 1)
+	}()
 	if eh.packet == nil {
 		log.LogDebugf("ExtentHandler flushPacket nil, return: eh(%v)", eh)
 		return

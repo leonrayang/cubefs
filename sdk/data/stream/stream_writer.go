@@ -164,6 +164,33 @@ func (s *Streamer) IssueWriteRequest(offset int, data []byte, flags int, checkFu
 	return
 }
 
+// IssueWriteRequestWithCOW is the COW-aware version that accepts a COWBuffer parameter
+func (s *Streamer) IssueWriteRequestWithCOW(offset int, dataBuffer *COWBuffer, flags int, checkFunc func() error, storageClass uint32, isMigration bool) (write int, err error) {
+	if atomic.LoadInt32(&s.status) >= StreamerError {
+		return 0, errors.New(fmt.Sprintf("IssueWriteRequestWithCOW: stream writer in error status, ino(%v)", s.inode))
+	}
+
+	s.writeLock.Lock()
+	request := writeRequestPool.Get().(*WriteRequest)
+	request.data = dataBuffer.GetData() // Get data from COW buffer
+	request.fileOffset = offset
+	request.size = dataBuffer.Size()
+	request.flags = flags
+	request.done = make(chan struct{}, 1)
+	request.checkFunc = checkFunc
+	request.storageClass = storageClass
+	request.isMigration = isMigration
+
+	s.request <- request
+	s.writeLock.Unlock()
+
+	<-request.done
+	err = request.err
+	write = request.writeBytes
+	writeRequestPool.Put(request)
+	return
+}
+
 func (s *Streamer) IssueFlushRequest() error {
 	if s.rdonly {
 		return nil
@@ -367,6 +394,20 @@ func (s *Streamer) handleRequest(request interface{}) {
 func (s *Streamer) write(data []byte, offset, size, flags int, checkFunc func() error,
 	storageClass uint32, isMigration bool,
 ) (total int, err error) {
+	// CRITICAL: Create COW buffer for data parameter to handle memory reuse issues
+	var dataBuffer *COWBuffer
+	if len(data) > 0 {
+		dataBuffer = NewCOWBufferFromSlice(data)
+		log.LogDebugf("Streamer write: Created COW buffer for data parameter, size: %d, inode: %d", len(data), s.inode)
+	}
+
+	return s.writeWithCOW(dataBuffer, offset, size, flags, checkFunc, storageClass, isMigration)
+}
+
+// writeWithCOW is the internal implementation that uses COW buffer
+func (s *Streamer) writeWithCOW(dataBuffer *COWBuffer, offset, size, flags int, checkFunc func() error,
+	storageClass uint32, isMigration bool,
+) (total int, err error) {
 	var (
 		direct     bool
 		retryTimes int8
@@ -390,7 +431,7 @@ begin:
 	s.client.writeLimiter.Wait(ctx)
 	s.client.LimitManager.WriteAlloc(ctx, size)
 
-	requests := s.extents.PrepareWriteRequests(offset, size, data)
+	requests := s.extents.PrepareWriteRequests(offset, size, dataBuffer.GetData())
 	log.LogDebugf("Streamer write: ino(%v) prepared requests(%v)", s.inode, requests)
 
 	isChecked := false
@@ -405,7 +446,7 @@ begin:
 		}
 		// some extent key in requests with partition id 0 means it's append operation and on flight.
 		// need to flush and get the right key then used to make modification
-		requests = s.extents.PrepareWriteRequests(offset, size, data)
+		requests = s.extents.PrepareWriteRequests(offset, size, dataBuffer.GetData())
 		log.LogDebugf("Streamer write: ino(%v) prepared requests after flush(%v)", s.inode, requests)
 		break
 	}
@@ -892,6 +933,18 @@ func (s *Streamer) doWriteAppend(req *ExtentRequest, direct bool, storageClass u
 }
 
 func (s *Streamer) doWriteAppendEx(data []byte, offset, size int, direct bool, reUseEk bool, storageClass uint32, isMigration bool) (total int, err error, status int32) {
+	// CRITICAL: Create COW buffer for data parameter to handle memory reuse issues
+	var dataBuffer *COWBuffer
+	if len(data) > 0 {
+		dataBuffer = NewCOWBufferFromSlice(data)
+		log.LogDebugf("Streamer doWriteAppendEx: Created COW buffer for data parameter, size: %d", len(data))
+	}
+
+	return s.doWriteAppendExWithCOW(dataBuffer, offset, size, direct, reUseEk, storageClass, isMigration)
+}
+
+// doWriteAppendExWithCOW is the internal implementation that uses COW buffer
+func (s *Streamer) doWriteAppendExWithCOW(dataBuffer *COWBuffer, offset, size int, direct bool, reUseEk bool, storageClass uint32, isMigration bool) (total int, err error, status int32) {
 	var (
 		ek        *proto.ExtentKey
 		storeMode int
@@ -950,7 +1003,7 @@ func (s *Streamer) doWriteAppendEx(data []byte, offset, size int, direct bool, r
 			}
 
 			log.LogDebugf("doWriteAppendEx: start write protection, handler(%v)", s.handler)
-			ek, err = s.handler.write(data, offset, size, direct)
+			ek, err = s.handler.writeWithCOWData(dataBuffer, offset, size, direct)
 			if err == nil && ek != nil {
 				ek.SetSeq(s.verSeq)
 				if !s.dirty {
@@ -980,7 +1033,7 @@ func (s *Streamer) doWriteAppendEx(data []byte, offset, size int, direct bool, r
 			log.LogErrorf("doWriteAppendEx: handler is nil after creation (non-hot path), ino(%v)", s.inode)
 			err = errors.New("handler is nil after creation")
 		} else {
-			ek, err = s.handler.write(data, offset, size, direct)
+			ek, err = s.handler.writeWithCOWData(dataBuffer, offset, size, direct)
 			if err == nil && ek != nil {
 				if !s.dirty {
 					s.dirtylist.Put(s.handler)

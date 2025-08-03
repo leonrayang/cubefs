@@ -705,7 +705,14 @@ func (client *ExtentClient) Write(inode uint64, offset int, data []byte, flags i
 		s.GetExtents(isMigration)
 	})
 
-	write, err = s.IssueWriteRequest(offset, data, flags, checkFunc, storageClass, isMigration)
+	// CRITICAL: Create COW buffer for data parameter to handle memory reuse issues
+	var dataBuffer *COWBuffer
+	if len(data) > 0 {
+		dataBuffer = NewCOWBufferFromSlice(data)
+		log.LogDebugf("ExtentClient Write: Created COW buffer for data parameter, size: %d, inode: %d", len(data), inode)
+	}
+
+	write, err = s.IssueWriteRequestWithCOW(offset, dataBuffer, flags, checkFunc, storageClass, isMigration)
 	if err != nil {
 		log.LogError(errors.Stack(err))
 	}
