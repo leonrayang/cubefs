@@ -254,6 +254,11 @@ func (eh *ExtentHandler) write(data []byte, offset, size int, direct bool) (ek *
 	}
 
 	for total < size {
+		if total != 0 {
+			err = errors.New("ExtentHandler: packet larger than standard size")
+			log.LogError(err)
+			return
+		}
 		if eh.packet == nil {
 			eh.packet = NewWritePacket(eh.inode, offset+total, eh.storeMode)
 			log.LogDebugf("ExtentHandler write packet nil and new packet: eh(%v)", eh)
@@ -265,14 +270,15 @@ func (eh *ExtentHandler) write(data []byte, offset, size int, direct bool) (ek *
 		packsize := int(eh.packet.Size)
 		write = util.Min(size-total, blksize-packsize)
 		if write > 0 {
-			copy(eh.packet.Data[packsize:packsize+write], data[total:total+write])
+			// copy(eh.packet.Data[packsize:packsize+write], data[total:total+write])
+			eh.packet.Data = data
 			eh.packet.Size += uint32(write)
 			total += write
 		}
 
-		if int(eh.packet.Size) >= blksize {
+		//if int(eh.packet.Size) >= blksize {
 			eh.flushPacket()
-		}
+		//}
 	}
 
 	eh.size += total
@@ -479,7 +485,7 @@ func (eh *ExtentHandler) processReply(packet *Packet) {
 		eh.key.Size += packet.Size
 	}
 
-	proto.Buffers.Put(packet.Data)
+	// proto.Buffers.Put(packet.Data)
 	packet.Data = nil
 	eh.dirty = true
 
