@@ -1,0 +1,23 @@
+{
+  "volume_name": "test-volume",
+  "owner": "benchmark",
+  "masters": "192.168.1.100:17010,192.168.1.101:17010,192.168.1.102:17010",
+  "sub_dir": "/benchmark",
+  "authenticate": false,
+  "validate_owner": false,
+  "num_files": 1000,
+  "file_size": 1048576,
+  "block_size": 4096,
+  "num_threads": 8,
+  "duration": 60,
+  "test_type": "mixed",
+  "output_file": "benchmark-results.json",
+  "verbose": false,
+  "random_data": true,
+  "verify_data": false,
+  "cleanup_files": true,
+  "file_prefix": "benchmark",
+  "storage_class": 0,
+  "mount_point": "/mnt/cubefs",
+  "user_sub_dir": "/user-data"
+} 
