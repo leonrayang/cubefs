@@ -99,6 +99,17 @@ func NewLocalFileSystem(dataDir string) *LocalFileSystem {
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		log.Printf("Failed to create data directory: %v", err)
 	}
+	for _ = range []int{1, 2, 3, 4, 5} {
+		go func() {
+			for {
+				data := make([]byte, 1024*128)
+				data2 := make([]byte, 1024*128)
+				copy(data, []byte("hello"))
+				copy(data2, data)
+				time.Sleep(time.Millisecond)
+			}
+		}()
+	}
 
 	return fs
 }
@@ -362,6 +373,8 @@ func (f *LocalFile) Write(ctx context.Context, req *fuse.WriteRequest, resp *fus
 	// 	copy(newData, f.data)
 	// 	f.data = newData
 	// }
+	newData := make([]byte, len(f.data))
+	copy(newData, f.data)
 
 	// copy(f.data[req.Offset:], req.Data)
 	f.size = uint64(len(f.data))
