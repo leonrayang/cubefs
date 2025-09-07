@@ -35,8 +35,8 @@ import (
 
 	"github.com/cubefs/cubefs/client/blockcache/bcache"
 	"github.com/cubefs/cubefs/proto"
-	"github.com/cubefs/cubefs/sdk/gofuse_adapter"
 	"github.com/cubefs/cubefs/util"
+	"github.com/cubefs/cubefs/sdk/gofuse_adapter"
 	"github.com/cubefs/cubefs/util/auditlog"
 	"github.com/cubefs/cubefs/util/buf"
 	"github.com/cubefs/cubefs/util/config"
@@ -67,15 +67,10 @@ const (
 
 	MasterRetrys = 5
 
-	DefaultReaddirLimit = 1000
 
 	// Cache constants
-	DefaultInodeExpiration = 1 * time.Hour
-	DefaultMaxInodeCache   = 10000
-	MaxInodeCache          = 100000
 
 	// Lookup validity duration
-	LookupValidDuration = 1 * time.Second
 )
 
 const (
@@ -111,72 +106,16 @@ func init() {
 }
 
 // FileSystemInterface defines the interface for file system operations
-type FileSystemInterface interface {
-	// Metadata operations
-	Lookup(parentIno uint64, name string) (uint64, error)
-	GetInodeInfo(ino uint64) (*InodeInfo, error)
-	CreateInode(parentIno uint64, name string, mode uint32, uid, gid uint32) (*InodeInfo, error)
-	DeleteInode(parentIno uint64, name string) error
-
-	// Data operations
-	Read(ino uint64, data []byte, offset int, size int) (int, error)
-	Write(ino uint64, data []byte, offset int, flags int) (int, error)
-	Truncate(ino uint64, size uint64) error
-	Flush(ino uint64) error
-
-	// Directory operations
-	ReadDir(ino uint64) ([]*DirEntry, error)
-	ReadDirLimit(ino uint64, from string, limit uint64) ([]*DirEntry, error)
-
-	// Cleanup
-	Close() error
-}
 
 // InodeInfo represents inode information
-type InodeInfo struct {
-	Inode      uint64
-	Mode       uint32
-	Size       uint64
-	Generation uint64
-	CreateTime int64
-	AccessTime int64
-	ModifyTime int64
-	LinkTarget string
-	Nlink      uint32
-	Uid        uint32
-	Gid        uint32
-}
 
 // DirEntry represents a directory entry
-type DirEntry struct {
-	Inode uint64
-	Name  string
-	Type  uint32
-}
 
 // CacheInterface defines the interface for caching operations
-type CacheInterface interface {
-	// Node cache operations
-	PutNode(ino uint64, node interface{})
-	GetNode(ino uint64) (interface{}, bool)
-	DeleteNode(ino uint64)
-
-	// Dentry cache operations
-	GetDentryCache() DentryCacheInterface
-}
 
 // DentryCacheInterface defines the interface for dentry cache operations
-type DentryCacheInterface interface {
-	Put(dentry *DentryInfo)
-	Get(key string) *DentryInfo
-	Delete(key string)
-}
 
 // DentryInfo represents dentry information
-type DentryInfo struct {
-	Name  string
-	Inode uint64
-}
 
 // DentryCache represents a dentry cache
 type DentryCache struct {
@@ -188,183 +127,36 @@ type DentryCache struct {
 }
 
 // Put adds a dentry to the cache
-func (dc *DentryCache) Put(dentry *DentryInfo) {
-	dc.Lock()
-	defer dc.Unlock()
-
-	// Remove existing entry if present
-	if elem, exists := dc.cache[dentry.Name]; exists {
-		dc.lruList.Remove(elem)
-		delete(dc.cache, dentry.Name)
-	}
-
-	// Add new entry
-	elem := dc.lruList.PushFront(dentry)
-	dc.cache[dentry.Name] = elem
-
-	// Evict if cache is full
-	if dc.lruList.Len() > dc.maxElements {
-		dc.evict()
-	}
-}
 
 // Get retrieves a dentry from the cache
-func (dc *DentryCache) Get(key string) *DentryInfo {
-	dc.RLock()
-	defer dc.RUnlock()
-
-	if elem, exists := dc.cache[key]; exists {
-		dc.lruList.MoveToFront(elem)
-		return elem.Value.(*DentryInfo)
-	}
-	return nil
-}
 
 // Delete removes a dentry from the cache
-func (dc *DentryCache) Delete(key string) {
-	dc.Lock()
-	defer dc.Unlock()
-
-	if elem, exists := dc.cache[key]; exists {
-		dc.lruList.Remove(elem)
-		delete(dc.cache, key)
-	}
-}
 
 // InodeCache represents an inode cache
-type InodeCache struct {
-	sync.RWMutex
-	cache       map[uint64]*list.Element
-	lruList     *list.List
-	expiration  time.Duration
-	maxElements int
-}
 
 // NewInodeCache creates a new inode cache
-func NewInodeCache(exp time.Duration, maxElements int) *InodeCache {
-	ic := &InodeCache{
-		cache:       make(map[uint64]*list.Element),
-		lruList:     list.New(),
-		expiration:  exp,
-		maxElements: maxElements,
-	}
-	go ic.backgroundEviction()
-	return ic
-}
 
 // NewDcache creates a new dentry cache
-func NewDcache(exp time.Duration, maxElements int) *DentryCache {
-	dc := &DentryCache{
-		cache:       make(map[string]*list.Element),
-		lruList:     list.New(),
-		expiration:  exp,
-		maxElements: maxElements,
-	}
-	go dc.backgroundEviction()
-	return dc
-}
 
 // backgroundEviction runs background eviction for InodeCache
-func (ic *InodeCache) backgroundEviction() {
-	ticker := time.NewTicker(ic.expiration / 2)
-	defer ticker.Stop()
-	for range ticker.C {
-		ic.evict()
-	}
-}
 
 // evict removes expired entries from InodeCache
-func (ic *InodeCache) evict() {
-	ic.Lock()
-	defer ic.Unlock()
-	now := time.Now().UnixNano()
-	for ic.lruList.Len() > 0 {
-		elem := ic.lruList.Back()
-		if elem == nil {
-			break
-		}
-		info := elem.Value.(*InodeInfo)
-		if now > info.AccessTime {
-			ic.lruList.Remove(elem)
-			delete(ic.cache, info.Inode)
-		} else {
-			break
-		}
-	}
-}
 
 // backgroundEviction runs background eviction for DentryCache
-func (dc *DentryCache) backgroundEviction() {
-	ticker := time.NewTicker(dc.expiration / 2)
-	defer ticker.Stop()
-	for range ticker.C {
-		dc.evict()
-	}
-}
 
 // evict removes expired entries from DentryCache
-func (dc *DentryCache) evict() {
-	dc.Lock()
-	defer dc.Unlock()
-	now := time.Now().UnixNano()
-	for dc.lruList.Len() > 0 {
-		elem := dc.lruList.Back()
-		if elem == nil {
-			break
-		}
-		info := elem.Value.(*DentryInfo)
-		if now > int64(info.Inode) { // Using Inode field as timestamp
-			dc.lruList.Remove(elem)
-			delete(dc.cache, info.Name)
-		} else {
-			break
-		}
-	}
-}
 
 // CacheManager manages all caches
-type CacheManager struct {
-	ic        *InodeCache
-	dc        *DentryCache
-	nodeCache map[uint64]interface{}
-	mu        sync.RWMutex
-}
 
 // NewCacheManager creates a new cache manager
-func NewCacheManager(inodeExpiration time.Duration, maxInodeCache int) *CacheManager {
-	return &CacheManager{
-		ic:        NewInodeCache(inodeExpiration, maxInodeCache),
-		dc:        NewDcache(DefaultInodeExpiration, DefaultMaxInodeCache),
-		nodeCache: make(map[uint64]interface{}),
-	}
-}
 
 // PutNode adds a node to the cache
-func (cm *CacheManager) PutNode(ino uint64, node interface{}) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	cm.nodeCache[ino] = node
-}
 
 // GetNode retrieves a node from the cache
-func (cm *CacheManager) GetNode(ino uint64) (interface{}, bool) {
-	cm.mu.RLock()
-	defer cm.mu.RUnlock()
-	node, ok := cm.nodeCache[ino]
-	return node, ok
-}
 
 // DeleteNode removes a node from the cache
-func (cm *CacheManager) DeleteNode(ino uint64) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	delete(cm.nodeCache, ino)
-}
 
 // GetDentryCache returns the dentry cache
-func (cm *CacheManager) GetDentryCache() DentryCacheInterface {
-	return cm.dc
-}
 
 // CubefsNode represents a node in the Cubefs filesystem
 type CubefsNode struct {
@@ -375,7 +167,7 @@ type CubefsNode struct {
 	name      string
 	parentIno uint64
 	// Additional fields from original implementation
-	info   *InodeInfo
+	info   *sdk_gofuse.InodeInfo
 	flag   uint32
 	dcache *DentryCache
 	dctx   *DirContexts
@@ -389,13 +181,13 @@ type DirContext struct {
 // DirContexts manages directory contexts
 type DirContexts struct {
 	sync.RWMutex
-	dirCtx map[fuse.HandleID]*DirContext
+	dirCtx map[uint64]*DirContext
 }
 
 // NewDirContexts creates a new DirContexts
 func NewDirContexts() *DirContexts {
 	return &DirContexts{
-		dirCtx: make(map[fuse.HandleID]*DirContext),
+		dirCtx: make(map[uint64]*DirContext),
 	}
 }
 
@@ -433,9 +225,9 @@ func (n *CubefsNode) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.Att
 		Size:  info.Size,
 		Mode:  info.Mode,
 		Nlink: info.Nlink,
-		Atime: uint64(info.AccessTime),
-		Mtime: uint64(info.ModifyTime),
-		Ctime: uint64(info.CreateTime),
+		Atime: uint64(info.AccessTime.Unix()),
+		Mtime: uint64(info.ModifyTime.Unix()),
+		Ctime: uint64(info.CreateTime.Unix()),
 	}
 
 	log.LogDebugf("TRACE Attr: inode(%v)", info)
@@ -474,7 +266,7 @@ func (n *CubefsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut
 				return nil, syscall.ENOENT
 			}
 			// Cache the result
-			info := &DentryInfo{
+			info := &proto.DentryInfo{
 				Name:  dcacheKey,
 				Inode: ino,
 			}
@@ -501,7 +293,7 @@ func (n *CubefsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut
 	}
 
 	// Get inode info from adapter with retry logic for storage class mismatches
-	var info *InodeInfo
+	var info *sdk_gofuse.InodeInfo
 	for {
 		info, err = n.fs.GetInodeInfo(ino)
 		if err != nil {
@@ -515,7 +307,7 @@ func (n *CubefsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut
 			}
 			log.LogErrorf("Lookup: parent(%v) name(%v) ino(%v) err(%v)", n.ino, name, ino, err)
 			// Return dummy node for error cases
-			dummyInfo := &InodeInfo{Inode: ino}
+			dummyInfo := &sdk_gofuse.InodeInfo{Inode: ino}
 			child := NewCubefsNode(n.fs, n.cache, ino, name, n.ino)
 			child.info = dummyInfo
 			stable := fs.StableAttr{
@@ -548,7 +340,7 @@ func (n *CubefsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut
 	n.cache.PutNode(ino, newInode)
 
 	// Set entry validity (similar to original)
-	out.EntryValid = LookupValidDuration
+	out.EntryValid = uint64(LookupValidDuration.Nanoseconds() / 1e9)
 
 	log.LogDebugf("TRACE Lookup exit: parent(%v) name(%v) ino(%v)", n.ino, name, ino)
 	return newInode, 0
@@ -594,7 +386,7 @@ func (n *CubefsNode) Create(ctx context.Context, name string, flags uint32, mode
 	n.cache.PutNode(info.Inode, newInode)
 
 	// Set entry validity
-	out.EntryValid = LookupValidDuration
+	out.EntryValid = uint64(LookupValidDuration.Nanoseconds() / 1e9)
 
 	log.LogDebugf("TRACE Create: parent(%v) name(%v) ino(%v) cost(%v)", n.ino, name, info.Inode, time.Since(start))
 	return newInode, nil, 0, 0
@@ -628,7 +420,7 @@ func (n *CubefsNode) Mkdir(ctx context.Context, name string, mode uint32, out *f
 	n.cache.PutNode(info.Inode, newInode)
 
 	// Set entry validity
-	out.EntryValid = LookupValidDuration
+	out.EntryValid = uint64(LookupValidDuration.Nanoseconds() / 1e9)
 
 	return newInode, 0
 }
@@ -667,7 +459,7 @@ func (n *CubefsNode) Unlink(ctx context.Context, name string) syscall.Errno {
 func (n *CubefsNode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	bgTime := stat.BeginStat()
 	defer func() {
-		stat.EndStat("Read", 0, bgTime, 1)
+		stat.EndStat("Read", nil, bgTime, 1)
 		stat.StatBandWidth("Read", uint32(len(dest)))
 	}()
 
@@ -699,7 +491,7 @@ func (n *CubefsNode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off
 func (n *CubefsNode) Write(ctx context.Context, f fs.FileHandle, data []byte, off int64) (written uint32, errno syscall.Errno) {
 	bgTime := stat.BeginStat()
 	defer func() {
-		stat.EndStat("Write", 0, bgTime, 1)
+		stat.EndStat("Write", nil, bgTime, 1)
 		stat.StatBandWidth("Write", uint32(len(data)))
 	}()
 
@@ -721,7 +513,7 @@ func (n *CubefsNode) Write(ctx context.Context, f fs.FileHandle, data []byte, of
 func (n *CubefsNode) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
 	bgTime := stat.BeginStat()
 	defer func() {
-		stat.EndStat("Setattr", 0, bgTime, 1)
+		stat.EndStat("Setattr", nil, bgTime, 1)
 	}()
 
 	// Handle size changes (truncation)
@@ -748,9 +540,9 @@ func (n *CubefsNode) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetA
 		Size:  info.Size,
 		Mode:  info.Mode,
 		Nlink: info.Nlink,
-		Atime: uint64(info.AccessTime),
-		Mtime: uint64(info.ModifyTime),
-		Ctime: uint64(info.CreateTime),
+		Atime: uint64(info.AccessTime.Unix()),
+		Mtime: uint64(info.ModifyTime.Unix()),
+		Ctime: uint64(info.CreateTime.Unix()),
 	}
 
 	return 0
@@ -760,7 +552,7 @@ func (n *CubefsNode) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetA
 func (n *CubefsNode) Flush(ctx context.Context, f fs.FileHandle) syscall.Errno {
 	bgTime := stat.BeginStat()
 	defer func() {
-		stat.EndStat("Flush", 0, bgTime, 1)
+		stat.EndStat("Flush", nil, bgTime, 1)
 	}()
 
 	err := n.fs.Flush(n.ino)
@@ -775,7 +567,7 @@ func (n *CubefsNode) Flush(ctx context.Context, f fs.FileHandle) syscall.Errno {
 func (n *CubefsNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	bgTime := stat.BeginStat()
 	defer func() {
-		stat.EndStat("Readdir", 0, bgTime, 1)
+		stat.EndStat("Readdir", nil, bgTime, 1)
 	}()
 
 	var limit uint64 = DefaultReaddirLimit
@@ -815,7 +607,7 @@ func (n *CubefsNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) 
 		// Cache dentry info if dcachev2 is enabled
 		if n.cache != nil && n.cache.GetDentryCache() != nil {
 			dcacheKey := n.buildDcacheKey(n.ino, entry.Name)
-			info := &DentryInfo{
+			info := &proto.DentryInfo{
 				Name:  dcacheKey,
 				Inode: entry.Inode,
 			}
@@ -830,12 +622,12 @@ func (n *CubefsNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) 
 // CubefsRoot represents the root of the Cubefs filesystem
 type CubefsRoot struct {
 	fs.Inode
-	adapter *gofuse_adapter.CubefsAdapter
+	adapter FileSystemInterface
 	cache   *CacheManager
 }
 
 // NewCubefsRoot creates a new CubefsRoot
-func NewCubefsRoot(adapter *gofuse_adapter.CubefsAdapter, cache *CacheManager) *CubefsRoot {
+func NewCubefsRoot(adapter FileSystemInterface, cache *CacheManager) *CubefsRoot {
 	return &CubefsRoot{
 		adapter: adapter,
 		cache:   cache,
@@ -882,7 +674,7 @@ func (r *CubefsRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut
 				return nil, syscall.ENOENT
 			}
 			// Cache the result
-			info := &DentryInfo{
+			info := &proto.DentryInfo{
 				Name:  dcacheKey,
 				Inode: ino,
 			}
@@ -1080,7 +872,7 @@ func (r *CubefsRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) 
 		// This follows the same pattern as the original implementation
 		if r.cache != nil && r.cache.GetDentryCache() != nil {
 			dcacheKey := r.buildDcacheKey(1, entry.Name) // Root inode is 1
-			info := &DentryInfo{
+			info := &proto.DentryInfo{
 				Name:  dcacheKey,
 				Inode: entry.Inode,
 			}
@@ -1355,7 +1147,7 @@ func main() {
 	}
 
 	// Create Cubefs adapter with full configuration
-	adapter, err := gofuse_adapter.NewCubefsAdapter(opt.Volname, []string{opt.Master})
+	adapter, err := sdk_gofuse.NewCubefsAdapter(opt.Volname, []string{opt.Master})
 	if err != nil {
 		fmt.Printf("Failed to create Cubefs adapter: %v\n", err)
 		daemonize.SignalOutcome(err)

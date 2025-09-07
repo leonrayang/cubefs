@@ -343,7 +343,7 @@ func (cm *CacheManager) GetInodeCache() *InodeCache {
 }
 
 // GetDentryCache returns the dentry cache
-func (cm *CacheManager) GetDentryCache() *Dcache {
+func (cm *CacheManager) GetDentryCache() DentryCacheInterface {
 	return cm.dc
 }
 

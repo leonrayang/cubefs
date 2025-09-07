@@ -6,14 +6,16 @@ import (
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/cubefs/cubefs/sdk/gofuse_adapter"
+	"github.com/cubefs/cubefs/proto"
 )
 
 // FileSystemInterface defines the interface for file system operations
 type FileSystemInterface interface {
 	// Metadata operations
 	Lookup(parentIno uint64, name string) (uint64, error)
-	GetInodeInfo(ino uint64) (*InodeInfo, error)
-	CreateInode(parentIno uint64, name string, mode uint32, uid, gid uint32) (*InodeInfo, error)
+	GetInodeInfo(ino uint64) (*sdk_gofuse.InodeInfo, error)
+	CreateInode(parentIno uint64, name string, mode uint32, uid, gid uint32) (*sdk_gofuse.InodeInfo, error)
 	DeleteInode(parentIno uint64, name string) error
 
 	// Data operations
@@ -23,8 +25,8 @@ type FileSystemInterface interface {
 	Flush(ino uint64) error
 
 	// Directory operations
-	ReadDir(ino uint64) ([]*DirEntry, error)
-	ReadDirLimit(ino uint64, from string, limit uint64) ([]*DirEntry, error)
+	ReadDir(ino uint64) ([]*sdk_gofuse.DirEntry, error)
+	ReadDirLimit(ino uint64, from string, limit uint64) ([]*sdk_gofuse.DirEntry, error)
 
 	// Cleanup
 	Close() error
@@ -65,8 +67,8 @@ type CacheInterface interface {
 
 // DentryCacheInterface defines the interface for dentry cache operations
 type DentryCacheInterface interface {
-	Put(dentry *DentryInfo)
-	Get(key string) *DentryInfo
+	Put(dentry *proto.DentryInfo)
+	Get(key string) *proto.DentryInfo
 	Delete(key string)
 }
 
