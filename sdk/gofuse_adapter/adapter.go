@@ -261,6 +261,16 @@ func (ca *CubefsAdapter) Flush(ino uint64) error {
 	return ca.extentClient.Flush(ino)
 }
 
+
+// Setattr sets file attributes
+func (ca *CubefsAdapter) Setattr(ino uint64, mode uint32, uid, gid uint32, atime, mtime time.Time) error {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
+	// Use meta wrapper to set attributes
+	return ca.metaWrapper.Setattr(ino, mode, uid, gid, atime, mtime)
+}
+
 // Close closes the adapter
 func (ca *CubefsAdapter) Close() error {
 	ca.mu.Lock()

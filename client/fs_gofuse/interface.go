@@ -22,6 +22,7 @@ type FileSystemInterface interface {
 	Read(ino uint64, data []byte, offset int, size int) (int, error)
 	Write(ino uint64, data []byte, offset int, flags int) (int, error)
 	Truncate(ino uint64, size uint64) error
+	Setattr(ino uint64, mode uint32, uid, gid uint32, atime, mtime time.Time) error
 	Flush(ino uint64) error
 
 	// Directory operations
@@ -32,27 +33,7 @@ type FileSystemInterface interface {
 	Close() error
 }
 
-// InodeInfo represents inode information
-type InodeInfo struct {
-	Inode      uint64
-	Mode       uint32
-	Size       uint64
-	Generation uint64
-	CreateTime int64
-	AccessTime int64
-	ModifyTime int64
-	LinkTarget string
-	Nlink      uint32
-	Uid        uint32
-	Gid        uint32
-}
 
-// DirEntry represents a directory entry
-type DirEntry struct {
-	Inode uint64
-	Name  string
-	Type  uint32
-}
 
 // CacheInterface defines the interface for caching operations
 type CacheInterface interface {
@@ -72,11 +53,6 @@ type DentryCacheInterface interface {
 	Delete(key string)
 }
 
-// DentryInfo represents dentry information
-type DentryInfo struct {
-	Name  string
-	Inode uint64
-}
 
 // FuseNodeInterface defines the interface for FUSE node operations
 type FuseNodeInterface interface {
