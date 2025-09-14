@@ -622,14 +622,14 @@ func (n *CubefsNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) 
 // CubefsRoot represents the root of the Cubefs filesystem
 type CubefsRoot struct {
 	fs.Inode
-	adapter FileSystemInterface
+	fs FileSystemInterface
 	cache   *CacheManager
 }
 
 // NewCubefsRoot creates a new CubefsRoot
-func NewCubefsRoot(adapter FileSystemInterface, cache *CacheManager) *CubefsRoot {
+func NewCubefsRoot(fs FileSystemInterface, cache *CacheManager) *CubefsRoot {
 	return &CubefsRoot{
-		adapter: adapter,
+		fs: fs,
 		cache:   cache,
 	}
 }
@@ -668,7 +668,7 @@ func (r *CubefsRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut
 		dentryInfo := r.cache.GetDentryCache().Get(dcacheKey)
 		if dentryInfo == nil {
 			// Cache miss - lookup from adapter
-			ino, err = r.adapter.Lookup(1, name) // Root inode is 1
+			ino, err = r.fs.Lookup(1, name) // Root inode is 1
 			if err != nil {
 				log.LogErrorf("Lookup: parent(%v) name(%v) err(%v)", 1, name, err)
 				return nil, syscall.ENOENT
@@ -686,7 +686,7 @@ func (r *CubefsRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut
 	} else {
 		// Use simple dentry cache or direct lookup
 		// For now, we'll do direct lookup since we don't have the simple dentry cache
-		ino, err = r.adapter.Lookup(1, name) // Root inode is 1
+		ino, err = r.fs.Lookup(1, name) // Root inode is 1
 		if err != nil {
 			log.LogErrorf("Lookup: parent(%v) name(%v) err(%v)", 1, name, err)
 			return nil, syscall.ENOENT
@@ -700,7 +700,7 @@ func (r *CubefsRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut
 	}
 
 	// Get inode info from adapter
-	info, err := r.adapter.GetInodeInfo(ino)
+	info, err := r.fs.GetInodeInfo(ino)
 	if err != nil {
 		log.LogErrorf("GetInodeInfo failed for inode %d: %v", ino, err)
 		return nil, syscall.ENOENT
@@ -709,9 +709,9 @@ func (r *CubefsRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut
 	// Create new node based on type
 	var child *CubefsNode
 	if proto.IsDir(info.Mode) {
-		child = NewCubefsNode(r.adapter, r.cache, ino, name, 1) // Root inode is 1
+		child = NewCubefsNode(r.fs, r.cache, ino, name, 1) // Root inode is 1
 	} else {
-		child = NewCubefsNode(r.adapter, r.cache, ino, name, 1) // Root inode is 1
+		child = NewCubefsNode(r.fs, r.cache, ino, name, 1) // Root inode is 1
 	}
 
 	stable := fs.StableAttr{
@@ -736,14 +736,14 @@ func (r *CubefsRoot) buildDcacheKey(inode uint64, name string) string {
 // Create creates a new file in root
 func (r *CubefsRoot) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	// Create file using adapter
-	_, err := r.adapter.CreateInode(1, name, mode, 0, 0) // Root inode is 1
+	_, err := r.fs.CreateInode(1, name, mode, 0, 0) // Root inode is 1
 	if err != nil {
 		log.LogErrorf("CreateInode failed: %v", err)
 		return nil, nil, 0, syscall.EIO
 	}
 
 	childIno := uint64(0)                                         // Should get from adapter
-	child := NewCubefsNode(r.adapter, r.cache, childIno, name, 1) // Root inode is 1
+	child := NewCubefsNode(r.fs, r.cache, childIno, name, 1) // Root inode is 1
 
 	stable := fs.StableAttr{
 		Ino:  childIno,
@@ -761,14 +761,14 @@ func (r *CubefsRoot) Create(ctx context.Context, name string, flags uint32, mode
 // Mkdir creates a new directory in root
 func (r *CubefsRoot) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	// Create directory using adapter
-	_, err := r.adapter.CreateInode(1, name, mode|syscall.S_IFDIR, 0, 0) // Root inode is 1
+	_, err := r.fs.CreateInode(1, name, mode|syscall.S_IFDIR, 0, 0) // Root inode is 1
 	if err != nil {
 		log.LogErrorf("CreateInode failed for directory: %v", err)
 		return nil, syscall.EIO
 	}
 
 	childIno := uint64(0)                                         // Should get from adapter
-	child := NewCubefsNode(r.adapter, r.cache, childIno, name, 1) // Root inode is 1
+	child := NewCubefsNode(r.fs, r.cache, childIno, name, 1) // Root inode is 1
 
 	stable := fs.StableAttr{
 		Ino:  childIno,
@@ -785,7 +785,7 @@ func (r *CubefsRoot) Mkdir(ctx context.Context, name string, mode uint32, out *f
 
 // Rmdir removes a directory from root
 func (r *CubefsRoot) Rmdir(ctx context.Context, name string) syscall.Errno {
-	err := r.adapter.DeleteInode(1, name) // Root inode is 1
+	err := r.fs.DeleteInode(1, name) // Root inode is 1
 	if err != nil {
 		log.LogErrorf("DeleteInode failed for directory: %v", err)
 		return syscall.EIO
@@ -795,7 +795,7 @@ func (r *CubefsRoot) Rmdir(ctx context.Context, name string) syscall.Errno {
 
 // Unlink removes a file from root
 func (r *CubefsRoot) Unlink(ctx context.Context, name string) syscall.Errno {
-	err := r.adapter.DeleteInode(1, name) // Root inode is 1
+	err := r.fs.DeleteInode(1, name) // Root inode is 1
 	if err != nil {
 		log.LogErrorf("DeleteInode failed for file: %v", err)
 		return syscall.EIO
@@ -840,7 +840,7 @@ func (r *CubefsRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) 
 	log.LogDebugf("TRACE Readdir: ino(%v) limit(%v)", 1, limit)
 
 	// Use ReadDirLimit for better performance
-	entries, err := r.adapter.ReadDirLimit(1, from, limit) // Use inode 1 for root
+	entries, err := r.fs.ReadDirLimit(1, from, limit) // Use inode 1 for root
 	if err != nil {
 		log.LogErrorf("ReadDirLimit failed: %v", err)
 		return nil, syscall.EIO
