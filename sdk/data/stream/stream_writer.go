@@ -144,7 +144,6 @@ func (s *Streamer) IssueWriteRequest(offset int, data []byte, flags int, checkFu
 
 	s.request <- request
 	s.writeLock.Unlock()
-
 	<-request.done
 	err = request.err
 	write = request.writeBytes
@@ -220,12 +219,26 @@ func (s *Streamer) server() {
 	renewalTimer := time.NewTicker(proto.ForbiddenMigrationRenewalPeriod / 5)
 	defer renewalTimer.Stop()
 	log.LogDebugf("start server: streamer(%v)", s)
+
+	// The traversal process involves flushing, which causes significant lag in high-latency environments. This is especially pronounced for small file processing, where data cannot be retrieved from requests in a timely manner. Therefore, a dedicated coroutine is required for handling this.
+	go func() {
+		for {
+			select {
+			case request := <-s.request:
+				log.LogDebugf("ino %v handler reqeust %T start", s.inode, request)
+				s.handleRequest(request)
+				log.LogDebugf("ino %v handler reqeust %T down", s.inode, request)
+				s.idle = 0
+				s.traversed = 0
+
+			case <-s.done:
+				return
+			}
+		}
+	}()
+
 	for {
 		select {
-		case request := <-s.request:
-			s.handleRequest(request)
-			s.idle = 0
-			s.traversed = 0
 		case <-s.done:
 			s.abort()
 			// Clean up async flush system
@@ -269,7 +282,6 @@ func (s *Streamer) server() {
 				s.idle++
 			}
 			s.client.streamerLock.Unlock()
-
 		case <-renewalTimer.C:
 			if !s.openForWrite {
 				renewalTimer.Stop()
