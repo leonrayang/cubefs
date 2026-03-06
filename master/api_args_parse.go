@@ -17,7 +17,6 @@ package master
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -1982,7 +1981,7 @@ func extractOwner(r *http.Request) (owner string, err error) {
 		return
 	}
 	if !ownerRegexp.MatchString(owner) {
-		return "", errors.New("owner can only be number and letters")
+		return "", proto.ErrInvalidUserID
 	}
 
 	return
