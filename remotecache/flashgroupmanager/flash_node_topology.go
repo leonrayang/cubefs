@@ -232,7 +232,7 @@ func (t *FlashNodeTopology) getFlashGroupView() (fgv *proto.FlashGroupView) {
 			hosts := fg.getFlashNodeHostsEnableAndActive()
 			if len(hosts) == 0 {
 				if log.EnableInfo() {
-					log.LogInfof("fg(%v) lost all flashnodes", fg)
+					log.LogInfof("fg(%v) lost all flashnodes", fg.ID)
 				}
 				atomic.StoreInt32(&fg.LostAllFlashNode, 1)
 				fg.ReduceSlot(t.SyncFlashGroupFunc)

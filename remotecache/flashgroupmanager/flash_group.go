@@ -106,7 +106,7 @@ func (fg *FlashGroup) ReduceSlot(syncFlashGroupFunc SyncUpdateFlashGroupFunc) {
 		return
 	}
 	if log.EnableDebug() {
-		log.LogDebugf("flashgroup %v is reducing slots", fg)
+		log.LogDebugf("flashgroup %v is reducing slots", fg.ID)
 	}
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
@@ -135,7 +135,7 @@ func (fg *FlashGroup) IncreaseSlot(syncFlashGroupFunc SyncUpdateFlashGroupFunc) 
 		return
 	}
 	if log.EnableDebug() {
-		log.LogDebugf("flashgroup %v is increasing slots", fg)
+		log.LogDebugf("flashgroup %v is increasing slots", fg.ID)
 	}
 	totalSlots := len(fg.Slots) + len(fg.ReservedSlots)
 	numToSelect := (totalSlots + 8 - 1) / 8
