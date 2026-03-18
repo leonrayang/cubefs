@@ -152,6 +152,7 @@ type FlashNode struct {
 	localAddr string
 	clusterID string
 	nodeID    uint64
+	topoName  string
 
 	control     common.Control
 	stopOnce    sync.Once
@@ -185,6 +186,7 @@ type FlashNode struct {
 	handlerFileRoutineNumPerTask int
 	manualScanLimitPerSecond     int64
 	prepareLimitPerSecond        int64
+	topoNameLock                 sync.RWMutex
 	scannerMutex                 sync.RWMutex
 	manualScanners               sync.Map // [string]*ManualScanner
 	warmUpPaths                  sync.Map // [string]*WarmUpPathInfo
@@ -208,6 +210,25 @@ type FlashNode struct {
 	legacyMaster             int32
 	region                   string
 	remoteCacheDisableTTLMap map[string]bool // volume -> disableTTL, fetched during registration
+}
+
+func (f *FlashNode) setTopoName(topoName string) {
+	if topoName == "" {
+		return
+	}
+	f.topoNameLock.Lock()
+	f.topoName = topoName
+	f.topoNameLock.Unlock()
+}
+
+func (f *FlashNode) getTopoName() string {
+	f.topoNameLock.RLock()
+	topoName := f.topoName
+	f.topoNameLock.RUnlock()
+	if topoName == "" {
+		return "empty"
+	}
+	return topoName
 }
 
 // Start starts up the flash node with the specified configuration.
@@ -772,7 +793,7 @@ func (f *FlashNode) register() error {
 			f.localAddr = fmt.Sprintf("%s:%v", localIP, f.listen)
 
 			id, _ := f.loadOrInitNodeID()
-			nodeID, err := f.mc.NodeAPI().AddFlashNode(f.localAddr, f.zoneName, "", f.region, id)
+			registerResp, err := f.mc.NodeAPI().AddFlashNodeWithTopo(f.localAddr, f.zoneName, "", f.region, id)
 			if err != nil {
 				log.LogErrorf("action[register] cannot register remotecache to master err(%v).", err)
 				if strings.Contains(err.Error(), "region is conflict") {
@@ -781,12 +802,13 @@ func (f *FlashNode) register() error {
 				break
 			}
 
-			if nodeID > 0 {
-				if err := f.saveNodeIDToDisk(nodeID); err != nil {
+			if registerResp.NodeID > 0 {
+				if err := f.saveNodeIDToDisk(registerResp.NodeID); err != nil {
 					log.LogErrorf("action[register] save nodeID to disk failed: %v", err)
 				}
 			}
-			f.nodeID = nodeID
+			f.nodeID = registerResp.NodeID
+			f.setTopoName(registerResp.TopoName)
 			// Try to get remoteCacheDisableTTLMap from master
 			// If the API is not available (old master), it will return empty map without error
 			remoteCacheDisableTTLMap, err := f.mc.NodeAPI().GetRemoteCacheDisableTTLMap()
@@ -797,8 +819,8 @@ func (f *FlashNode) register() error {
 				log.LogDebugf("action[register] failed to get remoteCacheDisableTTLMap: %v, using empty map", err)
 			}
 			f.remoteCacheDisableTTLMap = remoteCacheDisableTTLMap
-			log.LogInfof("action[register] remotecache(%d) cluster(%s) localAddr(%s) remoteCacheDisableTTLMap(%d volumes)", f.nodeID, f.clusterID, f.localAddr, len(remoteCacheDisableTTLMap))
-			syslog.Printf("Flash node registered successfully. ID: %d, Cluster: %s, LocalAddr: %s, region: %s", f.nodeID, f.clusterID, f.localAddr, f.region)
+			log.LogInfof("action[register] remotecache(%d) cluster(%s) localAddr(%s) topoName(%s) remoteCacheDisableTTLMap(%d volumes)", f.nodeID, f.clusterID, f.localAddr, f.getTopoName(), len(remoteCacheDisableTTLMap))
+			syslog.Printf("Flash node registered successfully. ID: %d, Cluster: %s, LocalAddr: %s, topoName: %s, region: %s", f.nodeID, f.clusterID, f.localAddr, f.getTopoName(), f.region)
 			return nil
 		}
 
