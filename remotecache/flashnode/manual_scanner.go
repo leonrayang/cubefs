@@ -415,10 +415,11 @@ func (s *ManualScanner) warmUp(i *proto.ScanItem) error {
 		return err
 	}
 	eLen := len(extents)
-	for index, extent := range extents {
+	warmupRemain := int64(eLen)
+	for _, extent := range extents {
 		s.prepareLimiter.Wait(context.Background())
 		s.flowLimiter.WaitN(context.Background(), int(extent.Size))
-		prepareReq := stream.NewPrepareRemoteCacheRequest(i.Inode, extent, true, i.WriteGen, eLen-1 == index)
+		prepareReq := stream.NewPrepareRemoteCacheRequest(i.Inode, extent, true, i.WriteGen, &warmupRemain)
 		s.RemoteCache.PrepareCh <- prepareReq
 		atomic.AddInt64(&s.currentStat.TotalExtentKeyNum, 1)
 		atomic.AddInt64(&s.currentStat.TotalCacheSize, int64(extent.Size))
