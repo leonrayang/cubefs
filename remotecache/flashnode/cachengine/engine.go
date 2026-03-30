@@ -133,6 +133,9 @@ type CacheEngine struct {
 
 	creatingCacheBlockMap sync.Map
 	cachePrepareTaskCh    chan cachePrepareTask
+	prepareWorkersMu      sync.Mutex
+	prepareWorkerQuit     []chan struct{}
+	prepareWorkerWg       sync.WaitGroup
 	cacheLoadWorkerNum    int
 	cacheEvictWorkerNum   int
 	lruCacheMap           sync.Map
@@ -1017,12 +1020,35 @@ func (c *CacheEngine) usedSize() (size int64) {
 }
 
 func (c *CacheEngine) StartCachePrepareWorkers(flw *util.IoLimiter, prepareWorkers int) {
+	if c.cachePrepareTaskCh == nil {
+		return
+	}
+	c.prepareWorkersMu.Lock()
+	defer c.prepareWorkersMu.Unlock()
+
+	for _, quitCh := range c.prepareWorkerQuit {
+		close(quitCh)
+	}
+	c.prepareWorkerWg.Wait()
+	c.prepareWorkerQuit = nil
+
+	if prepareWorkers <= 0 {
+		return
+	}
+
 	for ii := 0; ii < prepareWorkers; ii++ {
-		go func(ii int) {
+		quitCh := make(chan struct{})
+		c.prepareWorkerQuit = append(c.prepareWorkerQuit, quitCh)
+		c.prepareWorkerWg.Add(1)
+		go func(workerID int, quit <-chan struct{}, limiter *util.IoLimiter) {
+			defer c.prepareWorkerWg.Done()
 			for {
 				select {
 				case <-c.closeCh:
-					log.LogInfof("action[startCachePrepareWorkers] worker(%d) closed", ii)
+					log.LogInfof("action[startCachePrepareWorkers] worker(%d) closed", workerID)
+					return
+				case <-quit:
+					log.LogInfof("action[startCachePrepareWorkers] worker(%d) quit for resize", workerID)
 					return
 				case task := <-c.cachePrepareTaskCh:
 					r := task.request
@@ -1036,7 +1062,7 @@ func (c *CacheEngine) StartCachePrepareWorkers(flw *util.IoLimiter, prepareWorke
 					if err3 == nil {
 						continue
 					}
-					err1 := flw.Run(reqSize, true, func() {
+					err1 := limiter.Run(reqSize, true, func() {
 						bk := GenCacheBlockKey(r.Volume, r.Inode, r.FixedFileOffset, r.Version)
 						if log.EnableDebug() {
 							log.LogDebugf("action[startCachePrepareWorkers] start cache key(%v)", bk)
@@ -1062,7 +1088,7 @@ func (c *CacheEngine) StartCachePrepareWorkers(flw *util.IoLimiter, prepareWorke
 					stat.EndStat("CachePrepareHandler", err1, bg, 1)
 				}
 			}
-		}(ii + 1)
+		}(ii+1, quitCh, flw)
 	}
 }
 

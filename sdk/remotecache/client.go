@@ -1181,7 +1181,7 @@ func (rc *RemoteCacheClient) Prepare(ctx context.Context, fg *FlashGroup, req *p
 	}
 
 	replyPacket := NewFlashCacheReply()
-	if err = replyPacket.ReadFromConnExt(conn, proto.ReadDeadlineTime); err != nil {
+	if err = replyPacket.ReadFromConn(conn, proto.ReadDeadlineTime); err != nil {
 		log.LogWarnf("FlashGroup Prepare: failed to ReadFromConn, replyPacket(%v), fg host(%v) moved(%v), err(%v)", replyPacket, addr, moved, err)
 		return
 	}
