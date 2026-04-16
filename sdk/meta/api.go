@@ -224,29 +224,23 @@ func (mw *MetaWrapper) create_ll(parentID uint64, name string, mode, uid, gid ui
 		mp           *MetaPartition
 		rwPartitions []*MetaPartition
 	)
-	defer func() {
-		//if info != nil && mw.RemoteCacheBloom != nil {
-		//	cacheBloom := mw.RemoteCacheBloom()
-		//	if cacheBloom.TestUint64(parentID) {
-		//		cacheBloom.AddUint64(info.Inode)
-		//	}
-		//}
-	}()
 	parentMP := mw.getPartitionByInode(parentID)
 	if parentMP == nil {
 		log.LogErrorf("Create_ll: No parent partition, parentID(%v)", parentID)
 		return nil, syscall.ENOENT
 	}
 
-	status, info, err = mw.iget(parentMP, parentID, mw.LastVerSeq)
-	if err != nil || status != statusOK {
-		return nil, statusToErrno(status)
-	}
+	if mw.EnableQuota {
+		status, info, err = mw.iget(parentMP, parentID, mw.LastVerSeq)
+		if err != nil || status != statusOK {
+			return nil, statusToErrno(status)
+		}
 
-	quota := atomic.LoadUint32(&mw.DirChildrenNumLimit)
-	if info.Nlink >= quota {
-		log.LogErrorf("Create_ll: parent inode's nlink quota reached, parentID(%v)", parentID)
-		return nil, syscall.EDQUOT
+		quota := atomic.LoadUint32(&mw.DirChildrenNumLimit)
+		if info.Nlink >= quota {
+			log.LogErrorf("Create_ll: parent inode's nlink quota reached, parentID(%v)", parentID)
+			return nil, syscall.EDQUOT
+		}
 	}
 
 get_rwmp:
