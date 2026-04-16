@@ -91,6 +91,7 @@ const (
 	DebugCluster
 	EnableAsyncFlush
 	RemoteCacheName
+	DisableForbiddenMigration
 
 	// warm up
 	ReadDirLimit
@@ -211,6 +212,7 @@ func InitMountOptions(opts []MountOption) {
 	opts[InodeLruLimit] = MountOption{"inodeLruLimit", "capacity for inode lru", "", int64(2000000)}
 	opts[FuseServeThreads] = MountOption{"fuseServeThreads", "Fuse Serve Threads", "", int64(0)}
 	opts[RemoteCacheName] = MountOption{"remoteCacheTopoName", "name for target remote cache topology", "", "default"}
+	opts[DisableForbiddenMigration] = MountOption{"disableForbiddenMigration", "Skip forbiddenMigration and renewalForbiddenMigration RPCs to metanode", "", false}
 	for i := 0; i < MaxMountOption; i++ {
 		flag.StringVar(&opts[i].cmdlineValue, opts[i].keyword, "", opts[i].description)
 	}
@@ -391,9 +393,10 @@ type MountOptions struct {
 	AheadReadWindowCnt    int
 
 	// remote cache
-	ForceRemoteCache bool
-	EnableAsyncFlush bool
-	RemoteCacheName  string
+	ForceRemoteCache          bool
+	EnableAsyncFlush          bool
+	RemoteCacheName           string
+	DisableForbiddenMigration bool
 
 	// warm up
 	ReadDirLimit          int64

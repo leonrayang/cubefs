@@ -271,7 +271,7 @@ func (s *Streamer) server() {
 			s.client.streamerLock.Unlock()
 
 		case <-renewalTimer.C:
-			if !s.openForWrite {
+			if !s.openForWrite || s.client.disableForbiddenMigration {
 				renewalTimer.Stop()
 			} else {
 				// renewal forbidden migration

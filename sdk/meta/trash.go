@@ -645,7 +645,9 @@ func (trash *Trash) IsDir(path string) bool {
 func (trash *Trash) CreateDirectory(pino uint64, name string, mode, uid, gid uint32, fullName string, ignoreExist bool) (info *proto.InodeInfo, err error) {
 	fuseMode := mode & 0o777
 	fuseMode |= uint32(os.ModeDir)
-	return trash.mw.Create_ll(pino, name, fuseMode, uid, gid, nil, fullName, ignoreExist)
+	return trash.mw.Create_ll(pino, name, fuseMode, uid, gid, nil, fullName, CreateOptions{
+		IgnoreExist: ignoreExist,
+	})
 }
 
 func (trash *Trash) LookupEntry(parentID uint64, name string) (*proto.InodeInfo, error) {

@@ -110,7 +110,11 @@ func (mw *MetaWrapper) Statfs() (total, used, inodeCount uint64) {
 	return
 }
 
-func (mw *MetaWrapper) Create_ll(parentID uint64, name string, mode, uid, gid uint32, target []byte, fullPath string, ignoreExist bool) (*proto.InodeInfo, error) {
+type CreateOptions struct {
+	IgnoreExist bool
+}
+
+func (mw *MetaWrapper) Create_ll(parentID uint64, name string, mode, uid, gid uint32, target []byte, fullPath string, opts CreateOptions) (*proto.InodeInfo, error) {
 	// if mw.EnableTransaction {
 	var txMask proto.TxOpMask
 	if proto.IsRegular(mode) {
@@ -124,14 +128,14 @@ func (mw *MetaWrapper) Create_ll(parentID uint64, name string, mode, uid, gid ui
 	}
 	txType := proto.TxMaskToType(txMask)
 	if mw.enableTx(txMask) && txType != proto.TxTypeUndefined {
-		return mw.txCreate_ll(parentID, name, mode, uid, gid, target, txType, fullPath, ignoreExist)
+		return mw.txCreate_ll(parentID, name, mode, uid, gid, target, txType, fullPath, opts)
 	} else {
-		return mw.create_ll(parentID, name, mode, uid, gid, target, fullPath, ignoreExist)
+		return mw.create_ll(parentID, name, mode, uid, gid, target, fullPath, opts)
 	}
 }
 
 func (mw *MetaWrapper) txCreate_ll(parentID uint64, name string, mode, uid, gid uint32, target []byte, txType uint32,
-	fullPath string, ignoreExist bool,
+	fullPath string, opts CreateOptions,
 ) (info *proto.InodeInfo, err error) {
 	var (
 		status int
@@ -198,7 +202,7 @@ create_dentry:
 		log.LogDebugf("txCreate_ll: tx.txInfo(%v)", tx.txInfo)
 	}
 
-	status, err = mw.txDcreate(tx, parentMP, parentID, name, info.Inode, mode, quotaIds, fullPath, ignoreExist)
+	status, err = mw.txDcreate(tx, parentMP, parentID, name, info.Inode, mode, quotaIds, fullPath, opts.IgnoreExist)
 	if err != nil || status != statusOK {
 		return nil, statusErrToErrno(status, err)
 	}
@@ -211,7 +215,7 @@ create_dentry:
 }
 
 func (mw *MetaWrapper) create_ll(parentID uint64, name string, mode, uid, gid uint32, target []byte,
-	fullPath string, ignoreExist bool,
+	fullPath string, opts CreateOptions,
 ) (*proto.InodeInfo, error) {
 	var (
 		status       int
@@ -311,9 +315,9 @@ get_rwmp:
 create_dentry:
 	log.LogDebugf("Create_ll name %v ino %v", name, info.Inode)
 	if mw.EnableQuota {
-		status, err = mw.quotaDcreate(parentMP, parentID, name, info.Inode, mode, quotaIds, fullPath, ignoreExist)
+		status, err = mw.quotaDcreate(parentMP, parentID, name, info.Inode, mode, quotaIds, fullPath, opts.IgnoreExist)
 	} else {
-		status, err = mw.dcreate(parentMP, parentID, name, info.Inode, mode, fullPath, ignoreExist)
+		status, err = mw.dcreate(parentMP, parentID, name, info.Inode, mode, fullPath, opts.IgnoreExist)
 	}
 	if err != nil {
 		if status == statusOpDirQuota || status == statusNoSpace {

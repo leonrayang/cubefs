@@ -969,13 +969,13 @@ func (f *File) Truncate(size int) error {
 
 func (c *Client) create(pino uint64, name string, mode uint32, fullPath string) (info *proto.InodeInfo, err error) {
 	fuseMode := mode & 0o777
-	return c.mw.Create_ll(pino, name, fuseMode, 0, 0, nil, fullPath, false)
+	return c.mw.Create_ll(pino, name, fuseMode, 0, 0, nil, fullPath, meta.CreateOptions{})
 }
 
 func (c *Client) mkdir(pino uint64, name string, mode uint32, fullPath string) (info *proto.InodeInfo, err error) {
 	fuseMode := mode & 0o777
 	fuseMode |= uint32(os.ModeDir)
-	return c.mw.Create_ll(pino, name, fuseMode, 0, 0, nil, fullPath, false)
+	return c.mw.Create_ll(pino, name, fuseMode, 0, 0, nil, fullPath, meta.CreateOptions{})
 }
 
 func (c *Client) openStream(f *File, openForWrite bool, fullPath string) {
@@ -1259,7 +1259,7 @@ func (c *Client) SymLink(srcPath, dstPath string) error {
 	}
 
 	parentIno := info.Inode
-	info, err = c.mw.Create_ll(parentIno, filename, proto.Mode(os.ModeSymlink|os.ModePerm), 0, 0, []byte(fullSrcPath), fullDstPath, false)
+	info, err = c.mw.Create_ll(parentIno, filename, proto.Mode(os.ModeSymlink|os.ModePerm), 0, 0, []byte(fullSrcPath), fullDstPath, meta.CreateOptions{})
 	if err != nil {
 		log.LogErrorf("Symlink: parent(%v) NewName(%v) err(%v)\n", parentIno, filename, err)
 		return err
