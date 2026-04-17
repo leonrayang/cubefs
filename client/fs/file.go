@@ -386,7 +386,7 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error
 	//	f.fWriter.Close()
 	// }
 
-	err = f.super.ec.CloseStream(ino)
+	err = f.super.ec.CloseStreamWithWait(ino, f.super.fsyncOnClose)
 	if err != nil {
 		log.LogErrorf("Release: close writer failed, ino(%v) req(%v) err(%v)", ino, req, err)
 		return ParseError(err)

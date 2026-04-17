@@ -476,6 +476,19 @@ func main() {
 			daemonize.SignalOutcome(err)
 			os.Exit(1)
 		}
+
+		// Initialize a dedicated audit log for release-time async flush
+		// errors. The file lives next to audit.log and is only written
+		// to when fsyncOnClose=false, so operators can triage async
+		// release failures without grepping through regular audit logs.
+		_, err = auditlog.InitReleaseAuditWithPrefix(opt.Logpath, LoggerPrefix, int64(auditlog.DefaultAuditLogSize),
+			auditlog.NewAuditPrefix(opt.Master, opt.Volname, opt.SubDir, opt.MountPoint))
+		if err != nil {
+			err = errors.NewErrorf("Init release audit log fail: %v\n", err)
+			fmt.Println(err)
+			daemonize.SignalOutcome(err)
+			os.Exit(1)
+		}
 	}
 
 	proto.InitBufferPoolEx(opt.BuffersTotalLimit, int(opt.BufferChanSize))
@@ -946,6 +959,7 @@ func registerInterceptedSignal(mnt string, cb func(bool) bool) {
 			if isExitSignal(sig) {
 				syslog.Printf("action[registerInterceptedSignal]: Killed due to a received signal (%v)[%d-%v]\n", sig, os.Getpid(), mnt)
 				auditlog.StopAudit()
+				auditlog.StopReleaseAudit()
 				log.LogFlush()
 				if !cb(true) {
 					os.Exit(1)

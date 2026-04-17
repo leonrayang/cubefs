@@ -39,6 +39,7 @@ import (
 
 const (
 	Audit_Module           = "audit"
+	ReleaseAsync_Module    = "audit_release_async"
 	FileNameDateFormat     = "20060102150405"
 	ShiftedExtension       = ".old"
 	DefaultAuditLogBufSize = 0
@@ -125,6 +126,13 @@ type Audit struct {
 var (
 	gAdt      *Audit = nil
 	gAdtMutex sync.RWMutex
+
+	// gReleaseAdt is a dedicated audit singleton for release-time async
+	// flush errors. It writes to a separate log file so that async flush
+	// failures (triggered only when fsyncOnClose=false) are not mixed
+	// with normal client operations and can be inspected independently.
+	gReleaseAdt      *Audit = nil
+	gReleaseAdtMutex sync.RWMutex
 )
 
 func getAddr() (HostName, IPAddr string) {
@@ -228,6 +236,17 @@ func NewAuditWithPrefix(dir, logModule string, logMaxSize int64, prefix *AuditPr
 }
 
 func NewAudit(dir, logModule string, logMaxSize int64) (*Audit, error) {
+	return newAuditWithFileName(dir, logModule, Audit_Module, logMaxSize)
+}
+
+// newAuditWithFileName creates an Audit whose log file is
+// <dir>/<logModule>/<logFileName>.log. It is the shared implementation
+// behind NewAudit and dedicated audit singletons that need to coexist
+// in the same directory (e.g. the release-async audit).
+func newAuditWithFileName(dir, logModule, logFileName string, logMaxSize int64) (*Audit, error) {
+	if logFileName == "" {
+		logFileName = Audit_Module
+	}
 	absPath, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
@@ -246,7 +265,7 @@ func NewAudit(dir, logModule string, logMaxSize int64) (*Audit, error) {
 		}
 	}
 	_ = os.Chmod(absPath, 0o755)
-	logName := path.Join(absPath, Audit_Module) + ".log"
+	logName := path.Join(absPath, logFileName) + ".log"
 	audit := &Audit{
 		hostName:         host,
 		ipAddr:           ip,
@@ -588,6 +607,59 @@ func StopAudit() {
 	}
 	gAdt.Stop()
 	gAdt = nil
+}
+
+// InitReleaseAudit initializes a dedicated audit log instance for
+// release-time async flush errors. Its log file is written to
+// <dir>/<logModule>/<ReleaseAsync_Module>.log so it lives alongside the
+// regular audit.log without being mixed into it.
+func InitReleaseAudit(dir, logModule string, logMaxSize int64) (*Audit, error) {
+	gReleaseAdtMutex.Lock()
+	defer gReleaseAdtMutex.Unlock()
+	if gReleaseAdt == nil {
+		adt, err := newAuditWithFileName(dir, logModule, ReleaseAsync_Module, logMaxSize)
+		if err != nil {
+			return nil, err
+		}
+		gReleaseAdt = adt
+	}
+	return gReleaseAdt, nil
+}
+
+// InitReleaseAuditWithPrefix is InitReleaseAudit but also attaches a
+// shared audit prefix (master/volname/subdir/mountpoint, etc.) so the
+// release log lines can be correlated with the regular audit log.
+func InitReleaseAuditWithPrefix(dir, logModule string, logMaxSize int64, prefix *AuditPrefix) (*Audit, error) {
+	a, err := InitReleaseAudit(dir, logModule, logMaxSize)
+	if err != nil {
+		return nil, err
+	}
+	a.prefix = prefix
+	return a, nil
+}
+
+// StopReleaseAudit flushes and closes the release audit singleton.
+func StopReleaseAudit() {
+	gReleaseAdtMutex.Lock()
+	defer gReleaseAdtMutex.Unlock()
+	if gReleaseAdt == nil {
+		return
+	}
+	gReleaseAdt.Stop()
+	gReleaseAdt = nil
+}
+
+// LogReleaseAsyncError records a release-time async flush error into
+// the dedicated release audit log. If the release audit is not
+// initialized (e.g. enableAudit=false or fsyncOnClose=true and the
+// caller skipped init), the call is a no-op.
+func LogReleaseAsyncError(op, src, dst string, err error, latency int64, srcInode, dstInode uint64) {
+	gReleaseAdtMutex.RLock()
+	defer gReleaseAdtMutex.RUnlock()
+	if gReleaseAdt == nil {
+		return
+	}
+	gReleaseAdt.LogClientOp(op, src, dst, err, latency, srcInode, dstInode)
 }
 
 // NOTE: implementation details

@@ -589,6 +589,11 @@ func (client *ExtentClient) OpenStreamWithCache(inode uint64, needBCache, openFo
 
 // Release request shall grab the lock until request is sent to the request channel
 func (client *ExtentClient) CloseStream(inode uint64) error {
+	return client.CloseStreamWithWait(inode, true)
+}
+
+// CloseStreamWithWait closes the stream and optionally waits for pending flush work.
+func (client *ExtentClient) CloseStreamWithWait(inode uint64, wait bool) error {
 	client.streamerLock.Lock()
 	s, ok := client.streamers[inode]
 	if !ok {
@@ -605,7 +610,7 @@ func (client *ExtentClient) CloseStream(inode uint64) error {
 		return nil
 	}
 
-	return s.IssueReleaseRequest()
+	return s.IssueReleaseRequest(wait)
 }
 
 // Evict request shall grab the lock until request is sent to the request channel

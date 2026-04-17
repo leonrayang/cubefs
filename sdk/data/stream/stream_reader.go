@@ -29,6 +29,7 @@ import (
 	"github.com/cubefs/cubefs/client/blockcache/bcache"
 	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/sdk/remotecache"
+	"github.com/cubefs/cubefs/util/auditlog"
 	"github.com/cubefs/cubefs/util"
 	"github.com/cubefs/cubefs/util/buf"
 	"github.com/cubefs/cubefs/util/errors"
@@ -590,6 +591,22 @@ func (s *Streamer) processAsyncFlushRequest(req *AsyncFlushRequest) {
 	}
 }
 
+func (s *Streamer) auditAsyncFlushError(auditOp string, startedAt time.Time, err error) {
+	if err == nil || auditOp == "" {
+		return
+	}
+	// Route async flush failures (triggered on the release path when
+	// fsyncOnClose=false) to a dedicated audit log file so they are not
+	// interleaved with normal client operations. If the release audit
+	// log is not initialized, this call is a cheap no-op.
+	auditlog.LogReleaseAsyncError(auditOp, s.fullPath, "nil", err, time.Since(startedAt).Microseconds(), s.inode, 0)
+}
+
+func (s *Streamer) completeAsyncFlushWithError(req *AsyncFlushRequest, err error) {
+	s.auditAsyncFlushError(req.auditOp, req.startedAt, err)
+	req.done <- err
+}
+
 // completeAsyncFlush completes an async flush operation
 func (s *Streamer) completeAsyncFlush(req *AsyncFlushRequest) {
 	// Add to wait group to track this operation
@@ -604,7 +621,7 @@ func (s *Streamer) completeAsyncFlush(req *AsyncFlushRequest) {
 	if nextReq == nil {
 		log.LogWarnf("completeAsyncFlush: No pending async flush requests found for streamer(%v) handler(%v)",
 			s.inode, handler)
-		req.done <- errors.New("no pending async flush requests")
+		s.completeAsyncFlushWithError(req, errors.New("no pending async flush requests"))
 		return
 	}
 	if nextReq.handler.id > handler.id {
@@ -629,7 +646,7 @@ func (s *Streamer) completeAsyncFlush(req *AsyncFlushRequest) {
 				if nextReq == nil {
 					log.LogErrorf("completeAsyncFlush: No pending async flush requests found while waiting for "+
 						"streamer(%v) handler(%v)", s.inode, handler)
-					req.done <- errors.New("no pending async flush requests")
+					s.completeAsyncFlushWithError(req, errors.New("no pending async flush requests"))
 					return
 				}
 				if nextReq.handler.id >= handler.id {
@@ -649,11 +666,11 @@ end:
 			req.clearFunc()
 		}
 	}
-	req.done <- err
+	s.completeAsyncFlushWithError(req, err)
 }
 
 // requestAsyncFlush initiates an asynchronous flush for a handler
-func (s *Streamer) requestAsyncFlush(handler *ExtentHandler, clearFunc func()) chan error {
+func (s *Streamer) requestAsyncFlush(handler *ExtentHandler, clearFunc func(), auditOp string) chan error {
 	log.LogDebugf("requestAsyncFlush handler %v", handler)
 
 	// Check if this handler already has an active async flush request
@@ -669,6 +686,8 @@ func (s *Streamer) requestAsyncFlush(handler *ExtentHandler, clearFunc func()) c
 		handler:   handler,
 		done:      make(chan error, 1),
 		clearFunc: clearFunc,
+		auditOp:   auditOp,
+		startedAt: time.Now(),
 	}
 
 	// Add to pending map using handler.id as key (both for sequencing and duplicate prevention)
@@ -679,7 +698,7 @@ func (s *Streamer) requestAsyncFlush(handler *ExtentHandler, clearFunc func()) c
 	case <-s.asyncFlushDone:
 		// Streamer is being released, fail the request immediately
 		log.LogWarnf("requestAsyncFlush: streamer is being released, failing request for handler(%v)", handler)
-		req.done <- errors.New("streamer is being released")
+		s.completeAsyncFlushWithError(req, errors.New("streamer is being released"))
 		return req.done
 	default:
 		// Continue with normal processing

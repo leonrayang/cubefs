@@ -52,6 +52,7 @@ const (
 	// Async flush constants
 	asyncFlushQueueSize     = 128 // Buffer size for async flush channel
 	asyncFlushSemaphoreSize = 4   // Capacity of semaphore to limit concurrent processAsyncFlushRequest executions
+	releaseAsyncAuditOp     = "ReleaseAsyncFlush"
 )
 
 // Note: asyncFlushSequencer is now per-streamer to avoid global lock contention
@@ -61,6 +62,8 @@ type AsyncFlushRequest struct {
 	handler   *ExtentHandler
 	done      chan error
 	clearFunc func() // Function to execute cleanup operations
+	auditOp   string
+	startedAt time.Time
 }
 
 // VerUpdateRequest defines an verseq update request.
@@ -98,6 +101,7 @@ type FlushRequest struct {
 // ReleaseRequest defines a release request.
 type ReleaseRequest struct {
 	err  error
+	wait bool
 	done chan struct{}
 }
 
@@ -168,8 +172,9 @@ func (s *Streamer) IssueFlushRequest() error {
 	return err
 }
 
-func (s *Streamer) IssueReleaseRequest() error {
+func (s *Streamer) IssueReleaseRequest(wait bool) error {
 	request := releaseRequestPool.Get().(*ReleaseRequest)
+	request.wait = wait
 	request.done = make(chan struct{}, 1)
 	s.request <- request
 	s.client.streamerLock.Unlock()
@@ -340,7 +345,7 @@ func (s *Streamer) handleRequest(request interface{}) {
 		request.err = s.flush(true, uuid.New().String())
 		request.done <- struct{}{}
 	case *ReleaseRequest:
-		request.err = s.release()
+		request.err = s.release(request.wait)
 		request.done <- struct{}{}
 	case *EvictRequest:
 		request.err = s.evict()
@@ -1036,7 +1041,7 @@ func (s *Streamer) flushAsync(wait bool, id string) (err error) {
 			// If there are in-flight packets, use async flush
 			log.LogDebugf("Streamer(%v) flush using async flush for eh(%v) with inflight(%v) id(%v) wait(%v)",
 				s.inode, eh, atomic.LoadInt32(&eh.inflight), id, wait)
-			ch := s.requestAsyncFlush(eh, clearFunc)
+			ch := s.requestAsyncFlush(eh, clearFunc, "")
 			if wait {
 				if _, ok := pending[eh]; !ok {
 					pending[eh] = ch
@@ -1154,6 +1159,10 @@ func (s *Streamer) traverse() (err error) {
 // note: The invocation of the closeOpenHandler function on an inode is serialized
 // close open handler, then flush data
 func (s *Streamer) closeOpenHandler(wait bool) (err error) {
+	return s.closeOpenHandlerWithAudit(wait, "")
+}
+
+func (s *Streamer) closeOpenHandlerWithAudit(wait bool, auditOp string) (err error) {
 	id := uuid.New().String()
 	handler := s.handler
 	log.LogDebugf("closeOpenHandler: streamer(%v) with eh(%v) wait (%v) id(%v)", s.inode, handler, wait, id)
@@ -1176,7 +1185,7 @@ func (s *Streamer) closeOpenHandler(wait bool) (err error) {
 		if s.client.enableAsyncFlush && !s.waitForFlush {
 			log.LogDebugf("closeOpenHandler: using async flush for handler(%v) with inflight(%v) id(%v)",
 				handler, atomic.LoadInt32(&handler.inflight), id)
-			s.requestAsyncFlush(handler, cleanFunc)
+			s.requestAsyncFlush(handler, cleanFunc, auditOp)
 			s.dirtylist.Put(handler)
 		} else {
 			log.LogDebugf("closeOpenHandler: try flush (%v)id(%v)", handler, id)
@@ -1205,14 +1214,22 @@ func (s *Streamer) open() {
 	log.LogDebugf("open: streamer(%v) refcnt(%v)", s, atomic.LoadInt32(&s.refcnt))
 }
 
-func (s *Streamer) release() error {
+func (s *Streamer) release(wait bool) error {
+	start := time.Now()
 	if atomic.AddInt32(&s.refcnt, -1) < 0 {
 		log.LogErrorf("streamer %v refCnt error", s.inode)
 	}
 	if s.client.AheadRead != nil {
 		s.aheadReadEnable = s.client.AheadRead.enable
 	}
-	err := s.closeOpenHandler(true)
+	auditOp := ""
+	if !wait {
+		auditOp = releaseAsyncAuditOp
+	}
+	err := s.closeOpenHandlerWithAudit(wait, auditOp)
+	if err != nil && auditOp != "" {
+		s.auditAsyncFlushError(auditOp, start, err)
+	}
 	if err != nil {
 		s.abort()
 	}
